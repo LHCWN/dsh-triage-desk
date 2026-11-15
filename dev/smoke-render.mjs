@@ -1,0 +1,1670 @@
+/**
+ * Render smoke test for the client half: loads the bundle with real React,
+ * renders the registered Page against a deterministic snapshot, and fails if
+ * rendering throws or the expected sections/rows are missing.
+ *
+ * Run with `npm run smoke:render`. This catches client components that read
+ * props/state they no longer receive, which the fake-loader smoke cannot see.
+ * Not shipped in the npm package.
+ */
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import vm from 'node:vm'
+import React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { snapshot } from './fixtures/snapshot.mjs'
+
+const here = path.dirname(fileURLToPath(import.meta.url))
+const registry = []
+globalThis.window = {
+  __ModuleLoader__: {
+    load: (registration) => registry.push(registration),
+  },
+}
+
+const source = fs.readFileSync(path.join(here, '..', 'client.js'), 'utf8')
+const requireFromClient = (name) => {
+  if (name === 'react') return React
+  throw new Error('unexpected require: ' + name)
+}
+new Function('window', 'require', source)(globalThis.window, requireFromClient)
+
+const registration = registry[0]
+assert.ok(registration && typeof registration.factory === 'function', 'client bundle must register a factory')
+const plugin = registration.factory(requireFromClient)
+assert.equal(typeof plugin.apply, 'function')
+
+const registrations = []
+const fakeCtx = {
+  effect: (callback) => {
+    const disposer = callback()
+    return typeof disposer === 'function' ? disposer : () => {}
+  },
+  slots: {
+    inject: (_key, callback) => {
+      const disposer = callback()
+      return typeof disposer === 'function' ? disposer : () => {}
+    },
+    register: (options, component) => {
+      registrations.push({ options, component })
+      return () => {}
+    },
+  },
+  locale: {
+    register: () => () => {},
+    bind: () => (key) => key,
+  },
+  get: (name) => (name === 'uiWorkspace' ? { startSession: () => {} } : undefined),
+}
+plugin.apply(fakeCtx)
+
+const pageRegistration = registrations.find((entry) => entry.options.name === 'main' && entry.options.key === 'triage-desk')
+assert.ok(pageRegistration, 'main page slot must be registered')
+assert.equal(typeof pageRegistration.component, 'function')
+
+const state = {
+  status: 'ready',
+  refreshing: false,
+  data: snapshot,
+  error: null,
+  filter: 'all',
+  sourceFilter: 'all',
+  collapsed: {},
+  copied: null,
+  copiedList: 0,
+  loadedAt: Date.now(),
+  view: 'list',
+  openMenu: null,
+  config: {
+    orgs: [],
+    sources: snapshot.sources,
+    cloneDirsDefault: ['~/Projects'],
+    agents: [
+      { id: 'claude', label: 'Claude Code', command: 'claude {prompt}', draftFlag: '--prefill' },
+      { id: 'codex', label: 'Codex', command: 'codex {prompt}' },
+    ],
+    defaultAgent: 'claude',
+    detectedAgents: { claude: { available: true }, codex: { available: true } },
+    scenarios: [
+      {
+        id: 'link',
+        label: '',
+        scope: 'item',
+        sections: ['review', 'rereview', 'merge', 'respond', 'ci', 'issues'],
+        prompt: '{url}',
+        agent: 'default',
+        enabled: true,
+      },
+      {
+        id: 'review-pr',
+        label: '',
+        scope: 'item',
+        sections: ['review'],
+        prompt: 'Review the pull request {url}.',
+        agent: 'default',
+        enabled: true,
+      },
+      {
+        id: 'review-all',
+        label: '',
+        scope: 'section',
+        sections: ['review', 'rereview'],
+        prompt: 'Review every pull request listed below.\n\n{links}',
+        agent: 'default',
+        enabled: true,
+      },
+    ],
+    defaultScenario: 'link',
+    supportsPrompt: true,
+    supportsAgentDiscovery: true,
+    scenarioDefaults: [
+      {
+        id: 'link',
+        label: '',
+        scope: 'item',
+        sections: ['review', 'rereview', 'merge', 'respond', 'ci', 'issues'],
+        prompt: '{url}',
+        agent: 'default',
+        enabled: true,
+      },
+    ],
+    limits: { scenarios: 30, scenarioTemplate: 4000, prompt: 16000 },
+    editable: true,
+  },
+  configStatus: 'ready',
+  configError: null,
+  saveError: null,
+  auth: { available: true, authenticated: true, login: 'tester', scopes: ['repo'], install: null },
+  authStatus: 'ready',
+  authError: null,
+  loginStatus: 'idle',
+  loginError: null,
+  pollSeconds: 1200,
+  toast: null,
+}
+const store = {
+  get: () => state,
+  set: () => {},
+  subscribe: () => () => {},
+  load: () => Promise.resolve(),
+  loadConfig: () => Promise.resolve(),
+  loadAuth: () => Promise.resolve(),
+  loginGithub: () => Promise.resolve(),
+  showToast: () => {},
+  dispose: () => {},
+}
+
+const t = (key, params) => params?.line === undefined ? key : key + ':' + params.line
+// The hook runner also shows interpolated values (relative ages, counts).
+const harnessT = (key, params) => (params ? key + ':' + Object.values(params).join(',') : key)
+const html = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+assert.ok(html.includes('adx-root'), 'page root should render')
+assert.ok(html.includes('Review requested PR'), 'review row should render')
+assert.ok(html.includes('Re-review needed PR'), 'rereview row should render')
+assert.ok(html.includes('Merge-ready PR'), 'merge row should render')
+assert.ok(html.includes('New unassigned issue'), 'issue row should render')
+assert.ok(html.includes('adx-section'), 'sections should render')
+assert.ok(html.includes('adx-section-launch'), 'section scenario trigger should render')
+assert.ok(html.includes('launch.sectionTitle'), 'section trigger should carry its accessible label')
+{
+  // Header controls follow a row's order: terminal, snooze, then the chevron in the copy column.
+  const head = html.slice(html.indexOf('<div class="adx-section-head"'), html.indexOf('</div>', html.indexOf('<div class="adx-section-head"')) + 6)
+  const order = ['launch.sectionTitle', 'snooze.section', 'page.collapse'].map((label) => head.indexOf('aria-label="' + label))
+  assert.ok(order.every((index) => index !== -1), 'the header renders terminal, snooze and chevron: ' + order)
+  assert.ok(order[0] < order[1] && order[1] < order[2], 'header order is terminal, snooze, chevron')
+  const row = html.slice(html.indexOf('<li class="adx-row"'), html.indexOf('</li>', html.indexOf('<li class="adx-row"')))
+  const rowOrder = ['launch.title', 'snooze.button', 'page.copy'].map((label) => row.indexOf('aria-label="' + label))
+  assert.ok(rowOrder[0] < rowOrder[1] && rowOrder[1] < rowOrder[2], 'row order is terminal, snooze, copy: ' + rowOrder)
+}
+
+state.openMenu = 'section:review'
+const withMenu = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+assert.ok(withMenu.includes('adx-launch-menu'), 'section scenario menu should render when open')
+assert.ok(withMenu.includes('<div class="adx-section-head" data-menu-open="true">'), 'the section header owning the open menu is lifted')
+assert.ok(withMenu.includes('review-all (2)'), 'section menu should list the scenario and count the union of its sections')
+assert.ok(withMenu.includes('adx-launch-agent-select'), 'section menu should let you pick the agent')
+assert.ok(withMenu.includes('launch.dshTarget'), 'section menu should offer the DSH target')
+
+state.openMenu = 'review:pull:1'
+const rowMenu = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+assert.ok(rowMenu.includes('launch.scenarios'), 'row menu should group scenarios')
+assert.ok(rowMenu.includes('review-pr'), 'row menu should list the applicable item scenario')
+assert.ok(rowMenu.includes('adx-launch-agent-select'), 'row menu should let you pick the agent')
+assert.ok(rowMenu.includes('launch.dshTarget'), 'row menu should offer the DSH target')
+state.config.detectedAgents = { claude: { available: true }, codex: { available: false, path: null, reason: 'alias' } }
+const aliasMenu = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+assert.ok(aliasMenu.includes('launch.agentShellAlias'), 'an alias-only agent explains why it cannot launch')
+assert.ok(!aliasMenu.includes('launch.notInstalled'), 'an alias is not reported as missing')
+state.config.detectedAgents = { claude: { available: true }, codex: { available: true } }
+
+const count = (text, needle) => text.split(needle).length - 1
+state.openMenu = 'respond:pull:4'
+state.copied = 'respond:pull:4'
+const duplicateRow = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+assert.equal(count(duplicateRow, 'href="https://github.com/tester/example/pull/4"'), 2, 'the fixture lists one PR in two sections')
+assert.equal(count(duplicateRow, 'class="adx-launch-menu"'), 1, 'a PR listed in two sections opens one menu, not two')
+assert.equal(count(duplicateRow, 'data-menu-open="true"'), 1, 'only the row owning the open menu is lifted above its siblings')
+assert.ok(/<li class="adx-row"[^>]*data-menu-open="true"[^>]*>(?:(?!<li ).)*class="adx-launch-menu"/s.test(duplicateRow),
+  'the lifted row is the one that renders the menu')
+assert.equal(count(duplicateRow, 'aria-label="page.copied"'), 1, 'the copied tick belongs to one row only')
+state.copied = null
+
+state.openMenu = null
+state.view = 'settings'
+const settingsHtml = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+assert.ok(settingsHtml.includes('adx-scenarios'), 'settings should render the scenario editor')
+assert.ok(settingsHtml.includes('settings.scenarios'), 'settings should group scenarios')
+assert.ok(settingsHtml.includes('settings.agentAdd'), 'settings should render the agent editor')
+assert.ok(settingsHtml.includes('settings.agentFind'), 'settings should offer the agent scan when the host supports it')
+assert.ok(settingsHtml.includes('adx-scenario'), 'each scenario should render as a compact card')
+assert.ok(settingsHtml.includes('review-pr'), 'the scenario list should render the configured scenarios')
+assert.ok(settingsHtml.includes('claude {prompt}'), 'the agent editor should render the configured commands')
+
+assert.ok(!settingsHtml.includes('settings.agentsUnusable'), 'no unusable-agents warning without host-reported agents')
+state.config.invalidAgents = []
+assert.ok(!renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store })).includes('settings.agentsUnusable'),
+  'an empty invalidAgents list renders no warning')
+state.config.invalidAgents = [{ id: 'legacy', label: 'Legacy agent', command: 'legacy "{prompt}"', reason: 'placeholder' }]
+const settingsWithUnusable = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+assert.ok(settingsWithUnusable.includes('settings.agentsUnusable'), 'saved agents the host cannot use are reported')
+assert.ok(settingsWithUnusable.includes('settings.agentsUnusableHint'))
+assert.ok(settingsWithUnusable.includes('value="Legacy agent"') && settingsWithUnusable.includes('value="legacy &quot;{prompt}&quot;"'),
+  'each unusable agent is an editable row with its label and command')
+assert.ok(settingsWithUnusable.includes('data-invalid="true"') && settingsWithUnusable.includes('settings.agentUnusableRow'),
+  'the unusable row is flagged inline')
+delete state.config.invalidAgents
+
+state.config.supportsAgentDiscovery = false
+const settingsWithoutScan = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+assert.ok(!settingsWithoutScan.includes('settings.agentFind'), 'a stale host must hide the Find agents button')
+state.config.supportsAgentDiscovery = true
+
+state.view = 'list'
+state.data = {
+  ...snapshot,
+  status: 'stale',
+  warnings: [{ code: 'partial', message: 'old coverage warning' }, { code: 'network', message: 'refresh failed, showing the previous snapshot: offline' }],
+  meta: { ...snapshot.meta, lastError: { code: 'network', message: 'gh: connection refused' } },
+}
+const staleHtml = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+assert.ok(staleHtml.includes('gh: connection refused'), 'the stale banner shows the current failure from meta.lastError')
+assert.ok(!staleHtml.includes('old coverage warning'), 'the stale banner does not show an older warning')
+state.data = { ...state.data, meta: { ...snapshot.meta } }
+const staleFallback = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+assert.ok(staleFallback.includes('refresh failed, showing the previous snapshot: offline'), 'without lastError the latest warning is shown')
+state.data = snapshot
+
+state.openMenu = 'review:pull:1'
+state.config.supportsPrompt = false
+const menuWithoutDsh = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+assert.ok(!menuWithoutDsh.includes('launch.dshTarget'), 'a stale host must hide the DSH target')
+state.config.supportsPrompt = true
+state.openMenu = null
+
+/** React.memo's default comparison: same keys, each value Object.is-equal. */
+function shallowEqualProps(previous, next) {
+  const keys = Object.keys(previous)
+  if (keys.length !== Object.keys(next).length) return false
+  return keys.every((key) => Object.prototype.hasOwnProperty.call(next, key) && Object.is(previous[key], next[key]))
+}
+
+// A stateful hook runner exercises the registered Page/Settings event handlers
+// and effects against the real store. It honours React.memo comparators (a
+// memoized subtree is reused unless its own state changed), runs layout effects
+// before passive ones, and attaches object refs to minimal fake elements
+// (contains/focus/querySelector/getBoundingClientRect) so document-level menu
+// handlers can be driven deterministically. React DOM scheduling is not
+// simulated; the real-React SSR checks above cover rendering compatibility.
+function settingsHarness({
+  agents = state.config.agents, invalidAgents, scenarios, snapshotPayload = null, clock = null, layout = {}, configExtra = {},
+  storage, withPanel = false,
+} = {}) {
+  const instances = new Map()
+  let current
+  let hookIndex
+  let dirty = true
+  let tree
+  let root
+  let effects = []
+  let layoutEffects = []
+  const elements = new Map()
+  const nodeKeys = new WeakMap()
+  const documentListeners = new Map()
+  let focused = null
+  const hook = (initialize) => {
+    const index = hookIndex++
+    if (!current.hooks[index]) current.hooks[index] = initialize()
+    return current.hooks[index]
+  }
+  const effectHook = (queue) => (callback, dependencies) => {
+    const entry = hook(() => ({}))
+    if (!entry.dependencies || dependencies.some((value, i) => !Object.is(value, entry.dependencies[i]))) {
+      entry.dependencies = dependencies
+      queue().push(() => { entry.cleanup?.(); entry.cleanup = callback() })
+    }
+  }
+  const hooks = {
+    createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
+    // Without a comparator React compares props shallowly with Object.is.
+    memo: (component, compare) => ({ memo: true, component, compare: compare || shallowEqualProps }),
+    useState(initial) {
+      const owner = current
+      const entry = hook(() => ({ value: typeof initial === 'function' ? initial() : initial }))
+      return [entry.value, (update) => {
+        const value = typeof update === 'function' ? update(entry.value) : update
+        if (!Object.is(value, entry.value)) { entry.value = value; owner.pending = true; dirty = true }
+      }]
+    },
+    useRef(initial) { return hook(() => ({ current: initial })) },
+    useMemo(factory, dependencies) {
+      const entry = hook(() => ({}))
+      if (!entry.dependencies || dependencies.some((value, i) => !Object.is(value, entry.dependencies[i]))) {
+        entry.dependencies = dependencies
+        entry.value = factory()
+      }
+      return entry.value
+    },
+    useEffect: effectHook(() => effects),
+    useLayoutEffect: effectHook(() => layoutEffects),
+  }
+  const elementFor = (key) => {
+    if (!elements.has(key)) {
+      elements.set(key, {
+        key,
+        node: null,
+        contains: (target) => Boolean(target) && (target.key === key || String(target.key).startsWith(key + '/')),
+        focus() { focused = key },
+        getBoundingClientRect() {
+          const className = String(this.node?.props?.className || '')
+          if (className.includes('adx-launch-menu')) return { top: 0, bottom: layout.menuHeight ?? 120, height: layout.menuHeight ?? 120 }
+          return { top: (layout.triggerBottom ?? 100) - 20, bottom: layout.triggerBottom ?? 100, height: 20 }
+        },
+        querySelector(selector) {
+          assert.equal(selector, '[role="menuitem"]')
+          const match = flatten(this.node?.props?.children).find((child) => child?.props?.role === 'menuitem')
+          return match ? elementFor(nodeKeys.get(match)) : null
+        },
+      })
+    }
+    return elements.get(key)
+  }
+  function render() {
+    for (let pass = 0; pass < 50; pass++) {
+      dirty = false
+      effects = []
+      layoutEffects = []
+      const visited = new Set()
+      const instanceFor = (key, type) => {
+        let instance = instances.get(key)
+        if (instance && instance.type !== type) {
+          for (const entry of instance.hooks) entry.cleanup?.()
+          instances.delete(key)
+          instance = null
+        }
+        if (!instance) {
+          instance = { type, hooks: [] }
+          instances.set(key, instance)
+        }
+        visited.add(key)
+        return instance
+      }
+      const visit = (node, key) => {
+        if (Array.isArray(node)) return node.map((child, i) => visit(child, key + '/' + (child?.props?.key ?? i)))
+        if (node === null || typeof node !== 'object') return node
+        if (node.type?.memo) {
+          const instance = instanceFor(key, node.type)
+          // Own (or descendant) state updates re-render the subtree, as in React;
+          // otherwise the comparator decides, so a missing prop compare is caught.
+          const pendingInside = [...instances].some(([inner, entry]) => inner.startsWith(key + '/') && entry.pending)
+          if (instance.memoProps && !pendingInside && node.type.compare(instance.memoProps, node.props)) {
+            // Reuse the previous subtree; keep its descendant instances alive.
+            for (const descendant of instances.keys()) if (descendant.startsWith(key + '/')) visited.add(descendant)
+            return instance.memoTree
+          }
+          instance.memoProps = node.props
+          instance.memoTree = visit({ type: node.type.component, props: node.props }, key + '/memo')
+          return instance.memoTree
+        }
+        if (typeof node.type === 'function') {
+          current = instanceFor(key, node.type)
+          current.pending = false
+          hookIndex = 0
+          return visit(node.type(node.props), key + '/render')
+        }
+        const element = { ...node, props: { ...node.props, children: visit(node.props.children, key + '/children') } }
+        nodeKeys.set(element, key)
+        if (element.props.ref && typeof element.props.ref === 'object') {
+          const fake = elementFor(key)
+          fake.node = element
+          element.props.ref.current = fake
+        }
+        return element
+      }
+      tree = visit(root, 'root')
+      for (const [key, instance] of instances) {
+        if (visited.has(key)) continue
+        for (const entry of instance.hooks) entry.cleanup?.()
+        instances.delete(key)
+      }
+      for (const effect of layoutEffects) effect()
+      for (const effect of effects) effect()
+      if (!dirty) return
+    }
+    throw new Error('settings hook runner did not settle')
+  }
+  const flatten = (node) => {
+    if (Array.isArray(node)) return node.flatMap(flatten)
+    if (node === null || node === undefined || node === false) return []
+    return typeof node === 'object' ? [node, ...flatten(node.props.children)] : [node]
+  }
+  const slots = []
+  const disposers = []
+  const pending = []
+  const pendingDiscoveries = []
+  const pendingPickers = []
+  const launches = []
+  const timers = new Map()
+  let timerId = 0
+  const config = {
+    ...state.config,
+    agents,
+    scenarios: scenarios ?? (snapshotPayload === null
+      ? state.config.scenarios.filter((scenario) => scenario.id === 'link')
+      : state.config.scenarios),
+    ...(invalidAgents === undefined ? {} : { invalidAgents }),
+    refreshSeconds: 1200,
+    ...configExtra,
+  }
+  // `host.snapshot` replaces the served snapshot for later loads.
+  const host = { saveError: null, unavailable: false, configReads: 0, snapshot: null }
+  const response = (status, payload) => ({ status, ok: status >= 200 && status < 300, json: async () => payload })
+  const document = {
+    visibilityState: 'visible',
+    // Styles are outside this harness; report them as installed.
+    querySelector: () => ({}),
+    addEventListener(type, callback) {
+      if (!documentListeners.has(type)) documentListeners.set(type, new Set())
+      documentListeners.get(type).add(callback)
+    },
+    removeEventListener(type, callback) { documentListeners.get(type)?.delete(callback) },
+  }
+  const sandbox = {
+    console,
+    document,
+    innerHeight: layout.innerHeight ?? 800,
+    ...(storage === undefined ? {} : { localStorage: storage }),
+    ...(clock === null ? {} : { Date: class extends Date { static now() { return clock.now } } }),
+    setTimeout(callback, delay) { const id = ++timerId; timers.set(id, { callback, delay }); return id },
+    clearTimeout(id) { timers.delete(id) },
+    fetch(url, options) {
+      if (url === '/triage-desk/pick-directory' || url === '/triage-desk/pick-clone') {
+        return new Promise((resolve, reject) => pendingPickers.push({ resolve, reject, url }))
+      }
+      if (url === '/triage-desk/agents/find') {
+        return new Promise((resolve, reject) => pendingDiscoveries.push({ resolve, reject, body: JSON.parse(options.body) }))
+      }
+      if (url === '/triage-desk/launch' || url === '/triage-desk/prompt') {
+        const body = JSON.parse(options.body)
+        launches.push({ url, body })
+        return Promise.resolve(response(200, url === '/triage-desk/launch'
+          ? { ok: true, mode: 'draft', cwd: '/work', count: body.urls ? body.urls.length : 1 }
+          : { ok: true, prompt: 'rendered', trimmed: null }))
+      }
+      if (url === '/triage-desk/config' && options.method === 'POST') {
+        return new Promise((resolve, reject) => pending.push({ resolve, reject, body: JSON.parse(options.body) }))
+      }
+      if (url === '/triage-desk/config') host.configReads += 1
+      if (url === '/triage-desk/config' && host.unavailable) return Promise.reject(new Error('restarting'))
+      if (url === '/triage-desk/config') return Promise.resolve(response(200, { config, saveError: host.saveError }))
+      if (url === '/triage-desk/auth') return Promise.resolve(response(200, { auth: state.auth }))
+      if (url === '/triage-desk/snapshot') {
+        return Promise.resolve(response(200, host.snapshot ?? snapshotPayload ?? { sections: [], settings: { refreshSeconds: 1200 } }))
+      }
+      throw new Error('unexpected request: ' + url)
+    },
+  }
+  sandbox.window = {
+    ...sandbox,
+    __ModuleLoader__: {
+      load(registration) {
+        registration.factory((name) => {
+          assert.equal(name, 'react')
+          return hooks
+        }).apply({
+          ...fakeCtx,
+          effect(callback) { disposers.push(callback()) },
+          slots: {
+            inject: (_key, callback) => callback(),
+            register(options, component) { slots.push({ options, component }); return () => {} },
+          },
+        })
+      },
+    },
+  }
+  vm.runInNewContext(source, sandbox, { filename: 'client.js' })
+  const page = slots.find((slot) => slot.options.name === 'main')
+  const { store } = page.options.inject()
+  root = hooks.createElement(page.component, { store, t: harnessT })
+  if (withPanel) {
+    const panel = slots.find((slot) => slot.options.name === 'sidebar.panellist')
+    root = hooks.createElement('div', null, root, hooks.createElement(panel.component, { store }))
+  }
+  render()
+  const target = (node) => (node === null ? { key: 'outside' } : elementFor(nodeKeys.get(node)))
+  const event = (node, extra = {}) => ({ preventDefault() {}, stopPropagation() {}, target: target(node), ...extra })
+  return {
+    store, pending, pendingDiscoveries, pendingPickers, launches, timers, host,
+    nodes: () => flatten(tree),
+    text: () => flatten(tree).filter((node) => typeof node === 'string').join(' '),
+    focused: () => focused,
+    keyOf: (node) => nodeKeys.get(node),
+    async flush() { await new Promise((resolve) => setImmediate(resolve)); render() },
+    change(node, value) { node.props.onChange({ target: { value } }); render() },
+    click(node, extra) { assert.ok(node, 'expected an interactive control'); assert.ok(!node.props.disabled); node.props.onClick(event(node, extra)); render() },
+    // Document-level events reach the listeners the menu effects registered.
+    dispatch(type, node, extra) {
+      for (const listener of [...(documentListeners.get(type) || [])]) listener(event(node, extra))
+      render()
+    },
+    listeners: (type) => documentListeners.get(type)?.size || 0,
+    async fire(delay) {
+      const entry = [...timers].find(([, timer]) => timer.delay === delay)
+      assert.ok(entry, 'expected a pending ' + delay + ' ms timer')
+      timers.delete(entry[0])
+      entry[1].callback()
+      await new Promise((resolve) => setImmediate(resolve))
+      render()
+    },
+    reply(status, payload) {
+      const request = pending.shift()
+      // A 200 means the (fake) host persisted and normalized the patch.
+      if (status === 200) Object.assign(config, request.body, request.body.agents ? { invalidAgents: [] } : {})
+      request.resolve(response(status, payload))
+    },
+    dispose() {
+      root = null
+      render()
+      for (const disposer of disposers.reverse()) disposer?.()
+      assert.equal(timers.size, 0, 'unmount and plugin disposal clear all timers')
+    },
+  }
+}
+
+const flattenTree = (node) => {
+  if (Array.isArray(node)) return node.flatMap(flattenTree)
+  if (node === null || node === undefined || node === false) return []
+  return typeof node === 'object' ? [node, ...flattenTree(node.props.children)] : [node]
+}
+
+async function editSettings(harness) {
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+  await harness.flush()
+  const organization = harness.nodes().find((node) => node.props?.placeholder === 'settings.orgsPlaceholder')
+  harness.change(organization, 'edited-org')
+  const refresh = harness.nodes().find((node) => node.type === 'select' && node.props.value === '1200')
+  harness.change(refresh, '60')
+  const save = harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('settings.save'))
+  harness.click(save)
+  assert.equal(harness.pending.length, 1, 'clicking Save sends one real store request')
+  assert.deepEqual(harness.pending[0].body.orgs, ['edited-org'])
+  assert.ok(harness.text().includes('settings.saving'), 'pending persistence shows Saving')
+  assert.ok(!harness.text().includes('settings.saved'), 'pending persistence must never show Saved')
+  assert.ok(!harness.text().includes('settings.done'), 'pending persistence must not mark the form clean')
+  assert.equal(harness.store.get().config.orgs.length, 0, 'pending writes leave confirmed config unchanged')
+  assert.equal(harness.store.get().pollSeconds, 1200, 'pending writes do not change polling cadence')
+}
+
+{
+  const harness = settingsHarness()
+  await editSettings(harness)
+  harness.reply(200, { ok: true, restarting: true })
+  await harness.flush()
+  assert.ok(harness.text().includes('settings.saved'), 'confirmed persistence shows Saved')
+  assert.ok(harness.text().includes('settings.done'), 'confirmed persistence marks the form clean')
+  assert.equal(harness.store.get().config.orgs[0], 'edited-org')
+  assert.equal(harness.store.get().pollSeconds, 60, 'confirmed refresh setting updates polling immediately')
+  assert.ok([...harness.timers.values()].some((timer) => timer.delay === 60_000), 'confirmed refresh setting schedules its new timer')
+  assert.ok(![...harness.timers.values()].some((timer) => timer.delay === 1_200_000), 'confirmed refresh setting cancels its old timer')
+  harness.dispose()
+}
+
+{
+  const harness = settingsHarness()
+  await editSettings(harness)
+  const organization = () => harness.nodes().find((node) => node.props?.placeholder === 'settings.orgsPlaceholder')
+  harness.change(organization(), 'newer-unsaved-org')
+  harness.reply(200, { ok: true })
+  await harness.flush()
+  assert.equal(organization().props.value, 'newer-unsaved-org', 'edits made during persistence remain in the form')
+  assert.equal(harness.store.get().config.orgs[0], 'edited-org', 'only the submitted edit is confirmed')
+  assert.ok(!harness.text().includes('settings.saved'), 'newer unsaved edits must not be described as Saved')
+  const saveNewer = harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('settings.save'))
+  assert.ok(saveNewer && !saveNewer.props.disabled, 'newer edits retain an enabled Save action')
+  harness.click(saveNewer)
+  assert.deepEqual(harness.pending[0].body.orgs, ['newer-unsaved-org'])
+  harness.reply(200, { ok: true })
+  await harness.flush()
+  assert.ok(harness.text().includes('settings.saved'), 'saving the newer edit confirms the current form')
+  assert.equal(harness.store.get().config.orgs[0], 'newer-unsaved-org')
+  harness.dispose()
+}
+
+for (const failure of ['host', 'network', 'accepted-save-error']) {
+  const harness = settingsHarness()
+  await editSettings(harness)
+  if (failure === 'network') harness.pending.shift().reject(new Error('connection lost'))
+  else if (failure === 'accepted-save-error') {
+    // An older host answers 202 before writing; its restarted config reports the failed write.
+    harness.reply(202, { ok: true, restarting: true })
+    await harness.flush()
+    harness.host.saveError = { code: 'save-failed', message: 'disk full' }
+    await harness.fire(5000)
+    harness.host.saveError = null
+  } else harness.reply(500, { ok: false, error: { code: 'save-failed', message: 'disk full' } })
+  await harness.flush()
+  assert.ok(!harness.text().includes('settings.saved'), failure + ': unconfirmed persistence must not show Saved')
+  assert.ok(harness.text().includes('settings.error'), failure + ': failure remains visible')
+  assert.equal(harness.nodes().find((node) => node.props?.placeholder === 'settings.orgsPlaceholder').props.value, 'edited-org', 'failed writes preserve form edits')
+  const retry = harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('settings.save'))
+  assert.ok(retry && !retry.props.disabled, 'failed writes leave a dirty, retryable form')
+  assert.equal(harness.store.get().config.orgs.length, 0, 'failed writes leave confirmed config unchanged')
+  harness.click(retry)
+  harness.reply(200, { ok: true })
+  await harness.flush()
+  assert.ok(harness.text().includes('settings.saved'), 'a successful retry can show Saved')
+  harness.dispose()
+}
+
+for (const readBack of ['first', 'retry']) {
+  // 202 + ok:true from an older running host: pending notice, then read back.
+  const harness = settingsHarness()
+  await editSettings(harness)
+  harness.reply(202, { ok: true, restarting: true })
+  await harness.flush()
+  assert.ok(harness.text().includes('settings.applying'), readBack + ': an accepted save shows the applying notice')
+  assert.ok(!harness.text().includes('settings.saved'), readBack + ': an accepted save is not yet Saved')
+  assert.ok(!harness.text().includes('settings.error'), readBack + ': an accepted save is not a failure')
+  const saveButton = () => harness.nodes().find((node) => node.type === 'button' && node.props.className === 'adx-btn adx-btn--primary')
+  assert.ok(saveButton().props.disabled, readBack + ': Save stays disabled while applying')
+  if (readBack === 'retry') {
+    harness.host.unavailable = true
+    await harness.fire(5000)
+    harness.host.unavailable = false
+    assert.ok(harness.text().includes('settings.applying'), 'a read during the restart is retried, still applying')
+  }
+  await harness.fire(5000)
+  assert.ok(harness.text().includes('settings.saved'), readBack + ': the read-back config confirms the save')
+  assert.ok(harness.text().includes('settings.done'), readBack + ': the confirmed form is clean')
+  assert.ok(!harness.text().includes('settings.applying'))
+  harness.dispose()
+}
+
+{
+  // Leaving dirty settings asks first: Back, Cancel and the header gear share the guard.
+  const harness = settingsHarness()
+  await harness.flush()
+  const gear = () => harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings')
+  const button = (label) => harness.nodes().find((node) => node.type === 'button' && node.props.children.includes(label))
+  const back = () => harness.nodes().find((node) => node.type === 'button' && node.props.className?.includes('adx-form-head--button'))
+  const organization = () => harness.nodes().find((node) => node.props?.placeholder === 'settings.orgsPlaceholder')
+  harness.click(gear())
+  await harness.flush()
+  harness.click(gear())
+  assert.equal(harness.store.get().view, 'list', 'a clean form leaves through the gear without asking')
+  harness.click(gear())
+  await harness.flush()
+  harness.change(organization(), 'unsaved-org')
+  for (const leave of [gear, back, () => button('settings.cancel')]) {
+    harness.click(leave())
+    assert.equal(harness.store.get().view, 'settings', 'dirty settings are not left silently')
+    assert.ok(harness.text().includes('settings.discardTitle'), 'the discard confirmation is visible')
+    assert.ok(harness.nodes().some((node) => node.props?.className === 'adx-leave-confirm' && node.props.role === 'alert'))
+    assert.ok(button('settings.discard') && button('settings.keepEditing'))
+    harness.click(button('settings.keepEditing'))
+    assert.ok(!harness.text().includes('settings.discardTitle'), 'Keep editing hides the confirmation')
+    assert.equal(organization().props.value, 'unsaved-org', 'Keep editing preserves the edits')
+  }
+  harness.click(back())
+  harness.change(organization(), '')
+  assert.ok(!harness.text().includes('settings.discardTitle'), 'a form that becomes clean drops the confirmation')
+  harness.click(back())
+  assert.equal(harness.store.get().view, 'list', 'reverting the edit makes leaving direct again')
+  harness.click(gear())
+  await harness.flush()
+  harness.change(organization(), 'unsaved-org')
+  harness.click(gear())
+  harness.click(button('settings.discard'))
+  assert.equal(harness.store.get().view, 'list', 'Discard leaves the settings')
+  harness.click(gear())
+  await harness.flush()
+  assert.equal(organization().props.value, '', 'discarded edits do not come back')
+  assert.ok(!harness.text().includes('settings.discardTitle'))
+  harness.dispose()
+}
+
+{
+  // The host checks agent commands on save: an `invalid-agent` answer flags
+  // the named row; an older host's plain 400 is a general error.
+  const harness = settingsHarness()
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+  await harness.flush()
+  const names = () => harness.nodes().filter((node) => node.props?.['aria-label'] === 'settings.agentName' && node.type === 'input')
+  const commands = () => harness.nodes().filter((node) => node.props?.['aria-label'] === 'settings.agentCommand')
+  const flagged = () => harness.nodes().filter((node) => node.props?.className === 'adx-agent-row')
+    .map((node) => node.props['data-invalid'])
+  const save = () => harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('settings.save'))
+  const message = 'agent "claude" command must contain {prompt} once, unquoted'
+
+  harness.change(names()[0], '')
+  harness.click(save())
+  assert.equal(harness.pending.length, 0, 'a nameless agent is still caught before a request')
+  assert.ok(harness.text().includes('settings.invalidAgent:claude'), 'the client error names the agent by id')
+  assert.deepEqual(flagged(), ['true', 'false'], 'the nameless row is marked')
+  harness.change(names()[0], 'Claude Code')
+  assert.deepEqual(flagged(), ['false', 'false'], 'editing the marked row clears it')
+
+  harness.change(commands()[0], 'claude "{prompt}"')
+  harness.click(save())
+  assert.equal(harness.pending.length, 1, 'the command rule is left to the host')
+  assert.equal(harness.pending[0].body.agents[0].command, 'claude "{prompt}"')
+  harness.reply(400, { ok: false, error: { code: 'invalid-agent', agent: 'claude', message } })
+  await harness.flush()
+  assert.ok(harness.text().includes('settings.invalidAgentCommand:Claude Code'), 'the rule is explained in the UI language, naming the agent')
+  assert.ok(!harness.text().includes(message), 'the host English text is not shown for a named agent')
+  assert.deepEqual(flagged(), ['true', 'false'], 'only the agent the host named is flagged')
+  assert.ok(harness.text().includes('settings.agentInvalidRow'), 'the flagged row explains itself')
+  assert.ok(!harness.text().includes('settings.saved'))
+  harness.change(commands()[0], 'claude "{prompt}" --x')
+  assert.deepEqual(flagged(), ['false', 'false'], 'editing the flagged row clears it')
+
+  harness.click(save())
+  harness.reply(400, { ok: false, error: { code: 'invalid-config', message } })
+  await harness.flush()
+  assert.ok(harness.text().includes('settings.error: ' + message), 'an older host error is shown as a general error')
+  assert.deepEqual(flagged(), ['false', 'false'], 'an older host error flags no row')
+
+  harness.change(commands()[0], 'aider --message={prompt}')
+  harness.click(save())
+  assert.equal(harness.pending[0].body.agents[0].command, 'aider --message={prompt}')
+  harness.reply(200, { ok: true })
+  await harness.flush()
+  assert.ok(harness.text().includes('settings.saved'))
+  harness.dispose()
+}
+
+{
+  // An upgraded profile: a saved agent the host now rejects (and omits from
+  // config.agents) with a scenario pinned to it.
+  const linkScenario = state.config.scenarios[0]
+  const pinnedScenario = { ...state.config.scenarios[1], label: 'Pinned review', agent: 'my-claude' }
+  const harness = settingsHarness({
+    agents: [{ id: 'claude', label: 'Claude Code', command: 'claude {prompt}' }],
+    invalidAgents: [{ id: 'my-claude', label: 'My Claude', command: 'claude -p "{prompt}"', reason: 'placeholder' }],
+    scenarios: [linkScenario, pinnedScenario],
+  })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+  await harness.flush()
+  const names = () => harness.nodes().filter((node) => node.props?.['aria-label'] === 'settings.agentName' && node.type === 'input')
+  const commands = () => harness.nodes().filter((node) => node.props?.['aria-label'] === 'settings.agentCommand')
+  const rows = () => harness.nodes().filter((node) => node.props?.className === 'adx-agent-row')
+  const button = (label) => harness.nodes().find((node) => node.type === 'button' && node.props.children.includes(label))
+  assert.deepEqual(names().map((node) => node.props.value), ['Claude Code', 'My Claude'], 'the rejected agent is an editable row')
+  assert.equal(commands()[1].props.value, 'claude -p "{prompt}"')
+  assert.deepEqual(rows().map((node) => node.props['data-invalid']), ['false', 'true'], 'only the rejected agent is flagged')
+  assert.equal(commands()[1].props['aria-invalid'], 'true')
+  assert.ok(harness.text().includes('settings.agentUnusableRow'), 'the flagged row explains itself')
+  assert.ok(harness.text().includes('settings.agentsUnusable:1'), 'the editor warns about rejected agents')
+  // The pinned scenario keeps its agent instead of showing Default.
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.className === 'adx-scenario-toggle'
+    && flattenTree(node.props.children).includes('Pinned review')))
+  const scenarioAgent = () => harness.nodes().find((node) => node.type === 'select'
+    && flattenTree(node.props.children).some((child) => child?.props?.value === 'default'))
+  assert.equal(scenarioAgent().props.value, 'my-claude', 'the pinned scenario selects the rejected agent, not Default')
+  assert.ok(flattenTree(scenarioAgent().props.children).some((child) => child?.props?.value === 'my-claude' && flattenTree(child.props.children).includes('My Claude')))
+  harness.change(harness.nodes().find((node) => node.props?.placeholder === 'settings.orgsPlaceholder'), 'other-edit')
+  harness.click(button('settings.save'))
+  assert.equal(harness.pending.length, 1, 'an unfixed rejected agent is sent; the host rejects it')
+  harness.reply(400, { ok: false, error: { code: 'invalid-agent', agent: 'my-claude', message: 'agent "my-claude" is invalid' } })
+  await harness.flush()
+  assert.ok(harness.text().includes('settings.invalidAgentCommand:My Claude'), 'the save error explains the rule for the named agent')
+  assert.deepEqual(rows().map((node) => node.props['data-invalid']), ['false', 'true'], 'the rejected row stays flagged')
+  assert.ok(!harness.text().includes('settings.saved'))
+  harness.change(commands()[1], 'claude -p {prompt}')
+  assert.equal(rows()[1].props['data-invalid'], 'false', 'a fixed command clears the flag')
+  assert.ok(!harness.text().includes('settings.agentsUnusable'), 'the warning clears once every row is usable')
+  const readsBefore = harness.host.configReads
+  harness.click(button('settings.save'))
+  assert.equal(harness.pending.length, 1, 'a fixed command lets the save proceed')
+  assert.deepEqual(harness.pending[0].body.agents.map((agent) => [agent.id, agent.command]),
+    [['claude', 'claude {prompt}'], ['my-claude', 'claude -p {prompt}']], 'the fixed agent keeps its id')
+  assert.ok(harness.pending[0].body.agents.every((agent) => Object.keys(agent).join() === 'id,label,command'), 'row flags are not sent')
+  assert.equal(harness.pending[0].body.scenarios[1].agent, 'my-claude', 'the scenario stays pinned to it')
+  harness.reply(200, { ok: true })
+  await harness.flush()
+  assert.ok(harness.text().includes('settings.saved'))
+  assert.equal(harness.host.configReads, readsBefore + 1, 'a confirmed 200 save reads the config back')
+  assert.deepEqual(harness.store.get().config.invalidAgents, [], 'the re-read config carries fresh invalidAgents')
+  harness.dispose()
+}
+
+{
+  // A scenario pinned to an agent missing from the form shows it explicitly.
+  const harness = settingsHarness({
+    agents: [{ id: 'claude', label: 'Claude Code', command: 'claude {prompt}' }],
+    scenarios: [state.config.scenarios[0], { ...state.config.scenarios[1], label: 'Orphan', agent: 'gone' }],
+  })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.className === 'adx-scenario-toggle'
+    && flattenTree(node.props.children).includes('Orphan')))
+  const select = harness.nodes().find((node) => node.type === 'select'
+    && flattenTree(node.props.children).some((child) => child?.props?.value === 'default'))
+  assert.equal(select.props.value, 'gone', 'an unknown pinned agent stays selected')
+  assert.ok(flattenTree(select.props.children).includes('settings.scenarioAgentUnknown:gone'), 'it is labelled as unknown')
+  harness.change(harness.nodes().find((node) => node.props?.placeholder === 'settings.orgsPlaceholder'), 'dirty')
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('settings.save')))
+  assert.equal(harness.pending.length, 0, 'an unknown pinned agent blocks saving')
+  assert.ok(harness.text().includes('settings.invalidScenarioAgent:Orphan,gone'), 'the error names the scenario and the agent')
+  harness.dispose()
+}
+
+{
+  // Relative times advance with the Page minute tick through memoized Section/Row.
+  const generated = Date.parse(snapshot.generatedAt)
+  const clock = { now: generated + 5 * 60_000 }
+  const harness = settingsHarness({ snapshotPayload: snapshot, clock })
+  await harness.flush()
+  const ages = () => harness.text().match(/time\.minutes:\d+/g) || []
+  assert.ok(harness.text().includes('page.updatedAgo:time.minutes:5'), 'header age starts at 5 minutes')
+  assert.ok(ages().length > 2 && ages().every((age) => age === 'time.minutes:5'), 'row ages start at 5 minutes')
+  clock.now += 2 * 60_000
+  await harness.fire(60_000)
+  assert.ok(harness.text().includes('page.updatedAgo:time.minutes:7'), 'the header age re-renders on the minute tick')
+  assert.ok(ages().every((age) => age === 'time.minutes:7'), 'memoized rows re-render their ages on the tick')
+  assert.ok([...harness.timers.values()].some((timer) => timer.delay === 60_000), 'the ticker re-arms itself')
+  harness.dispose()
+}
+
+{
+  // Row and section launch menus: trigger toggling, outside/inside presses,
+  // Escape focus return and the row menu's upward flip, driven through the
+  // document listeners the real effects register.
+  for (const [triggerBottom, flip] of [[100, 'false'], [780, 'true']]) {
+    const harness = settingsHarness({ snapshotPayload: snapshot, layout: { innerHeight: 800, menuHeight: 200, triggerBottom } })
+    await harness.flush()
+    const rowTrigger = () => harness.nodes().find((node) => node.type === 'button' && node.props['aria-label'] === 'launch.title')
+    const menu = () => harness.nodes().find((node) => node.props?.className === 'adx-launch-menu')
+    harness.click(rowTrigger())
+    assert.equal(harness.store.get().openMenu, 'review:pull:1', 'the row trigger opens its menu')
+    assert.equal(menu().props['data-flip'], flip, 'the row menu flips upward only without room below')
+    assert.equal(harness.listeners('mousedown'), 1, 'one open menu listens for outside presses')
+    const firstItem = harness.nodes().find((node) => node.props?.role === 'menuitem')
+    assert.equal(harness.focused(), harness.keyOf(firstItem), 'opening focuses the first menu item')
+    // A real click on the open trigger is mousedown (ignored by the outside
+    // handler) followed by the trigger's own toggle.
+    harness.dispatch('mousedown', rowTrigger())
+    assert.equal(harness.store.get().openMenu, 'review:pull:1', 'pressing the trigger does not close via the document handler')
+    harness.click(rowTrigger())
+    assert.equal(harness.store.get().openMenu, null, 'the trigger click toggles the menu closed')
+    assert.equal(harness.listeners('mousedown'), 0, 'closing removes the document listeners')
+    harness.click(rowTrigger())
+    harness.dispatch('mousedown', firstItem)
+    assert.equal(harness.store.get().openMenu, 'review:pull:1', 'presses inside the menu keep it open')
+    harness.dispatch('mousedown', null)
+    assert.equal(harness.store.get().openMenu, null, 'an outside press closes the menu')
+    harness.click(rowTrigger())
+    harness.dispatch('keydown', null, { key: 'Enter' })
+    assert.equal(harness.store.get().openMenu, 'review:pull:1', 'other keys keep the menu open')
+    harness.dispatch('keydown', null, { key: 'Escape' })
+    assert.equal(harness.store.get().openMenu, null, 'Escape closes the row menu')
+    assert.equal(harness.focused(), harness.keyOf(rowTrigger()), 'Escape returns focus to the row trigger')
+
+    const sectionTrigger = () => harness.nodes().find((node) => node.type === 'button' && node.props['aria-label'] === 'launch.sectionTitle')
+    harness.click(sectionTrigger())
+    assert.equal(harness.store.get().openMenu, 'section:review', 'the section trigger opens its menu')
+    harness.dispatch('mousedown', sectionTrigger())
+    assert.equal(harness.store.get().openMenu, 'section:review', 'pressing the section trigger is left to its toggle')
+    harness.click(sectionTrigger())
+    assert.equal(harness.store.get().openMenu, null, 'the section trigger toggles its menu closed')
+    harness.click(sectionTrigger())
+    harness.dispatch('keydown', null, { key: 'Escape' })
+    assert.equal(harness.store.get().openMenu, null, 'Escape closes the section menu')
+    assert.equal(harness.focused(), harness.keyOf(sectionTrigger()), 'Escape returns focus to the section trigger')
+    harness.click(sectionTrigger())
+    harness.click(rowTrigger())
+    assert.equal(harness.store.get().openMenu, 'review:pull:1', 'opening a row menu replaces the section menu')
+    assert.equal(harness.listeners('mousedown'), 1, 'only the open menu keeps a document listener')
+    harness.dispose()
+    assert.equal(harness.listeners('mousedown') + harness.listeners('keydown'), 0, 'unmount removes menu listeners')
+  }
+}
+
+{
+  const harness = settingsHarness()
+  await harness.flush()
+  const button = (label) => harness.nodes().find((node) => node.type === 'button' && node.props.children.includes(label))
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+  await harness.flush()
+  harness.click(button('settings.agentFind'))
+  assert.equal(harness.pendingDiscoveries.length, 1, 'Find agents starts one real discovery request')
+  assert.deepEqual(harness.pendingDiscoveries[0].body, { commands: ['claude {prompt}', 'codex {prompt}'] },
+    'the scan sends the form commands for the host to exclude')
+  const agentNames = () => harness.nodes().filter((node) => node.props?.['aria-label'] === 'settings.agentName')
+  harness.change(agentNames()[0], 'My edited Claude')
+  const remove = harness.nodes().filter((node) => node.props?.['aria-label'] === 'settings.agentRemove')
+  harness.click(remove[1])
+  harness.click(button('settings.agentAdd'))
+  harness.change(agentNames()[1], 'My local agent')
+  const commands = () => harness.nodes().filter((node) => node.props?.['aria-label'] === 'settings.agentCommand')
+  harness.change(commands()[1], 'aider {prompt}')
+  harness.change(commands()[0], 'my-claude {prompt}')
+  // An older host ignores the commands and returns every installed agent.
+  harness.pendingDiscoveries.shift().resolve({
+    status: 200, ok: true, json: async () => ({ ok: true, found: [
+      { id: 'claude', label: 'Claude Code', command: 'claude {prompt}' },
+      { id: 'codex', label: 'Codex', command: 'codex {prompt}' },
+      { id: 'claude-alias', label: 'Claude alias', command: 'claude {prompt}' },
+      { id: 'aider', label: 'Aider', command: 'aider {prompt}' },
+      { id: 'gemini', label: 'Gemini', command: 'gemini {prompt}' },
+    ] }),
+  })
+  await harness.flush()
+  assert.deepEqual(agentNames().map((node) => node.props.value), ['My edited Claude', 'My local agent', 'Gemini'],
+    'discovery merges into current edits, preserves removals/additions, and deduplicates current commands')
+  harness.click(button('settings.save'))
+  assert.equal(harness.pending.length, 1, 'merged discovery leaves a valid, saveable form')
+  assert.deepEqual(harness.pending[0].body.agents.map((agent) => agent.label), ['My edited Claude', 'My local agent', 'Gemini'])
+  assert.deepEqual(harness.pending[0].body.agents.map((agent) => agent.command), ['my-claude {prompt}', 'aider {prompt}', 'gemini {prompt}'],
+    'saving preserves edited commands without rediscovering their previous executables')
+  harness.reply(200, { ok: true })
+  await harness.flush()
+  harness.dispose()
+}
+
+for (const host of ['current', 'older']) {
+  // The current host parses executables, excludes the sent commands' ones and
+  // reports `executable`; the client then only drops entries sharing an
+  // executable. An older host has neither: exact command strings and the
+  // program word are compared (a quoted path with spaces is not split right
+  // by that heuristic, so a respelled path can still be added).
+  const current = '"/tmp/agent dir/claude" {prompt}'
+  const harness = settingsHarness({ agents: [{ id: 'claude', label: 'Existing', command: current }] })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('settings.agentFind')))
+  const request = harness.pendingDiscoveries.shift()
+  assert.deepEqual(request.body.commands, [current])
+  const found = host === 'current'
+    ? [
+        { id: 'gemini', label: 'Gemini', command: 'gemini {prompt}', executable: 'gemini' },
+        { id: 'gemini-alt', label: 'Gemini again', command: 'gemini --x {prompt}', executable: 'gemini' },
+        { id: 'codex', label: 'Codex', command: 'codex {prompt}', executable: 'codex' },
+      ]
+    : [
+        { id: 'same', label: 'Same command', command: current },
+        { id: 'alias', label: 'Respelled', command: '/tmp/agent\\ dir/claude {prompt}' },
+        { id: 'codex', label: 'Codex', command: 'codex {prompt}' },
+      ]
+  request.resolve({ status: 200, ok: true, json: async () => ({ ok: true, found }) })
+  await harness.flush()
+  assert.deepEqual(harness.nodes().filter((node) => node.props?.['aria-label'] === 'settings.agentName').map((node) => node.props.value),
+    host === 'current' ? ['Existing', 'Gemini', 'Codex'] : ['Existing', 'Respelled', 'Codex'],
+    host + ' host: discovery deduplication')
+  harness.dispose()
+}
+
+{
+  // An older host returns `claude {prompt}` although `claude --model opus
+  // {prompt}` is configured: the program word matches, so no second row.
+  const harness = settingsHarness({ agents: [{ id: 'mine', label: 'Opus Claude', command: 'claude --model opus {prompt}' }] })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('settings.agentFind')))
+  const request = harness.pendingDiscoveries.shift()
+  request.resolve({ status: 200, ok: true, json: async () => ({ ok: true, found: [
+    { id: 'claude', label: 'Claude Code', command: 'claude {prompt}' },
+    { id: 'codex', label: 'Codex', command: 'FOO=1 codex {prompt}' },
+  ] }) })
+  await harness.flush()
+  assert.deepEqual(harness.nodes().filter((node) => node.props?.['aria-label'] === 'settings.agentName').map((node) => node.props.value),
+    ['Opus Claude', 'Codex'], 'an older host cannot add a second row for an already configured program')
+  harness.dispose()
+}
+
+for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-review after changes' }, reasons: { 'review-requested': 'my review requested' } }, undefined]) {
+  // The preview uses the host's prompt labels (`config.labels`); an older host
+  // has none and the preview shows the codes.
+  const harness = settingsHarness({
+    scenarios: [state.config.scenarios[0], state.config.scenarios[2]],
+    configExtra: labels === undefined ? {} : { labels },
+  })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.className === 'adx-scenario-toggle'
+    && flattenTree(node.props.children).includes('review-all')))
+  const preview = flattenTree(harness.nodes().find((node) => node.type === 'pre').props.children).join('')
+  if (labels === undefined) {
+    assert.ok(preview.includes('sections: review + rereview'), 'an older host previews section codes')
+    assert.ok(preview.includes('reason: review-requested'), 'an older host previews reason codes')
+  } else {
+    assert.ok(preview.includes('sections: awaiting my review + re-review after changes'), 'host section labels are previewed')
+    assert.ok(preview.includes('reason: my review requested'), 'host reason labels are previewed')
+    assert.ok(preview.includes('reason: changes-after-my-review'), 'a reason without a host label falls back to its code')
+  }
+  harness.dispose()
+}
+
+{
+  // Row and section launches through the menus: request bodies and toasts.
+  const sections = snapshot.sections.map((section) => section.id !== 'rereview' ? section
+    : { ...section, items: [{ ...section.items[0], rereviewCause: 'author-reply' }] })
+  const harness = settingsHarness({ snapshotPayload: { ...snapshot, sections } })
+  await harness.flush()
+  const item = (label) => harness.nodes().find((node) => node.props?.role === 'menuitem'
+    && flattenTree(node.props.children).some((child) => typeof child === 'string' && child.startsWith(label)))
+  const picker = () => harness.nodes().find((node) => node.type === 'select' && node.props.className?.includes('adx-launch-agent-select'))
+  const rowTrigger = () => harness.nodes().filter((node) => node.type === 'button' && node.props['aria-label'] === 'launch.title')[1]
+  harness.click(rowTrigger())
+  assert.equal(harness.store.get().openMenu, 'rereview:pull:2')
+  assert.equal(picker().props.value, 'claude', 'the default agent is preselected')
+  harness.click(item('link'))
+  await harness.flush()
+  assert.equal(harness.launches.length, 1)
+  assert.equal(harness.launches[0].url, '/triage-desk/launch')
+  assert.equal(harness.launches[0].body.reason, 'author-replied', 'a terminal launch sends the author-replied reason')
+  assert.equal(harness.launches[0].body.agent, 'claude')
+  assert.equal(harness.store.get().openMenu, null, 'a successful launch closes the menu')
+  assert.equal(harness.store.get().toast.text, 'launch.draft:/work')
+  harness.click(rowTrigger())
+  harness.change(picker(), 'dsh')
+  harness.click(item('link'))
+  await harness.flush()
+  assert.equal(harness.launches[1].url, '/triage-desk/prompt')
+  assert.equal(harness.launches[1].body.reason, 'author-replied', 'a DSH draft sends the author-replied reason')
+  assert.equal(harness.store.get().toast.text, 'launch.dshDraft')
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props['aria-label'] === 'launch.sectionTitle'))
+  harness.click(item('review-all (2)'))
+  await harness.flush()
+  assert.deepEqual(harness.launches[2].body, {
+    scenario: 'review-all', section: 'review', agent: 'claude',
+    urls: ['https://github.com/tester/example/pull/1', 'https://github.com/tester/example/pull/2'],
+  }, 'a section launch sends the union of its sections')
+  assert.equal(harness.store.get().toast.text, 'launch.draft:/work' + 'launch.countSuffix:2')
+  harness.dispose()
+}
+
+/* -------------------------------------------- attention badge, counts, snooze */
+
+const tester = { kind: 'user', login: 'tester' }
+const acme = { kind: 'org', login: 'acme' }
+const pull = (section, number, extra = {}) => ({
+  id: 'acme/app#' + number, kind: 'pull', section, source: tester, repo: 'acme/app', number, title: 'PR ' + number,
+  url: 'https://github.com/acme/app/pull/' + number, author: { login: 'octo' }, updatedAt: '2026-01-01T09:00:00.000Z',
+  reason: 'review-requested', checks: { state: 'success', total: 0, failing: [] }, ...extra,
+})
+const branchItem = {
+  ...pull('ci', 0), id: 'tester@acme/app@main', kind: 'branch', number: undefined, ref: 'main', title: 'main',
+  url: 'https://github.com/acme/app/commits/main', commit: 'c1',
+}
+const inbox = (overrides = {}) => ({
+  ok: true, status: 'ok', generatedAt: '2026-01-01T10:00:00.000Z', sources: [tester, acme],
+  settings: { refreshSeconds: 1200 }, warnings: [], meta: {},
+  sections: [
+    { id: 'review', items: overrides.review ?? [pull('review', 1), pull('review', 2, { optional: true }), pull('review', 3, { source: acme })] },
+    { id: 'rereview', items: [] },
+    { id: 'merge', items: [pull('merge', 5, { source: acme })] },
+    { id: 'respond', items: overrides.respond ?? [pull('respond', 4)] },
+    { id: 'ci', items: overrides.ci ?? [pull('ci', 4), branchItem] },
+    { id: 'issues', items: [{ ...pull('issues', 9), id: 'acme/app#9', kind: 'issue', url: 'https://github.com/acme/app/issues/9' }] },
+  ],
+  ...(overrides.status ? { status: overrides.status } : {}),
+})
+const memoryStorage = (initial = {}) => {
+  const data = { ...initial }
+  return {
+    data,
+    getItem: (key) => (key in data ? data[key] : null),
+    setItem: (key, value) => { data[key] = String(value) },
+    removeItem: (key) => { delete data[key] },
+  }
+}
+const fixAll = { id: 'fix-all', label: 'Fix all', scope: 'section', sections: ['respond', 'ci'], prompt: '{links}', agent: 'default', enabled: true }
+function inboxView(harness) {
+  const nodes = harness.nodes()
+  const chip = (label) => {
+    const node = nodes.find((entry) => entry.props?.className === 'adx-chip' && flattenTree(entry.props.children).includes(label))
+    return node ? flattenTree(node.props.children).find((child) => child?.props?.className === 'adx-chip-count').props.children[0] : null
+  }
+  const textOf = (className) => {
+    const node = nodes.find((entry) => entry.props?.className === className)
+    return node ? flattenTree(node.props.children).join('') : null
+  }
+  return {
+    badge: textOf('adx-badge'),
+    total: textOf('adx-total'),
+    all: chip('page.filterAll'),
+    chip: (id) => chip('section.' + id),
+    rows: nodes.filter((node) => node.props?.className === 'adx-row')
+      .map((row) => flattenTree(row.props.children).find((child) => child?.props?.className === 'adx-row-title').props.children[0]),
+    snoozedRows: nodes.filter((node) => node.props?.className === 'adx-row' && node.props['data-snoozed'] === 'true').length,
+    snoozedChip: nodes.find((node) => node.props?.className === 'adx-chip adx-chip--snoozed'),
+    snoozedChipCount: (() => {
+      const node = nodes.find((entry) => entry.props?.className === 'adx-chip adx-chip--snoozed')
+      return node ? flattenTree(node.props.children).find((child) => child?.props?.className === 'adx-chip-count').props.children[0] : null
+    })(),
+    toast: nodes.find((node) => node.props?.className === 'adx-toast'),
+  }
+}
+const rowButton = (harness, title, label, nth = 0) => {
+  const row = harness.nodes().filter((node) => node.props?.className === 'adx-row'
+    && flattenTree(node.props.children).includes(title))[nth]
+  return flattenTree(row.props.children).find((node) => node.type === 'button' && node.props['aria-label'] === label)
+}
+
+{
+  // Badge: actionable items once each, optional review requests left out;
+  // every list count follows the source filter and the search.
+  const harness = settingsHarness({ snapshotPayload: inbox(), withPanel: true })
+  await harness.flush()
+  let view = inboxView(harness)
+  assert.equal(view.badge, '5', 'the badge counts #1, #3, #4 (respond + ci once), #5 and the branch; not the optional #2 or issues')
+  assert.equal(view.total, '5', 'the header total matches the badge')
+  assert.equal(view.all, '8', 'All counts the rows the list shows')
+  assert.equal(view.chip('review'), '3')
+  assert.equal(view.chip('ci'), '2')
+  harness.store.set({ sourceFilter: 'org:acme' })
+  await harness.flush()
+  view = inboxView(harness)
+  assert.deepEqual(view.rows, ['PR 3', 'PR 5'])
+  assert.equal(view.all, '2', 'the All chip follows the source filter')
+  assert.equal(view.chip('review'), '1', 'section chips follow the source filter')
+  assert.equal(view.chip('respond'), null, 'a section without rows for the source has no chip')
+  assert.equal(view.total, '2', 'the header total follows the source filter')
+  assert.equal(view.badge, '5', 'the sidebar badge stays global')
+  harness.store.set({ sourceFilter: 'all' })
+  await harness.flush()
+  harness.change(harness.nodes().find((node) => node.props?.type === 'search'), 'PR 4')
+  view = inboxView(harness)
+  assert.deepEqual(view.rows, ['PR 4', 'PR 4'])
+  assert.equal(view.all, '2', 'chip counts follow the search')
+  assert.equal(view.chip('respond'), '1')
+  assert.equal(view.chip('review'), null)
+  harness.dispose()
+}
+
+// Wednesday 7 January 2026, 15:30 local time: "tomorrow" is Thursday 09:00,
+// "next week" is Monday 12 January 09:00.
+const snoozeNow = new Date(2026, 0, 7, 15, 30).getTime()
+const localTime = (ms) => new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+const tomorrowAt = new Date(2026, 0, 8, 9, 0).getTime()
+const mondayAt = new Date(2026, 0, 12, 9, 0).getTime()
+const snoozeChoice = (harness, title, choice, nth = 0) => {
+  harness.click(rowButton(harness, title, 'snooze.button', nth))
+  harness.click(harness.nodes().find((node) => node.props?.role === 'menuitem' && node.props['data-choice'] === choice))
+}
+const sectionMenuItem = (harness, sectionId, label) => {
+  const section = harness.nodes().find((node) => node.props?.['data-section'] === sectionId)
+  harness.click(flattenTree(section.props.children).find((node) => node.type === 'button' && node.props['aria-label'] === 'launch.sectionTitle'))
+  return harness.nodes().find((node) => node.props?.role === 'menuitem'
+    && flattenTree(node.props.children).some((child) => typeof child === 'string' && child.startsWith(label)))
+}
+const itemLabel = (node) => flattenTree(node.props.children).find((child) => typeof child === 'string' && child.startsWith('Fix all'))
+
+{
+  // The snooze popover behaves like the launch menu.
+  for (const [triggerBottom, flip] of [[100, 'false'], [780, 'true']]) {
+    const harness = settingsHarness({
+      snapshotPayload: inbox(), clock: { now: snoozeNow }, layout: { innerHeight: 800, menuHeight: 200, triggerBottom },
+    })
+    await harness.flush()
+    const trigger = () => rowButton(harness, 'PR 4', 'snooze.button')
+    harness.click(trigger())
+    assert.equal(harness.store.get().openMenu, 'snooze:respond:acme/app#4', 'the clock opens the snooze menu of that row')
+    const menu = harness.nodes().find((node) => node.props?.role === 'menu')
+    assert.equal(menu.props['aria-label'], 'snooze.menu')
+    assert.equal(menu.props['data-flip'], flip, 'the snooze menu flips upward only without room below')
+    assert.equal(trigger().props['aria-expanded'], 'true')
+    const row = harness.nodes().find((node) => node.props?.className === 'adx-row' && node.props['data-menu-open'] === 'true')
+    assert.ok(flattenTree(row.props.children).includes('PR 4'), 'the row with the open snooze menu is lifted')
+    const items = harness.nodes().filter((node) => node.props?.role === 'menuitem')
+    assert.deepEqual(items.map((node) => node.props['data-choice']), ['activity', 'tomorrow', 'next-week'], 'until new activity comes first')
+    assert.equal(harness.focused(), harness.keyOf(items[0]), 'opening focuses the first choice')
+    const texts = items.map((node) => flattenTree(node.props.children).filter((child) => typeof child === 'string'))
+    assert.deepEqual(texts[0], ['snooze.activity', 'snooze.activityHint'])
+    assert.deepEqual(texts[1], ['snooze.tomorrowOption', 'snooze.tomorrow:' + localTime(tomorrowAt)], 'tomorrow shows its local time')
+    assert.deepEqual(texts[2], ['snooze.nextWeekOption',
+      'snooze.on:' + new Date(mondayAt).toLocaleDateString(undefined, { weekday: 'short' }) + ',' + localTime(mondayAt)],
+    'next week shows Monday and its local time')
+    assert.ok(harness.text().includes('snooze.note'), 'the menu says new activity returns items sooner')
+    harness.dispatch('mousedown', trigger())
+    assert.equal(harness.store.get().openMenu, 'snooze:respond:acme/app#4', 'pressing the trigger is left to its toggle')
+    harness.dispatch('keydown', null, { key: 'Escape' })
+    assert.equal(harness.store.get().openMenu, null, 'Escape closes the snooze menu')
+    assert.equal(harness.focused(), harness.keyOf(trigger()), 'Escape returns focus to the clock')
+    harness.click(trigger())
+    harness.dispatch('mousedown', null)
+    assert.equal(harness.store.get().openMenu, null, 'an outside press closes the snooze menu')
+    harness.click(trigger())
+    harness.click(trigger())
+    assert.equal(harness.store.get().openMenu, null, 'the clock toggles its menu closed')
+    assert.equal(harness.listeners('mousedown'), 0)
+    harness.dispose()
+  }
+}
+
+{
+  // Snoozing: id-level hiding, Undo, timed snoozes ending on time and early on
+  // new activity, the Snoozed view, section unions and pruning.
+  const storage = memoryStorage()
+  const stored = () => JSON.parse(storage.data['triage-desk:snoozed:v2'] || '{}')
+  const clock = { now: snoozeNow }
+  const harness = settingsHarness({
+    snapshotPayload: inbox(), withPanel: true, storage, clock, scenarios: [state.config.scenarios[0], fixAll],
+  })
+  await harness.flush()
+  assert.equal(inboxView(harness).snoozedChip, undefined, 'no Snoozed chip without snoozed items')
+
+  snoozeChoice(harness, 'PR 4', 'activity')
+  let view = inboxView(harness)
+  assert.equal(harness.store.get().openMenu, null, 'picking a choice closes the menu')
+  assert.ok(!view.rows.includes('PR 4'), 'a snoozed item leaves every section it was listed in')
+  assert.equal(view.badge, '4', 'a snoozed item leaves the badge')
+  assert.equal(view.all, '6')
+  assert.deepEqual(stored(), { 'acme/app#4': { fingerprint: '2026-01-01T09:00:00.000Z', until: null, at: new Date(snoozeNow).toISOString() } },
+    'v2 entries keep the fingerprint, the end and the snooze time')
+  assert.equal(view.toast.props.role, 'status')
+  assert.deepEqual(flattenTree(view.toast.props.children).filter((child) => typeof child === 'string'), ['snooze.toastActivity', 'snooze.undo'],
+    'the toast names the snooze and offers Undo')
+  assert.ok([...harness.timers.values()].some((timer) => timer.delay === 6000), 'a toast with an action stays 6 s')
+  harness.click(flattenTree(view.toast.props.children).find((node) => node.type === 'button'))
+  view = inboxView(harness)
+  assert.ok(view.rows.includes('PR 4'), 'Undo brings the item back')
+  assert.deepEqual(stored(), {}, 'Undo restores the previous (absent) entry')
+  assert.equal(view.toast, undefined, 'Undo closes the toast')
+  assert.ok(![...harness.timers.values()].some((timer) => timer.delay === 6000), 'Undo cancels the toast timer')
+
+  snoozeChoice(harness, 'PR 4', 'activity')
+  const fixAllItem = sectionMenuItem(harness, 'ci', 'Fix all')
+  assert.equal(itemLabel(fixAllItem), 'Fix all (1)', 'the section union leaves out snoozed items')
+  harness.click(fixAllItem)
+  await harness.flush()
+  assert.deepEqual(harness.launches.at(-1).body.urls, ['https://github.com/acme/app/commits/main'], 'a section launch never includes snoozed items')
+  harness.store.unsnooze('acme/app#4')
+  await harness.flush()
+
+  // Timed snooze: shown in the Snoozed view with its return time, ends on time.
+  harness.click(harness.nodes().find((node) => node.props?.className === 'adx-chip' && flattenTree(node.props.children).includes('section.ci')))
+  snoozeChoice(harness, 'PR 4', 'tomorrow')
+  view = inboxView(harness)
+  assert.equal(flattenTree(view.toast.props.children).find((child) => typeof child === 'string'),
+    'snooze.toastUntil:snooze.tomorrow:' + localTime(tomorrowAt), 'the toast names the return time')
+  assert.equal(stored()['acme/app#4'].until, new Date(tomorrowAt).toISOString())
+  assert.ok([...harness.timers.values()].some((timer) => timer.delay === tomorrowAt - snoozeNow), 'the store waits for the snooze end')
+  assert.equal(view.snoozedChipCount, '1')
+  assert.equal(view.snoozedChip.props['aria-pressed'], 'false')
+  harness.click(view.snoozedChip)
+  view = inboxView(harness)
+  assert.equal(harness.store.get().filter, 'snoozed')
+  assert.equal(view.snoozedChip.props['aria-pressed'], 'true', 'the Snoozed chip is a toggle')
+  assert.deepEqual(view.rows, ['PR 4', 'PR 4'], 'the Snoozed view lists only snoozed items, grouped by section')
+  assert.equal(view.snoozedRows, 2, 'snoozed rows are muted')
+  assert.equal(view.all, '6', 'other counts still exclude snoozed items')
+  assert.ok(harness.text().includes('snooze.returnsAt:snooze.tomorrow:' + localTime(tomorrowAt)), 'rows say when they return')
+  assert.equal(rowButton(harness, 'PR 4', 'snooze.button'), undefined, 'Unsnooze replaces the clock')
+  assert.equal(itemLabel(sectionMenuItem(harness, 'ci', 'Fix all')), 'Fix all (0)', 'section launches never take snoozed rows')
+  harness.dispatch('keydown', null, { key: 'Escape' })
+  harness.click(rowButton(harness, 'PR 4', 'snooze.unsnooze'))
+  assert.equal(harness.store.get().filter, 'ci', 'unsnoozing the last item returns to the previous filter')
+  assert.equal(inboxView(harness).snoozedChip, undefined)
+  assert.deepEqual(stored(), {})
+  assert.ok(![...harness.timers.values()].some((timer) => timer.delay === tomorrowAt - snoozeNow), 'no snooze end is pending')
+  harness.click(harness.nodes().find((node) => node.props?.className === 'adx-chip' && flattenTree(node.props.children).includes('page.filterAll')))
+
+  snoozeChoice(harness, 'PR 1', 'tomorrow')
+  harness.click(inboxView(harness).snoozedChip)
+  assert.ok(harness.text().includes('snooze.returnsAt:snooze.tomorrow:'))
+  clock.now = tomorrowAt - 60_000
+  await harness.fire(60_000)
+  assert.ok(harness.text().includes('snooze.returnsAt:snooze.today:' + localTime(tomorrowAt)), 'the return label follows the minute tick')
+  clock.now = tomorrowAt
+  await harness.fire(tomorrowAt - snoozeNow)
+  view = inboxView(harness)
+  assert.equal(view.badge, '5', 'a timed snooze returns to the badge on time, without a refresh')
+  assert.equal(harness.store.get().filter, 'all', 'the Snoozed view closes when nothing is snoozed any more')
+  assert.ok(view.rows.includes('PR 1'))
+  assert.deepEqual(stored(), {}, 'an expired snooze is pruned')
+
+  // A timed snooze also ends on new activity; plain ones too.
+  snoozeChoice(harness, 'main', 'next-week')
+  snoozeChoice(harness, 'PR 4', 'activity')
+  assert.equal(inboxView(harness).badge, '3')
+  harness.host.snapshot = inbox({ status: 'partial', respond: [pull('respond', 4, { updatedAt: '2026-01-08T10:00:00.000Z' })],
+    ci: [pull('ci', 4, { updatedAt: '2026-01-08T10:00:00.000Z' }), { ...branchItem, commit: 'c2' }] })
+  await harness.store.load(false)
+  await harness.flush()
+  view = inboxView(harness)
+  assert.deepEqual(view.rows.filter((title) => title === 'PR 4' || title === 'branch.title:main'), ['PR 4', 'PR 4', 'branch.title:main'],
+    'new activity (updatedAt, branch commit) ends timed and activity snoozes')
+  assert.deepEqual(stored(), {}, 'changed items are pruned from any snapshot')
+
+  snoozeChoice(harness, 'PR 1', 'activity')
+  harness.host.snapshot = inbox({ status: 'partial', review: [pull('review', 3, { source: acme })] })
+  await harness.store.load(false)
+  await harness.flush()
+  assert.deepEqual(Object.keys(stored()), ['acme/app#1'], 'a partial snapshot never prunes missing items')
+  harness.host.snapshot = inbox({ status: 'stale', review: [] })
+  await harness.store.load(false)
+  await harness.flush()
+  assert.deepEqual(Object.keys(stored()), ['acme/app#1'], 'a stale snapshot never prunes missing items')
+  harness.host.snapshot = inbox({ review: [pull('review', 3, { source: acme })] })
+  await harness.store.load(false)
+  await harness.flush()
+  assert.deepEqual(stored(), {}, 'an ok snapshot prunes snoozes of items that are gone')
+  harness.dispose()
+}
+
+{
+  // The Snoozed chip count follows the source filter and the search.
+  const harness = settingsHarness({ snapshotPayload: inbox(), clock: { now: snoozeNow } })
+  await harness.flush()
+  snoozeChoice(harness, 'PR 1', 'activity')
+  snoozeChoice(harness, 'PR 3', 'next-week')
+  assert.equal(inboxView(harness).snoozedChipCount, '2')
+  harness.store.set({ sourceFilter: 'org:acme' })
+  await harness.flush()
+  assert.equal(inboxView(harness).snoozedChipCount, '1', 'the Snoozed count follows the source filter')
+  harness.store.set({ sourceFilter: 'all' })
+  await harness.flush()
+  harness.change(harness.nodes().find((node) => node.props?.type === 'search'), 'PR 1')
+  assert.equal(inboxView(harness).snoozedChipCount, '1', 'the Snoozed count follows the search')
+  harness.change(harness.nodes().find((node) => node.props?.type === 'search'), 'nothing')
+  assert.equal(inboxView(harness).snoozedChip, undefined, 'no chip when the search leaves no snoozed item')
+  harness.change(harness.nodes().find((node) => node.props?.type === 'search'), '')
+  harness.click(inboxView(harness).snoozedChip)
+  for (const filter of ['all', 'review', 'merge', 'ci']) {
+    harness.store.set({ filter })
+    await harness.flush()
+    assert.equal(inboxView(harness).snoozedRows, 0, 'normal views never show snoozed rows: ' + filter)
+  }
+  harness.dispose()
+}
+
+{
+  // Stored v2 snoozes survive a reload; an expired one does not apply and is pruned.
+  const v2 = memoryStorage({ 'triage-desk:snoozed:v2': JSON.stringify({
+    'acme/app#5': { fingerprint: '2026-01-01T09:00:00.000Z', until: new Date(tomorrowAt).toISOString(), at: '' },
+    'acme/app#1': { fingerprint: '2026-01-01T09:00:00.000Z', until: new Date(snoozeNow - 1).toISOString(), at: '' },
+    'acme/app#3': { fingerprint: 7 },
+  }) })
+  const reloaded = settingsHarness({ snapshotPayload: inbox(), withPanel: true, storage: v2, clock: { now: snoozeNow } })
+  await reloaded.flush()
+  assert.ok(!inboxView(reloaded).rows.includes('PR 5'), 'a pending timed snooze applies after a reload')
+  assert.ok(inboxView(reloaded).rows.includes('PR 1'), 'an expired snooze does not hide the item')
+  assert.ok(inboxView(reloaded).rows.includes('PR 3'), 'a malformed entry is ignored')
+  assert.deepEqual(Object.keys(JSON.parse(v2.data['triage-desk:snoozed:v2'])), ['acme/app#5'], 'the expired entry is pruned')
+  reloaded.dispose()
+
+  for (const broken of [
+    { getItem() { throw new Error('SecurityError') }, setItem() { throw new Error('QuotaExceededError') } },
+    { getItem: () => '{not json', setItem() { throw new Error('QuotaExceededError') }, removeItem() {} },
+    undefined,
+  ]) {
+    const harness = settingsHarness({ snapshotPayload: inbox(), withPanel: true, storage: broken, clock: { now: snoozeNow } })
+    await harness.flush()
+    snoozeChoice(harness, 'PR 1', 'activity')
+    assert.ok(!inboxView(harness).rows.includes('PR 1'), 'snoozing works without usable storage')
+    assert.equal(inboxView(harness).badge, '4')
+    harness.dispose()
+  }
+}
+
+/* ----------------------------------------------------- bulk snooze, selection */
+
+const rowNodes = (harness, title) => harness.nodes().filter((node) => node.props?.className === 'adx-row'
+  && flattenTree(node.props.children).includes(title))
+const checkbox = (harness, title, nth = 0) => flattenTree(rowNodes(harness, title)[nth].props.children)
+  .find((node) => node.props?.role === 'checkbox')
+const selectedTitles = (harness) => harness.nodes().filter((node) => node.props?.className === 'adx-row' && node.props['data-selected'] === 'true')
+  .map((row) => flattenTree(row.props.children).find((child) => child?.props?.className === 'adx-row-title').props.children[0])
+const selectionBar = (harness) => harness.nodes().find((node) => node.props?.className === 'adx-selection-bar')
+const barButton = (harness, label) => flattenTree(selectionBar(harness).props.children)
+  .find((node) => node.type === 'button' && flattenTree(node.props.children).includes(label))
+const sectionButton = (harness, sectionId, labelPrefix) => {
+  const section = harness.nodes().find((node) => node.props?.['data-section'] === sectionId)
+  return section ? flattenTree(section.props.children)
+    .find((node) => node.type === 'button' && String(node.props['aria-label'] || '').startsWith(labelPrefix)) : undefined
+}
+const pickChoice = (harness, choice) => harness.click(harness.nodes().find((node) => node.props?.role === 'menuitem' && node.props['data-choice'] === choice))
+const toastText = (harness) => {
+  const toast = harness.nodes().find((node) => node.props?.className === 'adx-toast')
+  return toast ? flattenTree(toast.props.children).find((child) => typeof child === 'string') : null
+}
+const undo = (harness) => harness.click(flattenTree(harness.nodes().find((node) => node.props?.className === 'adx-toast').props.children)
+  .find((node) => node.type === 'button'))
+
+{
+  // Section snooze: the section's visible rows under the source filter and
+  // search, one toast and one Undo; the Snoozed view unsnoozes a section.
+  const storage = memoryStorage()
+  const stored = () => JSON.parse(storage.data['triage-desk:snoozed:v2'] || '{}')
+  const harness = settingsHarness({ snapshotPayload: inbox(), withPanel: true, storage, clock: { now: snoozeNow } })
+  await harness.flush()
+  harness.store.set({ sourceFilter: 'user:tester' })
+  await harness.flush()
+  const trigger = sectionButton(harness, 'review', 'snooze.section')
+  assert.equal(trigger.props['aria-label'], 'snooze.section:2', 'the section button counts the visible rows (PR 1, PR 2)')
+  harness.click(trigger)
+  assert.equal(harness.store.get().openMenu, 'snooze-section:review')
+  const menu = harness.nodes().find((node) => node.props?.role === 'menu')
+  assert.equal(menu.props['aria-label'], 'snooze.menuMany:2', 'the same popover, titled with the count')
+  assert.equal(harness.focused(), harness.keyOf(harness.nodes().find((node) => node.props?.role === 'menuitem')), 'first choice focused')
+  assert.equal(harness.nodes().find((node) => node.props?.className === 'adx-section-head' && node.props['data-menu-open'] === 'true') !== undefined, true,
+    'the section head with the open popover is lifted')
+  pickChoice(harness, 'tomorrow')
+  assert.deepEqual(Object.keys(stored()).sort(), ['acme/app#1', 'acme/app#2'], 'only the visible rows of the section are snoozed')
+  assert.equal(stored()['acme/app#1'].until, new Date(tomorrowAt).toISOString())
+  assert.equal(toastText(harness), 'snooze.toastManyUntil:2,snooze.tomorrow:' + localTime(tomorrowAt), 'one toast for the bulk snooze')
+  assert.equal(sectionButton(harness, 'review', 'snooze.section'), undefined, 'a section without visible rows has no button')
+  undo(harness)
+  assert.deepEqual(stored(), {}, 'one Undo restores every entry')
+
+  harness.store.set({ sourceFilter: 'all' })
+  await harness.flush()
+  harness.change(harness.nodes().find((node) => node.props?.type === 'search'), 'PR 4')
+  harness.click(sectionButton(harness, 'respond', 'snooze.section:1'))
+  assert.equal(harness.nodes().find((node) => node.props?.role === 'menu').props['aria-label'], 'snooze.menu', 'one row: the plain title')
+  pickChoice(harness, 'activity')
+  assert.deepEqual(Object.keys(stored()), ['acme/app#4'], 'the search narrows the section snooze')
+  assert.equal(toastText(harness), 'snooze.toastActivity')
+  harness.change(harness.nodes().find((node) => node.props?.type === 'search'), '')
+
+  harness.click(sectionButton(harness, 'review', 'snooze.section:3'))
+  pickChoice(harness, 'activity')
+  const before = stored()
+  assert.deepEqual(Object.keys(before).sort(), ['acme/app#1', 'acme/app#2', 'acme/app#3', 'acme/app#4'])
+  harness.click(inboxView(harness).snoozedChip)
+  assert.equal(sectionButton(harness, 'review', 'snooze.section'), undefined, 'the Snoozed view has no section snooze')
+  const unsnoozeAll = sectionButton(harness, 'review', 'snooze.unsnoozeAll')
+  assert.equal(unsnoozeAll.props['aria-label'], 'snooze.unsnoozeAll:3')
+  harness.click(unsnoozeAll)
+  assert.deepEqual(Object.keys(stored()), ['acme/app#4'], 'Unsnooze all acts on that section only')
+  assert.equal(toastText(harness), 'snooze.toastUnsnoozedMany:3')
+  undo(harness)
+  assert.deepEqual(stored(), before, 'Undo restores the exact previous entries')
+  harness.dispose()
+}
+
+const selectToggle = (harness) => harness.nodes().find((node) => node.type === 'button' && String(node.props.className).includes('adx-select-toggle'))
+const headerCheckbox = (harness, sectionId) => {
+  const section = harness.nodes().find((node) => node.props?.['data-section'] === sectionId)
+  return flattenTree(section.props.children).find((node) => node.props?.role === 'checkbox' && String(node.props['aria-label']).startsWith('select.section'))
+}
+const barText = (harness) => flattenTree(selectionBar(harness).props.children.find((child) => child?.props?.className === 'adx-selection-count').props.children).join('')
+const allRows = (harness) => harness.nodes().filter((node) => node.props?.className === 'adx-row')
+
+{
+  // Select mode: explicit entry, a checkbox column before the glyph, rows that
+  // select instead of navigating, section tri-state, Select all, Escape order.
+  const harness = settingsHarness({ snapshotPayload: inbox(), withPanel: true, clock: { now: snoozeNow } })
+  await harness.flush()
+  assert.equal(harness.nodes().filter((node) => node.props?.role === 'checkbox').length, 0, 'no checkbox outside Select mode')
+  assert.ok(allRows(harness).every((row) => flattenTree(row.props.children).some((node) => node.props?.className === 'adx-row-glyph')),
+    'rows keep their type glyph')
+  assert.ok(allRows(harness).every((row) => row.props.onClick === undefined), 'rows do not select outside Select mode')
+  assert.equal(selectionBar(harness), undefined)
+  assert.equal(selectToggle(harness).props['aria-pressed'], 'false')
+  assert.ok(flattenTree(selectToggle(harness).props.children).includes('select.enter'))
+
+  harness.click(selectToggle(harness))
+  assert.equal(selectToggle(harness).props['aria-pressed'], 'true')
+  const row1 = () => rowNodes(harness, 'PR 1')[0]
+  const rowChildren = flattenTree(row1().props.children)
+  assert.ok(rowChildren.findIndex((node) => node.props?.className === 'adx-row-select')
+    < rowChildren.findIndex((node) => node.props?.className === 'adx-row-glyph'), 'the checkbox column comes before the glyph')
+  assert.equal(checkbox(harness, 'PR 1').props['aria-label'], 'select.row:PR 1', 'the checkbox names its row')
+  assert.equal(checkbox(harness, 'PR 1').props['aria-checked'], 'false')
+  const title = rowChildren.find((node) => node.props?.className === 'adx-row-title')
+  assert.equal(title.type, 'span', 'the title is not a link in Select mode')
+  assert.equal(title.props.href, undefined)
+  for (const label of ['launch.title', 'snooze.button', 'page.copy', 'launch.sectionTitle']) {
+    assert.equal(harness.nodes().find((node) => node.type === 'button' && node.props['aria-label'] === label), undefined, 'hidden in Select mode: ' + label)
+  }
+  assert.equal(sectionButton(harness, 'review', 'snooze.section'), undefined, 'no section snooze in Select mode')
+  assert.ok(sectionButton(harness, 'review', 'page.collapse'), 'the chevron stays')
+  assert.equal(headerCheckbox(harness, 'review').props['aria-label'], 'select.section:section.review')
+  assert.equal(headerCheckbox(harness, 'review').props['aria-checked'], 'false')
+  assert.equal(barText(harness), 'select.hint', 'the bar is shown with a hint before anything is selected')
+  assert.ok(barButton(harness, 'select.done'))
+  assert.equal(barButton(harness, 'snooze.button'), undefined)
+
+  harness.click(row1())
+  assert.deepEqual(selectedTitles(harness), ['PR 1'], 'a row click selects')
+  assert.equal(checkbox(harness, 'PR 1').props['aria-checked'], 'true')
+  assert.equal(headerCheckbox(harness, 'review').props['aria-checked'], 'mixed', 'the header is indeterminate')
+  assert.equal(barText(harness), 'select.count:1')
+  harness.click(rowNodes(harness, 'PR 3')[0], { shiftKey: true })
+  assert.deepEqual(selectedTitles(harness), ['PR 1', 'PR 2', 'PR 3'], 'Shift+click selects the range in visible order')
+  assert.equal(headerCheckbox(harness, 'review').props['aria-checked'], 'true')
+  harness.click(headerCheckbox(harness, 'review'))
+  assert.deepEqual(selectedTitles(harness), [], 'the checked header clears its section')
+  harness.click(headerCheckbox(harness, 'review'))
+  assert.deepEqual(selectedTitles(harness), ['PR 1', 'PR 2', 'PR 3'], 'the header selects its whole section')
+  harness.click(checkbox(harness, 'PR 4', 1))
+  assert.deepEqual(selectedTitles(harness), ['PR 1', 'PR 2', 'PR 3', 'PR 4', 'PR 4'], 'a PR in two sections is one selection')
+  assert.equal(barText(harness), 'select.count:4', 'the bar counts items, not rows')
+  harness.click(barButton(harness, 'select.all'))
+  assert.equal(barText(harness), 'select.count:7', 'Select all takes every visible item across sections')
+  harness.click(barButton(harness, 'select.none'))
+  assert.equal(barText(harness), 'select.hint')
+
+  harness.click(row1())
+  harness.change(harness.nodes().find((node) => node.props?.type === 'search'), 'PR')
+  assert.deepEqual(Object.keys(harness.store.get().selected), [], 'a search change clears the selection')
+  assert.equal(harness.store.get().selectMode, true, '... and keeps Select mode')
+  harness.click(row1())
+  harness.store.set({ sourceFilter: 'user:tester' })
+  await harness.flush()
+  assert.deepEqual(Object.keys(harness.store.get().selected), [], 'a source change clears the selection')
+  harness.store.set({ sourceFilter: 'all' })
+  harness.change(harness.nodes().find((node) => node.props?.type === 'search'), '')
+  await harness.flush()
+
+  harness.click(row1())
+  harness.click(rowNodes(harness, 'PR 3')[0])
+  harness.host.snapshot = inbox({ review: [pull('review', 3, { source: acme })] })
+  await harness.store.load(false)
+  await harness.flush()
+  assert.deepEqual(selectedTitles(harness), ['PR 3'], 'a refresh keeps the ids it still shows')
+  harness.click(barButton(harness, 'snooze.button'))
+  harness.dispatch('keydown', null, { key: 'Escape' })
+  assert.equal(harness.store.get().openMenu, null, 'Escape closes the bar popover first')
+  assert.equal(harness.store.get().selectMode, true)
+  assert.deepEqual(selectedTitles(harness), ['PR 3'])
+  harness.dispatch('keydown', null, { key: 'Escape' })
+  assert.equal(harness.store.get().selectMode, false, 'Escape then leaves Select mode')
+  assert.equal(harness.nodes().filter((node) => node.props?.role === 'checkbox').length, 0)
+  assert.equal(selectionBar(harness), undefined)
+  assert.equal(harness.listeners('keydown'), 0, 'no Escape listener outside Select mode')
+
+  harness.click(selectToggle(harness))
+  harness.click(barButton(harness, 'select.done'))
+  assert.equal(harness.store.get().selectMode, false, 'Done leaves Select mode')
+  harness.click(selectToggle(harness))
+  harness.click(selectToggle(harness))
+  assert.equal(harness.store.get().selectMode, false, 'the pressed Select button leaves the mode too')
+  harness.dispose()
+}
+
+{
+  // Bulk actions from the bar end Select mode with one Undo; the Snoozed view unsnoozes.
+  const storage = memoryStorage()
+  const stored = () => JSON.parse(storage.data['triage-desk:snoozed:v2'] || '{}')
+  const harness = settingsHarness({ snapshotPayload: inbox(), withPanel: true, storage, clock: { now: snoozeNow } })
+  await harness.flush()
+  harness.click(selectToggle(harness))
+  harness.click(rowNodes(harness, 'PR 1')[0])
+  harness.click(rowNodes(harness, 'PR 3')[0])
+  harness.click(rowNodes(harness, 'PR 5')[0])
+  harness.click(barButton(harness, 'snooze.button'))
+  const menu = harness.nodes().find((node) => node.props?.role === 'menu')
+  assert.equal(menu.props['aria-label'], 'snooze.menuMany:3')
+  assert.equal(menu.props['data-flip'], 'true', 'the bar popover opens upward')
+  pickChoice(harness, 'next-week')
+  assert.deepEqual(Object.keys(stored()).sort(), ['acme/app#1', 'acme/app#3', 'acme/app#5'])
+  assert.equal(stored()['acme/app#5'].until, new Date(mondayAt).toISOString())
+  assert.equal(harness.store.get().selectMode, false, 'a bulk snooze ends Select mode')
+  assert.equal(selectionBar(harness), undefined)
+  assert.equal(inboxView(harness).badge, '2')
+  assert.ok(toastText(harness).startsWith('snooze.toastManyUntil:3,'))
+  undo(harness)
+  assert.deepEqual(stored(), {}, 'one Undo restores all three')
+  assert.equal(inboxView(harness).badge, '5')
+
+  harness.click(selectToggle(harness))
+  harness.click(rowNodes(harness, 'PR 1')[0])
+  harness.click(rowNodes(harness, 'PR 3')[0])
+  harness.click(barButton(harness, 'snooze.button'))
+  pickChoice(harness, 'activity')
+  assert.equal(toastText(harness), 'snooze.toastManyActivity:2')
+  harness.click(inboxView(harness).snoozedChip)
+  harness.click(selectToggle(harness))
+  assert.equal(barText(harness), 'select.hintUnsnooze', 'the Snoozed view hint')
+  assert.equal(barButton(harness, 'select.all'), undefined, 'nothing selected: only the hint and Done')
+  harness.click(rowNodes(harness, 'PR 1')[0])
+  harness.click(barButton(harness, 'select.all'))
+  assert.equal(barText(harness), 'select.count:2')
+  assert.equal(barButton(harness, 'snooze.button'), undefined, 'the Snoozed view bar does not snooze')
+  harness.click(barButton(harness, 'snooze.unsnooze'))
+  assert.deepEqual(stored(), {}, 'the bar unsnoozes the selection')
+  assert.equal(harness.store.get().selectMode, false, 'a bulk unsnooze ends Select mode')
+  assert.equal(toastText(harness), 'snooze.toastUnsnoozedMany:2')
+  assert.equal(harness.store.get().filter, 'all', 'the empty Snoozed view closes')
+  harness.dispose()
+}
+
+for (const mode of ['dir', 'clone']) {
+  const harness = settingsHarness()
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+  await harness.flush()
+  const button = (key) => harness.nodes().find((node) => node.type === 'button' && node.props.children.includes(key))
+  const field = (id) => harness.nodes().find((node) => node.props?.id === id)
+  const id = mode === 'dir' ? 'adx-clone-dirs' : 'adx-repo-paths'
+  harness.change(field(id), mode === 'dir' ? '/old-root' : 'owner/old = /old-clone')
+  harness.click(button(mode === 'dir' ? 'settings.pickFolder' : 'settings.pickClone'))
+  assert.equal(harness.pendingPickers.length, 1, 'opening a native picker sends one request')
+  harness.change(field(id), mode === 'dir' ? '/edited-root\n/picked-root' : 'owner/new = /edited-clone\nowner/picked \t = /old-picked-clone')
+  harness.pendingPickers.shift().resolve({
+    status: 200, ok: true,
+    json: async () => mode === 'dir'
+      ? { ok: true, path: '/picked-root' }
+      : { ok: true, repo: 'owner/picked', path: '/picked-clone' },
+  })
+  await harness.flush()
+  const expected = mode === 'dir' ? '/edited-root\n/picked-root' : 'owner/new = /edited-clone\nowner/picked = /picked-clone'
+  assert.equal(field(id).props.value, expected, mode + ': picker merges into current edits without resurrecting deleted paths')
+  harness.click(button('settings.save'))
+  assert.deepEqual(harness.pending[0].body[mode === 'dir' ? 'cloneDirs' : 'repoPaths'], mode === 'dir'
+    ? ['/edited-root', '/picked-root']
+    : { 'owner/new': '/edited-clone', 'owner/picked': '/picked-clone' })
+  harness.reply(200, { ok: true })
+  await harness.flush()
+  harness.dispose()
+}
+
+for (const invalid of ['owner/broken /missing-equals', ' = /missing-repository', 'owner/broken = ']) {
+  const harness = settingsHarness()
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+  await harness.flush()
+  const button = (key) => harness.nodes().find((node) => node.type === 'button' && node.props.children.includes(key))
+  const field = () => harness.nodes().find((node) => node.props?.id === 'adx-repo-paths')
+  const text = 'owner/valid = /valid-clone\n \t\n' + invalid
+  harness.change(field(), text)
+  harness.click(button('settings.save'))
+  assert.equal(harness.pending.length, 0, 'malformed mapping must block persistence instead of silently deleting it: ' + invalid)
+  assert.ok(harness.text().includes('settings.invalidRepoPaths:3'), 'validation identifies the invalid line, counting blank lines')
+  assert.equal(field().props.value, text, 'failed validation preserves all mapping text for repair')
+  assert.ok(!button('settings.save').props.disabled, 'invalid mapping remains dirty and repairable')
+  harness.change(field(), 'owner/valid = /valid-clone\n \t\nowner/repaired = /path/with=equals')
+  harness.click(button('settings.save'))
+  assert.equal(harness.pending.length, 1, 'repairing the line allows saving')
+  assert.deepEqual(harness.pending[0].body.repoPaths, {
+    'owner/valid': '/valid-clone', 'owner/repaired': '/path/with=equals',
+  }, 'valid mappings and equals characters inside paths survive the repair')
+  harness.reply(200, { ok: true })
+  await harness.flush()
+  assert.ok(harness.text().includes('settings.saved'), 'repaired mappings can be confirmed saved')
+  harness.dispose()
+}
+
+console.log('render smoke OK (%d bytes of markup; settings success/202/failure/discard guard/discovery/pickers/validation, minute tick and menu interactions exercised)', html.length)

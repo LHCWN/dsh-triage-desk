@@ -1,0 +1,84 @@
+{
+  "name": "dsh-triage-desk",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "GitHub triage inbox: reviews waiting on you, merge-ready pull requests, failing CI, new or assigned issues, and editable terminal launch scenarios for Claude Code, Codex, and other coding agents.",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "host/*.js",
+    "github.js",
+    "launcher.js",
+    "launcher/*.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "README.zh.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "docs/ARCHITECTURE.md",
+    "docs/DEV_LOCAL.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "license": "MIT",
+  "author": "devnullexile",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "github",
+    "pull-requests",
+    "triage",
+    "inbox",
+    "terminal",
+    "claude",
+    "codex",
+    "code-review",
+    "launch-scenarios"
+  ],
+  "engines": {
+    "dsh": ">=0.2.2-rc.2 <0.3.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LHCWN/dsh-triage-desk.git"
+  },
+  "homepage": "https://github.com/LHCWN/dsh-triage-desk#readme",
+  "bugs": {
+    "url": "https://github.com/LHCWN/dsh-triage-desk/issues"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "prepare": "git config core.hooksPath .githooks || true",
+    "prepublishOnly": "npm run check",
+    "check:docs": "node dev/check-docs.mjs",
+    "check": "npm run lint && npm run check:docs && npm run smoke:client && npm run smoke:render && npm run smoke:launcher && npm run smoke:routes && npm run smoke:cache && npm run smoke:snapshot",
+    "test": "npm run check",
+    "smoke:client": "node dev/smoke-client.mjs",
+    "smoke:render": "node dev/smoke-render.mjs",
+    "smoke:launcher": "node dev/smoke-launcher.mjs",
+    "smoke:routes": "node dev/smoke-routes.mjs",
+    "smoke:cache": "node dev/smoke-cache.mjs",
+    "smoke:snapshot": "node dev/smoke-snapshot.mjs",
+    "smoke:host": "node dev/smoke-host.mjs"
+  },
+  "devDependencies": {
+    "eslint": "^10.14.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  }
+}

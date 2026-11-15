@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Triage Desk",
+    "description": "A GitHub triage inbox across personal and organization sources: pull requests waiting for your review or re-review (only new commits or the author replying to you), your own pull requests ready to merge, pull requests and mentions needing your action, failing CI, and new unassigned issues. The organization is detected automatically from your signed-in GitHub CLI account until you set one in the panel's Settings, where you can also change the auto-refresh interval, the green-CI merge rule, bot-review handling, terminal agents, launch scenarios and clone directories; launch scenarios are named, editable prompts that run for one row or for a whole section, Claude Code opens with a native draft while other agents get the prompt on the clipboard. Open it from the Triage entry in the sidebar; the same snapshot is available to the agent through the triage_desk tool, which can also open a terminal with a coding agent for a row. Data is read locally through the signed-in GitHub CLI; nothing is sent anywhere else. Turn the plugin off to stop all requests. Only GitHub is supported; other code hosts are not."
+  }
+}
