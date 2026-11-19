@@ -96,8 +96,11 @@ iTerm2, Ghostty (macOS), GNOME Terminal, Konsole, Xfce Terminal, and Windows
 Terminal open a tab; the others open a window per launch. A saved terminal that
 is not installed falls back to Automatic, and the launch toast says so.
 
-**Prompt delivery.** Claude Code always opens with the prompt as its native
-`--prefill` draft. For every other agent, Settings → **Prompt delivery** offers:
+**Prompt delivery.** Claude Code opens with the prompt as its native
+`--prefill` draft. On Windows that needs Claude Code as an `.exe`: an npm
+install (a `.cmd` shim) is handled like the other agents, because `cmd.exe`
+would not pass the prompt intact. For every other agent, Settings → **Prompt
+delivery** offers:
 
 - **Type into the agent** (default, recommended): a small paste wrapper waits
   until the agent's input box is ready, then pastes the prompt into it without

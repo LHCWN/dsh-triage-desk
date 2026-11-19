@@ -5,10 +5,13 @@
  * received, so the checks are byte-exact:
  *   - a drive-letter working directory with non-ASCII characters and `;`
  *     survives (the UTF-8 BOM makes PowerShell 5.1 read the script as UTF-8);
- *   - prompts with spaces, quotes and trailing backslashes arrive as one
- *     argument, for an .exe agent and for an npm-style `.cmd` shim, and static
- *     arguments follow the same rules;
- *   - the clipboard launcher keeps static arguments;
+ *   - draft prompts with spaces, quotes and trailing backslashes, and a
+ *     hostile one (`"`, `& | < > ^`, `%PATH%`, a line break), arrive at an .exe
+ *     agent as one intact argument, and static arguments follow the same rules
+ *     (the host drafts only an .exe, issue #5);
+ *   - the clipboard launcher keeps static arguments of an npm-style `.cmd` shim;
+ *   - the paste launcher types the hostile prompt into a `.cmd` shim agent
+ *     intact; the command it smuggles in never runs;
  *   - every launcher removes itself and its per-launch directory.
  *
  * Run with `npm run smoke:windows`. Not shipped in the npm package.
@@ -18,7 +21,15 @@ import { spawnSync } from 'node:child_process'
 import { promises as fs, existsSync, realpathSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { buildWindowsClipboardLauncherScript, buildWindowsDraftLauncherScript } from '../launcher.js'
+import { fileURLToPath } from 'node:url'
+import {
+  PASTE_WRAPPER_CS,
+  buildWindowsClipboardLauncherScript,
+  buildWindowsDraftLauncherScript,
+  buildWindowsPasteLauncherScript,
+  sanitizePastePrompt,
+} from '../launcher.js'
+import { assertUnsentPaste } from './fixtures/paste.mjs'
 import { removeOnExit } from './fixtures/platform.mjs'
 
 if (process.platform !== 'win32') {
@@ -40,6 +51,10 @@ await fs.writeFile(recorder, [
 ].join('\n'))
 const shim = path.join(tools, 'record-args.cmd')
 await fs.writeFile(shim, '@"' + process.execPath + '" "%~dp0record-args.mjs" %*\r\n')
+// The paste smoke's fake TUI agent behind the same kind of npm-style shim.
+const fakeAgent = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-agent.mjs')
+const agentShim = path.join(tools, 'fake-agent.cmd')
+await fs.writeFile(agentShim, '@"' + process.execPath + '" "' + fakeAgent + '" %*\r\n')
 
 // The clone directory: drive letter, non-ASCII characters, a space and `;`.
 const clone = path.join(root, '工作 repo; ü')
@@ -63,7 +78,7 @@ async function check(name, callback) {
  * Writes `script` with a UTF-8 BOM, as the host does (the host's own write is
  * checked by smoke:launcher), into its own launch directory and runs it.
  */
-async function runLauncher(build) {
+async function runLauncher(build, timeout = 60_000) {
   // Under root, so a launcher that fails to remove it is still cleaned up.
   const dir = await fs.mkdtemp(path.join(root, 'triage-desk-'))
   const record = path.join(root, 'record-' + path.basename(dir) + '.json')
@@ -73,33 +88,53 @@ async function runLauncher(build) {
   const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptFile], {
     env: { ...process.env, TD_RECORD: record },
     encoding: 'utf8',
-    timeout: 60_000,
+    timeout,
   })
   const recorded = existsSync(record) ? JSON.parse(await fs.readFile(record, 'utf8')) : null
   return { result, recorded, dirLeft: existsSync(dir) }
 }
 
 const PROMPT = 'Review C:\\work\\a b with "quotes" and a trailing backslash\\'
+// cmd.exe would run `type nul > canary` if the prompt reached it on a command
+// line: in `x \"y & ...` the `&` is outside cmd.exe's quotes. The canary path
+// is unquoted there, and cmd.exe ends a redirection target at whitespace or
+// `;` `,` `=`: such a path would send the injected write elsewhere and the
+// check would pass falsely. So the canary goes in the first plain directory:
+// the smoke's temp root, else the repository, else the drive root.
+const PLAIN_PATH = /^[A-Za-z]:\\[\w.~\\-]*$/
+async function plainDirectory() {
+  if (PLAIN_PATH.test(root)) return root
+  for (const base of [fileURLToPath(new URL('..', import.meta.url)), path.parse(root).root]) {
+    if (!PLAIN_PATH.test(base)) continue
+    const dir = await fs.mkdtemp(path.join(base, 'td-canary-'))
+    removeOnExit(dir)
+    return dir
+  }
+  throw new Error('no directory without whitespace or cmd.exe delimiters for the injection canary under ' + root)
+}
+const canary = path.join(await plainDirectory(), 'injected.txt')
+assert.match(canary, PLAIN_PATH, 'the canary path has nothing cmd.exe would split')
+const HOSTILE = 'Review x "y & type nul > ' + canary + ' & rem | more < in > out ^ caret %PATH%\n' +
+  'second line: "a & b" | c < d > e ^ f %PATH% end'
+assert.equal(sanitizePastePrompt(HOSTILE), HOSTILE, 'the hostile prompt has nothing the paste removes')
 
-for (const [label, agentCommand] of [
-  ['an .exe agent', '"' + process.execPath + '" "' + recorder + '" {prompt}'],
-  ['an npm-style .cmd shim', '"' + shim + '" {prompt}'],
-]) {
-  await check('draft launcher passes the prompt to ' + label + ' as one argument', async () => {
+for (const [label, prompt] of [['the prompt', PROMPT], ['a hostile prompt', HOSTILE]]) {
+  await check('draft launcher passes ' + label + ' to an .exe agent as one intact argument', async () => {
     const run = await runLauncher((dir) => {
       const promptFile = path.join(dir, 'prompt.txt')
-      writeFileSync(promptFile, PROMPT, 'utf8')
+      writeFileSync(promptFile, prompt, 'utf8')
       return buildWindowsDraftLauncherScript({
         cwd: clone,
         title: 'Triage Desk: a;b [Agent]',
-        agentCommand,
+        agentCommand: '"' + process.execPath + '" "' + recorder + '" {prompt}',
         promptFile,
         draftFlag: '--prefill',
       })
     })
     assert.ok(run.recorded, 'the agent ran: ' + run.result.stdout + run.result.stderr)
-    assert.deepEqual(run.recorded.argv, ['--prefill', PROMPT])
+    assert.deepEqual(run.recorded.argv, ['--prefill', prompt])
     assert.equal(realpathSync.native(run.recorded.cwd), realpathSync.native(clone), 'the non-ASCII drive-letter cwd survives')
+    assert.equal(existsSync(canary), false, 'nothing in the prompt ran')
     assert.equal(run.dirLeft, false, 'the launcher removes its directory')
   })
 }
@@ -145,6 +180,30 @@ await check('clipboard launcher keeps static arguments of a .cmd shim', async ()
   assert.deepEqual(empty.recorded.argv, ['--model', '', '--yes'])
   assert.equal(realpathSync.native(run.recorded.cwd), realpathSync.native(clone))
   assert.equal(run.dirLeft, false)
+})
+
+await check('paste launcher types a hostile prompt into a .cmd shim agent intact', async () => {
+  const result = path.join(root, 'paste-result.json')
+  const run = await runLauncher((dir) => {
+    const promptFile = path.join(dir, 'prompt.txt')
+    const wrapperFile = path.join(dir, 'paste-host.cs')
+    // As the host writes them (host/launch.js, paste mode).
+    writeFileSync(promptFile, sanitizePastePrompt(HOSTILE), 'utf8')
+    writeFileSync(wrapperFile, PASTE_WRAPPER_CS, 'utf8')
+    return buildWindowsPasteLauncherScript({
+      cwd: clone,
+      title: 'Triage Desk: paste [Claude Code]',
+      bareCommand: '"' + agentShim + '" plain "' + result + '"',
+      wrapperFile,
+      promptFile,
+    })
+  }, 90_000)
+  const output = run.result.stdout + run.result.stderr
+  assert.ok(existsSync(result), 'the agent ran: ' + output)
+  assertUnsentPaste(JSON.parse(await fs.readFile(result, 'utf8')), HOSTILE, output)
+  assert.doesNotMatch(output, /could not type the prompt/, 'the ConPTY host ran')
+  assert.equal(existsSync(canary), false, 'nothing in the prompt ran')
+  assert.equal(run.dirLeft, false, 'the launcher removes its prompt, host source and directory')
 })
 
 const failed = checks.filter((entry) => entry.ok === false)

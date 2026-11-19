@@ -21,6 +21,7 @@ import {
   buildWindowsDraftLauncherScript,
   buildWindowsLoginLauncherScript,
   buildWindowsPasteLauncherScript,
+  draftCommandFor,
   PASTE_WRAPPER_CS,
   PASTE_WRAPPER_PY,
   parseRepoUrl,
@@ -197,7 +198,8 @@ export function createLaunch({
     }
     // Run exactly the binary detection found, and make its directory
     // reachable for `#!/usr/bin/env node` shims (see agentPathLines). Windows
-    // keeps PowerShell's own command resolution.
+    // keeps PowerShell's own command resolution, except for a native draft
+    // (draftCommandFor).
     const detectedPath = status !== undefined && status.available === true && typeof status.path === 'string'
       ? status.path
       : ''
@@ -239,12 +241,14 @@ export function createLaunch({
     // Native draft support (Claude Code --prefill) opens the agent with the
     // prompt already in its composer. Other agents get it typed into their
     // input box by the paste wrapper when it can run here, else via the
-    // clipboard; `delivery.reason` says why paste was not used.
+    // clipboard; `delivery.pasteBlocked` says why paste was not used.
+    // draftCommandFor decides when the draft may be used (Windows: an .exe).
     const windows = platform === 'win32'
+    const draftCommand = draftCommandFor(agent, detectedPath, platform)
     let mode = 'clipboard'
     let pasteBlocked = null
     let python = null
-    if (typeof agent.draftFlag === 'string') {
+    if (draftCommand !== null) {
       mode = 'draft'
     } else if (launcherSettings.promptDelivery === 'paste') {
       const support = await detectPasteSupport().catch(() => ({ available: false, reason: 'python-missing', python: null }))
@@ -293,7 +297,7 @@ export function createLaunch({
         script = buildWindowsDraftLauncherScript({
           cwd: clonePath,
           title: windowTitle,
-          agentCommand: agent.command,
+          agentCommand: draftCommand,
           promptFile,
           draftFlag: agent.draftFlag,
         })
@@ -304,7 +308,7 @@ export function createLaunch({
           bareCommand: bareAgentCommand(agent.command, platform),
         })
       } else if (mode === 'draft') {
-        const command = buildDraftCommand(launchCommand, prompt, agent.draftFlag)
+        const command = buildDraftCommand(draftCommand, prompt, agent.draftFlag)
         script = buildDraftLauncherScript({ cwd: clonePath, title: windowTitle, command, binDir, platform })
       } else {
         script = buildClipboardLauncherScript({

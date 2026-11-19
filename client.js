@@ -283,7 +283,7 @@ window.__ModuleLoader__.load({
       'settings.terminalTabs': 'Each launch opens a tab in the current {app} window; launching the same agent on the same item again switches to its tab.',
       'settings.terminalWindows': 'Each launch opens a new {app} window.',
       'settings.promptDelivery': 'Prompt delivery',
-      'settings.promptDeliveryHint': 'For agents without a native draft. Claude Code always opens with the prompt as its own draft.',
+      'settings.promptDeliveryHint': 'For agents without a native draft. Claude Code opens with the prompt as its own draft (on Windows only as an .exe; an npm .cmd install gets the prompt this way).',
       'settings.deliveryPaste': 'Type into the agent',
       'settings.deliveryPasteHint': 'The prompt appears in the agent\'s input box, unsent. Review it, then press Enter.',
       'settings.deliveryRecommended': 'Recommended',
@@ -568,7 +568,7 @@ window.__ModuleLoader__.load({
       'settings.terminalTabs': '每次启动都会在当前 {app} 窗口中打开一个标签页；在同一条目上再次启动同一智能体会切换到它的标签页。',
       'settings.terminalWindows': '每次启动都会打开一个新的 {app} 窗口。',
       'settings.promptDelivery': '提示传递方式',
-      'settings.promptDeliveryHint': '适用于没有原生草稿功能的智能体。Claude Code 始终以自己的草稿方式打开提示。',
+      'settings.promptDeliveryHint': '适用于没有原生草稿功能的智能体。Claude Code 以自己的草稿方式打开提示（在 Windows 上仅限 .exe；通过 npm 安装的 .cmd 也按此方式接收提示）。',
       'settings.deliveryPaste': '填入智能体',
       'settings.deliveryPasteHint': '提示会出现在智能体的输入框中，尚未发送。检查后按 Enter。',
       'settings.deliveryRecommended': '推荐',
@@ -2532,9 +2532,19 @@ window.__ModuleLoader__.load({
       return 'Ctrl+V'
     }
 
-    /** How a launch hands `agent` its prompt: `draft`, `paste` or `clipboard` (mirrors the host). */
+    /**
+     * How a launch hands `agent` its prompt: `draft`, `paste` or `clipboard`.
+     * The host reports `detectedAgents[id].draft` (its draftCommandFor); when
+     * that field is absent, an agent with a draft flag drafts except on
+     * Windows, where the host drafts only a detected `.exe`.
+     */
     function promptDeliveryFor(config, agent) {
-      if (agent && typeof agent.draftFlag === 'string' && agent.draftFlag !== '') return 'draft'
+      const detected = (agent && (configValue(config, 'detectedAgents') || {})[agent.id]) || {}
+      const draft = typeof detected.draft === 'boolean'
+        ? detected.draft
+        : configValue(config, 'platform') !== 'win32' &&
+          Boolean(agent && typeof agent.draftFlag === 'string' && agent.draftFlag !== '')
+      if (draft) return 'draft'
       const paste = configValue(config, 'promptPaste')
       if (configValue(config, 'promptDelivery') !== 'clipboard' && paste && paste.available === true) return 'paste'
       return 'clipboard'
