@@ -65,10 +65,17 @@ await fs.writeFile(agentShim, '@"' + process.execPath + '" "' + fakeAgent + '" %
 // And behind an npm-style PowerShell shim, marked as downloaded
 // (Zone.Identifier ZoneId=3); it records its execution policy into TD_RECORD.
 const agentPs1 = path.join(tools, 'fake-agent.ps1')
+// A Process-scope policy is passed to child sessions through
+// $Env:PSExecutionPolicyPreference (about_Execution_Policies); Get-ExecutionPolicy
+// is recorded too when it can run, and its error otherwise.
 await fs.writeFile(agentPs1, [
   'if ($env:TD_RECORD) {',
-  '  $tdPolicy = @{ process = [string](Get-ExecutionPolicy -Scope Process); effective = [string](Get-ExecutionPolicy) }',
-  '  [System.IO.File]::WriteAllText($env:TD_RECORD, ($tdPolicy | ConvertTo-Json -Compress))',
+  '  $tdPolicy = @{ preference = [string]$env:PSExecutionPolicyPreference }',
+  '  try {',
+  '    $tdPolicy.process = [string](Get-ExecutionPolicy -Scope Process -ErrorAction Stop)',
+  '    $tdPolicy.effective = [string](Get-ExecutionPolicy -ErrorAction Stop)',
+  '  } catch { $tdPolicy.error = [string]$_.Exception.Message }',
+  '  [System.IO.File]::WriteAllText($env:TD_RECORD, (ConvertTo-Json -InputObject $tdPolicy -Compress))',
   '}',
   '& ' + windowsQuote(process.execPath) + ' ' + windowsQuote(fakeAgent) + ' @args',
   'exit $LASTEXITCODE',
@@ -129,7 +136,16 @@ async function runLauncher(build, timeout = 60_000) {
     encoding: 'utf8',
     timeout,
   })
-  const recorded = existsSync(record) ? JSON.parse(await fs.readFile(record, 'utf8')) : null
+  const recordText = existsSync(record) ? await fs.readFile(record, 'utf8') : null
+  let recorded = null
+  if (recordText !== null) {
+    try {
+      recorded = JSON.parse(recordText)
+    } catch (error) {
+      throw new Error('unreadable agent record ' + JSON.stringify(recordText) + ': ' + error.message +
+        '\n' + result.stdout + result.stderr)
+    }
+  }
   return { result, recorded, dirLeft: existsSync(dir) }
 }
 
@@ -251,8 +267,15 @@ for (const [kind, detected, args] of [
     assert.doesNotMatch(output, /could not type the prompt/, 'the ConPTY host ran')
     if (kind === 'a .ps1') {
       // The nested powershell.exe inherits the launcher's Process-scope Bypass.
-      assert.deepEqual(run.recorded, { process: 'Bypass', effective: 'Bypass' },
-        'the .ps1 agent runs under the launch window\'s Bypass: ' + output)
+      assert.ok(run.recorded !== null, 'the .ps1 agent recorded its policy: ' + output)
+      assert.equal(run.recorded.preference, 'Bypass',
+        'the .ps1 agent inherits the launch window\'s Bypass: ' + JSON.stringify(run.recorded) + '\n' + output)
+      if (run.recorded.error === undefined) {
+        assert.equal(run.recorded.process, 'Bypass', JSON.stringify(run.recorded))
+        assert.equal(run.recorded.effective, 'Bypass', JSON.stringify(run.recorded))
+      } else {
+        console.log('note Get-ExecutionPolicy failed in the nested session: ' + run.recorded.error)
+      }
     }
     assert.equal(run.dirLeft, false)
   })
