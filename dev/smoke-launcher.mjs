@@ -1476,11 +1476,15 @@ check('Windows draft passes --flag= and the prompt as one expression argument', 
 })
 
 check('the detected executable is pinned without breaking the rule', () => {
-  assert.equal(withAgentExecutable('claude {prompt}', '/opt/x/claude'), '/opt/x/claude {prompt}')
-  assert.equal(withAgentExecutable('FOO="a b" claude --x {prompt}', '/opt/a b/claude'), 'FOO="a b" \'/opt/a b/claude\' --x {prompt}')
-  assert.equal(withAgentExecutable('/usr/local/bin/claude {prompt}', '/opt/x/claude'), '/usr/local/bin/claude {prompt}')
-  assert.equal(withAgentExecutable('claude {prompt}', 'relative/claude'), 'claude {prompt}')
-  assert.equal(withAgentExecutable('claude {prompt}', '/opt/$(x)/claude'), 'claude {prompt}', 'never pin into a rejected command')
+  // POSIX pinning; pass the platform so the check means the same on a Windows runner.
+  for (const platform of ['linux', 'darwin']) {
+    const pin = (command, detected) => withAgentExecutable(command, detected, platform)
+    assert.equal(pin('claude {prompt}', '/opt/x/claude'), '/opt/x/claude {prompt}')
+    assert.equal(pin('FOO="a b" claude --x {prompt}', '/opt/a b/claude'), 'FOO="a b" \'/opt/a b/claude\' --x {prompt}')
+    assert.equal(pin('/usr/local/bin/claude {prompt}', '/opt/x/claude'), '/usr/local/bin/claude {prompt}')
+    assert.equal(pin('claude {prompt}', 'relative/claude'), 'claude {prompt}')
+    assert.equal(pin('claude {prompt}', '/opt/$(x)/claude'), 'claude {prompt}', 'never pin into a rejected command')
+  }
 })
 
 check('Windows pins the detected executable as a double-quoted absolute path, or keeps the command', () => {
