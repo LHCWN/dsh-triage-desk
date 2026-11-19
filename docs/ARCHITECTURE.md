@@ -16,17 +16,16 @@ import the launcher layer only through `launcher.js` and the data layer through
   `host/` factories, the exact web routes, the `triage_desk` tool and the
   system-prompt section. It keeps its public exports (`apply`, `inject`,
   `name`, `createSnapshotCache`, `shouldCacheSnapshot`, `hasTransientWarnings`).
-  `wire(config)` builds the settings and the `host/` factories; an
-  `internal/update` listener rebuilds them for a saved config instead of
-  letting the loader restart the plugin, so the tool and the routes stay
-  registered (a config that cannot be wired falls back to the restart).
-  Routes and the tool read the current wiring when a request starts.
-  `dev/smoke-routes.mjs` models the loader's update waterfall (`startFiber`).
+  `wire(config, previous)` builds the settings and the `host/` factories,
+  keeping the parts whose inputs a save left unchanged. An `internal/update`
+  listener applies a saved config through it without restarting the plugin and
+  falls back to the restart when wiring throws.
 - `host/` — one responsibility per module, each a factory over `{ ctx,
   settings, platform, log, … }` where it needs plugin state:
   - `snapshot-cache.js` — `createSnapshotCache` (single flight, queued forced
-    refresh, `raceAbort` so a cancelled caller never cancels the shared build),
-    `shouldCacheSnapshot`, `hasTransientWarnings`;
+    refresh, `retire` for a replaced cache, `raceAbort` so a cancelled caller
+    never cancels the shared build), `shouldCacheSnapshot`,
+    `hasTransientWarnings`;
   - `snapshot.js` — `createSnapshotStore`: build, adaptive TTL on low quota, and
     the stale fallback (a failed build serves the previous snapshot as `stale`
     with `meta.lastError`);

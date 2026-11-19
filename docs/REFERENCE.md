@@ -508,8 +508,10 @@ This section was checked against DSH 0.2.2-rc.5; the plugin supports
 - **Settings** are saved through DSH's config editor into the profile patch and
   applied to the running plugin without a restart: the `triage_desk` tool and
   the routes stay registered, so an agent calling the tool during a save is
-  answered (with the settings it started under). The snapshot cache starts
-  over and the panel refreshes itself. The host answers only after the profile
+  answered (with the settings it started under). A save that leaves the GitHub
+  settings (sources, refresh interval, green checks, bot reviews) unchanged
+  keeps the cached snapshot; otherwise the next read builds a new one. The
+  panel refreshes itself. The host answers only after the profile
   write and the loader applied the config, and only then does the panel show
   **Saved**. A failed write keeps the form open with the
   error and the edits available for retry. Settings reads started before a
