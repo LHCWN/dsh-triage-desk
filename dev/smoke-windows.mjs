@@ -96,8 +96,24 @@ async function runLauncher(build, timeout = 60_000) {
 
 const PROMPT = 'Review C:\\work\\a b with "quotes" and a trailing backslash\\'
 // cmd.exe would run `type nul > canary` if the prompt reached it on a command
-// line: in `x \"y & ...` the `&` is outside cmd.exe's quotes.
-const canary = path.join(root, 'injected.txt')
+// line: in `x \"y & ...` the `&` is outside cmd.exe's quotes. The canary path
+// is unquoted there, and cmd.exe ends a redirection target at whitespace or
+// `;` `,` `=`: such a path would send the injected write elsewhere and the
+// check would pass falsely. So the canary goes in the first plain directory:
+// the smoke's temp root, else the repository, else the drive root.
+const PLAIN_PATH = /^[A-Za-z]:\\[\w.~\\-]*$/
+async function plainDirectory() {
+  if (PLAIN_PATH.test(root)) return root
+  for (const base of [fileURLToPath(new URL('..', import.meta.url)), path.parse(root).root]) {
+    if (!PLAIN_PATH.test(base)) continue
+    const dir = await fs.mkdtemp(path.join(base, 'td-canary-'))
+    removeOnExit(dir)
+    return dir
+  }
+  throw new Error('no directory without whitespace or cmd.exe delimiters for the injection canary under ' + root)
+}
+const canary = path.join(await plainDirectory(), 'injected.txt')
+assert.match(canary, PLAIN_PATH, 'the canary path has nothing cmd.exe would split')
 const HOSTILE = 'Review x "y & type nul > ' + canary + ' & rem | more < in > out ^ caret %PATH%\n' +
   'second line: "a & b" | c < d > e ^ f %PATH% end'
 assert.equal(sanitizePastePrompt(HOSTILE), HOSTILE, 'the hostile prompt has nothing the paste removes')

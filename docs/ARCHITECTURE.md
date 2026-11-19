@@ -246,7 +246,8 @@ terminal picker), `promptPaste` (detectPasteSupport; null means unknown and the
 launch menu assumes the clipboard), `platform` (paste keys in hints and toasts),
 the launch result's `terminal` and `delivery: { mode, pasteBlocked, platform }`,
 `detectedAgents[id].executable`, `detectedAgents[id].draft` (whether the
-launch uses the native draft; absent → the agent's draft flag decides), review
+launch uses the native draft; absent → the agent's draft flag decides, except
+on `win32`, where absent means no draft), review
 items' `optional` flag (absent → counted), and the optional `{ commands }` body
 of `POST /triage-desk/agents/find` (the host leaves out agents whose executable
 is already configured; an oversized or non-JSON body is a 400; an older host

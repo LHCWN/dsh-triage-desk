@@ -2535,13 +2535,15 @@ window.__ModuleLoader__.load({
     /**
      * How a launch hands `agent` its prompt: `draft`, `paste` or `clipboard`.
      * The host reports `detectedAgents[id].draft` (its draftCommandFor); when
-     * that field is absent, every agent with a draft flag drafts.
+     * that field is absent, an agent with a draft flag drafts except on
+     * Windows, where the host drafts only a detected `.exe`.
      */
     function promptDeliveryFor(config, agent) {
       const detected = (agent && (configValue(config, 'detectedAgents') || {})[agent.id]) || {}
       const draft = typeof detected.draft === 'boolean'
         ? detected.draft
-        : Boolean(agent && typeof agent.draftFlag === 'string' && agent.draftFlag !== '')
+        : configValue(config, 'platform') !== 'win32' &&
+          Boolean(agent && typeof agent.draftFlag === 'string' && agent.draftFlag !== '')
       if (draft) return 'draft'
       const paste = configValue(config, 'promptPaste')
       if (configValue(config, 'promptDelivery') !== 'clipboard' && paste && paste.available === true) return 'paste'

@@ -1137,18 +1137,19 @@ for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-
 
   // The host's `detectedAgents[id].draft` decides when present (above it is
   // absent and the draft flag decides): `false` for a Windows `.cmd` shim.
-  for (const [draft, via] of [[true, 'draft'], [false, 'paste']]) {
+  // Absent on Windows (no host verdict, e.g. a failed probe) means no draft.
+  for (const [name, claude, via] of [
+    ['draft: true', { available: true, path: 'C:\\bin\\claude.exe', executable: 'claude', draft: true }, 'draft'],
+    ['draft: false', { available: true, path: 'C:\\npm\\claude.cmd', executable: 'claude', draft: false }, 'paste'],
+    ['draft absent', { available: null, path: null, reason: 'probe-failed', executable: 'claude' }, 'paste'],
+  ]) {
     const windowsMenu = settingsHarness({
       snapshotPayload: snapshot,
-      configExtra: {
-        ...configExtra,
-        platform: 'win32',
-        detectedAgents: { claude: { available: true, path: 'C:\\npm\\claude.cmd', executable: 'claude', draft } },
-      },
+      configExtra: { ...configExtra, platform: 'win32', detectedAgents: { claude } },
     })
     await windowsMenu.flush()
     windowsMenu.click(windowsMenu.nodes().filter((node) => node.type === 'button' && node.props['aria-label'] === 'launch.title')[0])
-    assert.ok(windowsMenu.text().includes('launch.via.' + via + ':GNOME Terminal'), 'draft: ' + draft + ' → ' + via)
+    assert.ok(windowsMenu.text().includes('launch.via.' + via + ':GNOME Terminal'), name + ' → ' + via)
     windowsMenu.dispose()
   }
 }

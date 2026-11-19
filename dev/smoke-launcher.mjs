@@ -57,6 +57,7 @@ import {
   remoteToRepo,
   withAgentExecutable,
   withWindowsAgentExecutable,
+  draftCommandFor,
   PASTE_TRUST_PATTERN,
   TERMINAL_CATALOG,
   buildGhosttyTabAppleScript,
@@ -1129,6 +1130,7 @@ await checkAsync('Windows keeps the native draft for an .exe agent only; .cmd/.b
   const cases = [
     { name: 'an .exe agent', path: 'C:\\bin\\claude.exe', mode: 'draft' },
     { name: 'an .exe agent under a path with spaces and a quote', path: "C:\\Program Files (x86)\\O'Neil\\claude.EXE", mode: 'draft' },
+    { name: 'an .exe agent spelled with forward slashes', path: 'C:/tools/claude.exe', pinned: 'C:\\tools\\claude.exe', mode: 'draft' },
     { name: 'an npm .cmd shim', path: 'C:\\npm\\claude.cmd', mode: 'paste' },
     { name: 'a .BAT file', path: 'C:\\tools\\CLAUDE.BAT', mode: 'paste' },
     { name: 'a .ps1 shim', path: 'C:\\npm\\claude.ps1', mode: 'paste' },
@@ -1137,7 +1139,7 @@ await checkAsync('Windows keeps the native draft for an .exe agent only; .cmd/.b
     { name: 'a .cmd shim with clipboard delivery', path: 'C:\\npm\\claude.cmd', mode: 'clipboard', config: { promptDelivery: 'clipboard' } },
   ]
   try {
-    for (const { name, path: detected, build = '10.0.22631', mode, blocked = null, config } of cases) {
+    for (const { name, path: detected, pinned = detected, build = '10.0.22631', mode, blocked = null, config } of cases) {
       os.release = () => build
       await withPlatformHost('win32', (spec, handle) => {
         // An empty path fails the probe, so detection cannot resolve the agent.
@@ -1154,7 +1156,7 @@ await checkAsync('Windows keeps the native draft for an .exe agent only; .cmd/.b
         const script = [...files.entries()].find(([file]) => file.endsWith('launch.ps1'))?.[1].toString('utf8') || ''
         assert.equal(script.includes('--prefill'), mode === 'draft', name + ': the prompt argument is used only for a native draft')
         if (mode === 'draft') {
-          const quoted = '& ' + windowsQuote(detected) + ' '
+          const quoted = '& ' + windowsQuote(pinned) + ' '
           assert.ok(script.split('\n').some((line) => line.trimStart().startsWith(quoted)), name + ': the draft runs the detected .exe')
           assert.ok(!script.includes("& 'claude'"), name + ': the draft never runs the bare name')
         }
@@ -1331,6 +1333,19 @@ check('a Windows draft pins the detected executable or refuses to', () => {
   assert.equal(withWindowsAgentExecutable('claude {prompt}', '/opt/claude.exe'), null, 'not a Windows absolute path')
   assert.equal(withWindowsAgentExecutable('FOO=1 claude {prompt}', 'C:\\bin\\claude.exe'), null, 'a leading assignment word')
   assert.equal(withWindowsAgentExecutable('claude {prompt}', "C:\\a$'b\\claude.exe"), null, 'a path the placeholder rule rejects')
+})
+
+check('a Windows draft checks and pins one normalized executable path', () => {
+  const draft = (command, detected) => draftCommandFor({ command, draftFlag: '--prefill' }, detected, 'win32')
+  assert.equal(draft('"C:/tools/claude.exe" {prompt}', 'C:/tools/claude.exe'), '"C:\\tools\\claude.exe" {prompt}', 'forward slashes become the backslash path')
+  assert.equal(draft('claude {prompt}', '//srv/share/claude.exe'), '"\\\\srv\\share\\claude.exe" {prompt}', 'a forward-slash UNC path')
+  assert.equal(draft('"C:\\bin\\claude.exe " {prompt}', 'C:\\bin\\claude.exe '), '"C:\\bin\\claude.exe" {prompt}', 'a trailing space is trimmed for the check and the pin')
+  assert.equal(draft('claude {prompt}', ' C:\\bin\\claude.cmd '), null, 'a trimmed .cmd is still not drafted')
+  assert.equal(draft('claude {prompt}', 'C:\\bin\\claude.exe\\..\\claude.cmd'), null, 'the check sees the normalized name')
+  assert.equal(draft('claude {prompt}', '\\bin\\claude.exe'), null, 'a path rooted only on the current drive')
+  assert.equal(draft('claude {prompt}', '/bin/claude.exe'), null, 'a forward-slash path rooted only on the current drive')
+  assert.equal(draft('claude {prompt}', 'C:claude.exe'), null, 'a drive-relative path')
+  assert.equal(draft('claude {prompt}', '   '), null, 'no path')
 })
 
 check('POSIX launchers add the agent directory to PATH only when missing', () => {

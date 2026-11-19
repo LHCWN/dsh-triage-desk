@@ -280,8 +280,7 @@ export function withWindowsAgentExecutable(agentCommand, executablePath) {
  * unknown. Those agents get the prompt typed in or on the clipboard instead.
  */
 function windowsDraftArgumentSafe(executablePath) {
-  // trim(): an absolute path in the agent command skips the probe's trimming.
-  return typeof executablePath === 'string' && /\.exe$/i.test(executablePath.trim())
+  return /\.exe$/i.test(executablePath)
 }
 
 /**
@@ -295,5 +294,13 @@ function windowsDraftArgumentSafe(executablePath) {
 export function draftCommandFor(agent, detectedPath, platform = process.platform) {
   if (typeof agent.draftFlag !== 'string') return null
   if (platform !== 'win32') return withAgentExecutable(agent.command, detectedPath, platform)
-  return windowsDraftArgumentSafe(detectedPath) ? withWindowsAgentExecutable(agent.command, detectedPath) : null
+  // One spelling for the .exe check and the pin: an absolute path written in
+  // the agent command skips the probe's trimming and may use `/`
+  // (`C:/tools/claude.exe`). path.win32.normalize turns `/` into `\` and keeps
+  // a drive-relative path (`\x`, `C:x`) drive-relative, so the pin still
+  // rejects it.
+  const trimmed = typeof detectedPath === 'string' ? detectedPath.trim() : ''
+  if (trimmed === '') return null
+  const executablePath = path.win32.normalize(trimmed)
+  return windowsDraftArgumentSafe(executablePath) ? withWindowsAgentExecutable(agent.command, executablePath) : null
 }
