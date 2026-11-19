@@ -3,8 +3,10 @@
  * images (`<…>` targets and titles included) and `[ref]: target` definitions
  * must resolve from the linking file's directory with exact case, and a
  * `#fragment` into a Markdown file must name a heading (ATX or setext, slugged
- * like GitHub) or an `<a id|name>` anchor there. Fenced blocks and code spans
- * are skipped.
+ * like GitHub) or an `<a id|name>` anchor there. Fenced and indented code
+ * blocks and code spans are skipped. Every Markdown file that package.json
+ * `files` ships (plain entries, directories and globs expanded) must be listed
+ * in DOCS.
  * Run by `npm run check:docs` and as part of `npm run check`.
  * `node dev/check-docs.mjs <file.md>…` checks the given files instead
  * (paths and reports relative to the current directory).
@@ -18,25 +20,70 @@ const DOCS = ['README.md', 'README.zh.md', 'CHANGELOG.md', 'docs/ARCHITECTURE.md
 const args = process.argv.slice(2)
 const root = args.length > 0 ? process.cwd() : path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const files = args.length > 0 ? args : DOCS
+// Files under a directory, as root-relative POSIX paths (node_modules skipped).
+const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+  const full = path.join(dir, entry.name)
+  if (!entry.isDirectory()) return [path.relative(root, full).split(path.sep).join('/')]
+  return entry.name === 'node_modules' ? [] : walk(full)
+})
+// A package.json `files` entry expanded to the files it ships: a plain file, a
+// directory's contents, or a glob (`*`/`?` within a segment, `**` across them).
+const shippedBy = (entry) => {
+  const pattern = entry.replace(/^\.\//, '').replace(/\/$/, '')
+  if (!/[*?]/.test(pattern)) {
+    const full = path.join(root, pattern)
+    if (!fs.existsSync(full)) return []
+    return fs.statSync(full).isDirectory() ? walk(full) : [pattern]
+  }
+  const base = path.join(root, pattern.slice(0, pattern.search(/[*?]/)).replace(/[^/]*$/, ''))
+  const source = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*\/?|\*|\?/g, (glob) =>
+    glob === '?' ? '[^/]' : glob === '*' ? '[^/]*' : '(?:.*/)?')
+  const re = new RegExp(`^${source}(?:/.*)?$`)
+  return fs.existsSync(base) ? walk(base).filter((file) => re.test(file)) : []
+}
 if (args.length === 0) {
-  // npm ships README and CHANGELOG regardless; every other .md entry must be checked here.
+  // npm ships README and CHANGELOG regardless; every other shipped .md file must be checked here.
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
-  const unchecked = pkg.files.filter((entry) => /\.md$/i.test(entry) && !DOCS.includes(entry))
+  const unchecked = [...new Set(pkg.files.flatMap(shippedBy))].filter((file) => /\.md$/i.test(file) && !DOCS.includes(file))
   assert.deepEqual(unchecked, [], `package.json ships Markdown not in DOCS: ${unchecked.join(', ')}`)
 }
 const failures = []
 
-// Lines of a file with fenced code blanked out. A fence opens with 3+ backticks
-// or tildes indented at most 3 spaces (a backtick fence's info string has no
-// backtick) and closes on a run of the same character at least as long.
+// Lines of a file with code blocks blanked out.
+// - A fence opens with 3+ backticks or tildes indented at most 3 spaces (a
+//   backtick fence's info string has no backtick) and closes on a run of the
+//   same character at least as long.
+// - An indented code block is a line indented 4+ spaces or a tab that follows a
+//   blank line (it cannot interrupt a paragraph) outside a list, where such a
+//   line is the item's continuation; it runs while lines stay indented or blank.
+//   A list ends at an unindented non-item line after a blank line.
+const INDENTED = /^(?: {4}|\t)/
+const BLANK = /^[ \t]*$/
+const LIST_ITEM = /^ {0,3}(?:[-*+]|\d+[.)])(?:[ \t]|$)/
 const proseCache = new Map()
 const proseOf = (file) => {
   if (proseCache.has(file)) return proseCache.get(file)
   const lines = []
   let fence = null
+  let indented = false
+  let list = false
+  let blank = true
   for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
     if (fence !== null) {
-      if (fence.test(line)) fence = null
+      if (fence.test(line)) {
+        fence = null
+        blank = true
+      }
+      lines.push('')
+      continue
+    }
+    if (indented && (INDENTED.test(line) || BLANK.test(line))) {
+      lines.push('')
+      continue
+    }
+    indented = false
+    if (blank && !list && INDENTED.test(line) && !BLANK.test(line)) {
+      indented = true
       lines.push('')
       continue
     }
@@ -46,6 +93,9 @@ const proseOf = (file) => {
       lines.push('')
       continue
     }
+    if (LIST_ITEM.test(line)) list = true
+    else if (blank && /^\S/.test(line)) list = false
+    blank = BLANK.test(line)
     lines.push(line)
   }
   proseCache.set(file, lines)

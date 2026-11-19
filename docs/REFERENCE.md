@@ -619,7 +619,7 @@ Checks:
   definitions in every shipped Markdown file (both READMEs, the changelog, and
   `docs/`) resolve from the linking file's directory with exact case, and that
   `#section` anchors name a heading or `<a id>` anchor in the target file.
-  Links in fenced blocks and code spans are skipped.
+  Links in fenced or indented code blocks and code spans are skipped.
 - `npm run smoke:client`: registers the client bundle against a fake module
   loader, checks the slot registrations, validates EN/ZH dictionary parity (key
   sets, placeholders, literal `t()` keys), and tests polling, retries, and
