@@ -50,8 +50,9 @@ import the launcher layer only through `launcher.js` and the data layer through
   - `clones.js` — `createClones`: clone directories and scans, workspace
     fallback, native directory picker, `resolveClone`;
   - `launch.js` — `createLaunch`: scenario/agent resolution,
-    `renderScenarioPrompt`, `launchForItem` (runs the detected path and passes
-    its directory as `binDir`; picks the delivery mode — `draft` when
+    `renderScenarioPrompt`, `launchForItem` (runs the detected path through
+    `withAgentExecutable` on every platform and in every mode, and on
+    macOS/Linux passes its directory as `binDir`; picks the delivery mode — `draft` when
     `draftCommandFor` returns a command, `paste` when `promptDelivery` is
     `paste` and `detectPasteSupport` allows it, else `clipboard` with
     `delivery.pasteBlocked` naming the reason; the clipboard always gets a
@@ -84,11 +85,13 @@ import the launcher layer only through `launcher.js` and the data layer through
   - `agent-command.js` — `commandWords` (static word decoding with raw spans),
     `agentExecutable`, `hasSafePromptPlaceholder` and its one user-facing
     wording `AGENT_COMMAND_RULE`, `shellQuote`, and the command variants
-    (`bareAgentCommand`, `buildDraftCommand`, `withAgentExecutable`,
-    `withWindowsAgentExecutable`), and `draftCommandFor`, the one decision
-    whether a launch uses the native draft (on Windows only for an `.exe`,
-    never a `.cmd`/`.bat` that `cmd.exe` would re-parse, run by its absolute
-    path). `{prompt}` appears once, unquoted, after an executable word, either
+    (`bareAgentCommand`, `buildDraftCommand`, and `withAgentExecutable`, the
+    one pin of the detected executable: POSIX replaces the first
+    non-assignment word unless it is path-qualified; Windows replaces the first
+    word with the normalized, double-quoted drive or UNC path; an unpinnable
+    path keeps the command), and `draftCommandFor`, the one decision whether a
+    launch uses the native draft (on Windows only for an `.exe` that the same
+    pin replaced exactly, never a `.cmd`/`.bat` that `cmd.exe` would re-parse). `{prompt}` appears once, unquoted, after an executable word, either
     as a whole word or directly after `-x=`/`--flag=`; backticks, `$(`, `${`,
     unquoted `; & | < > ( )` and word-initial `#` are rejected. The host is the
     only implementation of this rule;
