@@ -732,10 +732,12 @@ check('terminal opener plan opens a macOS Terminal window without iTerm2', () =>
   assert.deepEqual(openTerminalPlan('darwin', { scriptPath }), {
     argv: ['/usr/bin/open', '-a', 'Terminal', scriptPath],
     variant: 'window',
+    app: 'terminal',
   })
   assert.deepEqual(openTerminalPlan('darwin', { scriptPath: '/tmp/launch.command', tab: false }), {
     argv: ['/usr/bin/open', '-a', 'Terminal', '/tmp/launch.command'],
     variant: 'window',
+    app: 'terminal',
   })
 })
 
@@ -756,6 +758,7 @@ check('terminal opener plan opens an iTerm2 tab when iTerm2 is present', () => {
   assert.deepEqual(openTerminalPlan('darwin', { scriptPath, iterm: true, tab: false }), {
     argv: ['/usr/bin/open', '-a', 'Terminal', scriptPath],
     variant: 'window',
+    app: 'terminal',
   })
   assert.throws(() => buildItermTabAppleScript(''), /launcher script path/)
   assert.throws(() => buildItermTabAppleScript('/tmp/a\nb'), /launcher script path/)
@@ -1589,6 +1592,7 @@ check('Ghostty opens a tab, falls back to a window, and is focused by tab title'
   assert.deepEqual(openTerminalPlan('darwin', { scriptPath, app: 'ghostty' }), {
     argv: ['/usr/bin/osascript', '-e', buildGhosttyTabAppleScript(scriptPath)],
     variant: 'tab',
+    app: 'ghostty',
   })
   assert.ok(buildGhosttyTabAppleScript(scriptPath).includes(`set command of launchConfig to "'/tmp/it'\\\\''s here/launch.command'"`),
     'the path is shell-quoted, then escaped as an AppleScript string')

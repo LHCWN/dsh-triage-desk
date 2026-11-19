@@ -133,14 +133,18 @@ export function openTerminalPlan(platform, capabilities = {}) {
     // writes into the window's current tab, corrupting a running agent's input —
     // so Terminal (and the window fallback of the others) opens a new window.
     const app = darwinApp(input)
+    // `app` is the application the plan actually opens: the iTerm2 window
+    // fallback (e.g. Automation permission denied) is a Terminal.app window.
     if (app === 'iterm' && wantTab) {
-      return { argv: ['/usr/bin/osascript', '-e', buildItermTabAppleScript(scriptPath)], variant: 'tab' }
+      return { argv: ['/usr/bin/osascript', '-e', buildItermTabAppleScript(scriptPath)], variant: 'tab', app: 'iterm' }
     }
     if (app === 'ghostty' && wantTab) {
-      return { argv: ['/usr/bin/osascript', '-e', buildGhosttyTabAppleScript(scriptPath)], variant: 'tab' }
+      return { argv: ['/usr/bin/osascript', '-e', buildGhosttyTabAppleScript(scriptPath)], variant: 'tab', app: 'ghostty' }
     }
-    if (app === 'ghostty') return { argv: ['/usr/bin/open', '-na', 'Ghostty', '--args', '-e', scriptPath], variant: 'window' }
-    return { argv: ['/usr/bin/open', '-a', 'Terminal', scriptPath], variant: 'window' }
+    if (app === 'ghostty') {
+      return { argv: ['/usr/bin/open', '-na', 'Ghostty', '--args', '-e', scriptPath], variant: 'window', app: 'ghostty' }
+    }
+    return { argv: ['/usr/bin/open', '-a', 'Terminal', scriptPath], variant: 'window', app: 'terminal' }
   }
 
   if (platform === 'win32') {

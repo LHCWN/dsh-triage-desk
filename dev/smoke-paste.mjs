@@ -131,5 +131,20 @@ assert.equal(trust.recorded.events[trustPaste].text, PROMPT)
 assert.equal(trust.code, 7)
 console.log('ok   trust dialog: paste held until Enter, then delivered')
 
+// A user who accepts the dialog before the wrapper has looked at the screen:
+// the Enter must not leave the dismissed dialog holding the paste.
+let answered = false
+const fast = await runWrapper('trust', (output, child) => {
+  if (!answered && /trust this folder/i.test(output)) {
+    answered = true
+    child.stdin.write('\r')
+  }
+})
+const fastAccepted = fast.recorded.events.findIndex((event) => event.type === 'trust-accepted')
+const fastPaste = fast.recorded.events.findIndex((event) => event.type === 'paste')
+assert.ok(fastAccepted !== -1 && fastPaste > fastAccepted, 'an early Enter still lets the paste through: ' + JSON.stringify(fast.recorded))
+assert.equal(fast.recorded.events[fastPaste].text, PROMPT)
+console.log('ok   trust dialog accepted at once: the paste still arrives')
+
 await fs.rm(work, { recursive: true, force: true })
 console.log('paste smoke OK (' + (windows ? 'ConPTY host' : 'Python pty wrapper') + ', ' + process.platform + ')')

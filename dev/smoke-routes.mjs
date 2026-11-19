@@ -1062,10 +1062,12 @@ await recordAsync('the darwin terminal plan opens a Terminal window', async () =
   assert.deepEqual(openTerminalPlan('darwin', { scriptPath }), {
     argv: ['/usr/bin/open', '-a', 'Terminal', scriptPath],
     variant: 'window',
+    app: 'terminal',
   })
   assert.deepEqual(openTerminalPlan('darwin', { scriptPath, tab: true }), {
     argv: ['/usr/bin/open', '-a', 'Terminal', scriptPath],
     variant: 'window',
+    app: 'terminal',
   })
 })
 

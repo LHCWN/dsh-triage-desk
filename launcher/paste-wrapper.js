@@ -15,7 +15,9 @@
  *      has been quiet for QUIET_MS, or SETTLE_MS have passed since then: Codex
  *      animates its start screen without pause, so it is never quiet.
  *   2. A folder-trust dialog on screen (TRUST_PATTERN) holds the paste until the
- *      user presses Enter; the readiness wait of rule 1 then starts again.
+ *      user presses Enter. Any Enter before the paste forgets the screen seen so
+ *      far (so a dialog accepted before it was noticed cannot hold the paste)
+ *      and starts the readiness wait of rule 1 again.
  *   3. The paste is `ESC [200~` + prompt + `ESC [201~`; ESC and other control
  *      characters except newline and tab are removed from the prompt first, so
  *      it cannot end the paste early or send keys.
@@ -162,7 +164,7 @@ def main():
                     stdin_open = False
                 else:
                     write_all(master, data)
-                    if waiting_for_user and (b"\r" in data or b"\n" in data):
+                    if not pasted and (b"\r" in data or b"\n" in data):
                         waiting_for_user = False
                         screen = ""
                         last_output = now
@@ -294,6 +296,10 @@ namespace TriageDesk
         static extern bool GetNumberOfConsoleInputEvents(IntPtr handle, out uint count);
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "ReadConsoleInputW")]
         static extern bool ReadConsoleInput(IntPtr handle, [Out] InputRecord[] records, uint length, out uint read);
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "PeekConsoleInputW")]
+        static extern bool PeekConsoleInput(IntPtr handle, [Out] InputRecord[] records, uint length, out uint read);
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "ReadConsoleW")]
+        static extern bool ReadConsole(IntPtr handle, [Out] char[] buffer, uint toRead, out uint read, IntPtr inputControl);
 
         const int StdInput = -10, StdOutput = -11;
         const uint EnableVirtualTerminalInput = 0x0200;
@@ -445,7 +451,7 @@ namespace TriageDesk
             SendToAgent(copy);
             lock (Gate)
             {
-                if (waitingForUser && (Array.IndexOf(copy, (byte)13) != -1 || Array.IndexOf(copy, (byte)10) != -1))
+                if (!pasted && (Array.IndexOf(copy, (byte)13) != -1 || Array.IndexOf(copy, (byte)10) != -1))
                 {
                     waitingForUser = false;
                     screen = "";
@@ -467,13 +473,27 @@ namespace TriageDesk
             catch (ObjectDisposedException) { }
         }
 
-        // With ENABLE_VIRTUAL_TERMINAL_INPUT, key presses arrive as KEY_EVENT
-        // records whose characters already form the VT sequences (arrows,
-        // Ctrl+C as 0x03). Waiting on the handle keeps the loop cancellable.
+        static bool ModifierOnly(short virtualKey)
+        {
+            // Shift, Ctrl, Alt, Caps Lock, Windows keys, Num Lock, Scroll Lock:
+            // pressed alone they produce no characters.
+            return virtualKey == 0x10 || virtualKey == 0x11 || virtualKey == 0x12 || virtualKey == 0x14
+                || virtualKey == 0x5B || virtualKey == 0x5C || virtualKey == 0x90 || virtualKey == 0x91;
+        }
+
+        // ENABLE_VIRTUAL_TERMINAL_INPUT makes ReadFile/ReadConsole return the VT
+        // sequences for every key (arrows, Home, F-keys; Ctrl+C as 0x03), while
+        // ReadConsoleInput returns the raw records ("Console Virtual Terminal
+        // Sequences", learn.microsoft.com). So keys are read with ReadConsoleW.
+        // ReadConsoleW blocks until it has characters, so records that cannot
+        // produce any (key-ups, lone modifiers, focus, mouse and size events)
+        // are discarded first; that keeps the loop able to stop when the agent
+        // exits without swallowing a later key press.
         static void PumpConsoleInput(IntPtr stdin)
         {
-            var records = new InputRecord[256];
-            var text = new StringBuilder();
+            var peeked = new InputRecord[1];
+            var discard = new InputRecord[1];
+            var chars = new char[4096];
             try
             {
                 while (!finished)
@@ -481,19 +501,19 @@ namespace TriageDesk
                     if (WaitForSingleObject(stdin, 100) != 0) continue;
                     uint available;
                     if (!GetNumberOfConsoleInputEvents(stdin, out available) || available == 0) continue;
-                    uint read;
-                    if (!ReadConsoleInput(stdin, records, (uint)records.Length, out read)) break;
-                    text.Length = 0;
-                    for (int i = 0; i < read; i++)
+                    uint seen;
+                    if (!PeekConsoleInput(stdin, peeked, 1, out seen) || seen == 0) continue;
+                    bool keyDown = peeked[0].EventType == 1 && peeked[0].KeyEvent.bKeyDown != 0;
+                    if (!keyDown || ModifierOnly(peeked[0].KeyEvent.wVirtualKeyCode))
                     {
-                        if (records[i].EventType != 1 || records[i].KeyEvent.bKeyDown == 0) continue;
-                        char c = records[i].KeyEvent.UnicodeChar;
-                        if (c == '\0') continue;
-                        int repeat = Math.Max(1, (int)records[i].KeyEvent.wRepeatCount);
-                        for (int r = 0; r < repeat; r++) text.Append(c);
+                        uint dropped;
+                        ReadConsoleInput(stdin, discard, 1, out dropped);
+                        continue;
                     }
-                    if (text.Length == 0) continue;
-                    byte[] bytes = Encoding.UTF8.GetBytes(text.ToString());
+                    uint read;
+                    if (!ReadConsole(stdin, chars, (uint)chars.Length, out read, IntPtr.Zero)) break;
+                    if (read == 0) continue;
+                    byte[] bytes = Encoding.UTF8.GetBytes(chars, 0, (int)read);
                     UserInput(bytes, bytes.Length);
                 }
             }

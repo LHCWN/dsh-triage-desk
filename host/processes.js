@@ -499,7 +499,15 @@ export function createProcesses({ ctx, settings, platform }) {
         detail = String((error && error.message) || error)
         continue
       }
-      if (result.code === 0) return { ...plan, terminal: resolved.terminal }
+      if (result.code === 0) {
+        // A macOS plan names the app it opened; a fallback to another app is
+        // reported as that app, so the toast and the activation nudge match.
+        if (typeof plan.app === 'string' && plan.app !== resolved.terminal.id) {
+          const entry = terminalCatalog(platform).find((option) => option.id === plan.app)
+          return { ...plan, terminal: { id: plan.app, label: entry ? entry.label : plan.app, fallback: true } }
+        }
+        return { ...plan, terminal: resolved.terminal }
+      }
       detail = (result.stderr || result.stdout || plan.argv[0] + ' exited with code ' + result.code)
         .trim()
         .split('\n')[0]
