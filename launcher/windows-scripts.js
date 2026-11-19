@@ -22,49 +22,139 @@ function windowsScriptCwd(cwd) {
   return 'Set-Location -LiteralPath ' + windowsQuote(cwd)
 }
 
+/*
+ * How Windows PowerShell 5.1 passes a native-command argument, measured on
+ * windows-latest by dev/smoke-windows.mjs:
+ *   - it joins arguments into one command line without escaping embedded `"`
+ *     (about_Parsing, "Passing arguments that contain quote characters"); the
+ *     program then splits it by CommandLineToArgvW rules, where `\` escapes a
+ *     quote: 2n backslashes + `"` → n backslashes and a delimiter, 2n+1 → n
+ *     backslashes and a literal quote;
+ *   - it wraps an argument in quotes when whitespace appears where it has seen
+ *     an even number of `"` so far (it ignores backslashes), and leaves
+ *     trailing backslashes as they are.
+ * So `"` becomes `\"` (its backslashes doubled) and, when 5.1 will wrap the
+ * argument, trailing backslashes are doubled. An argument whose whitespace sits
+ * only inside quote pairs (`"a b"` escapes to `\"a b\"`, which 5.1 does not
+ * wrap) cannot be passed that way at all; it goes through the stop-parsing
+ * token instead: `--%` hands the rest of the line to the program verbatim
+ * after expanding `%NAME%` environment variables (about_Parsing), so the
+ * launcher builds that argument's command-line form itself. This applies only
+ * to 5.1's legacy passing; the launcher always runs `powershell.exe`.
+ */
+
+/** Whether PowerShell 5.1 wraps this native argument in quotes (see above). */
+function psWrapsArg(value) {
+  let quotes = 0
+  for (const char of String(value)) {
+    if (char === '"') quotes += 1
+    else if (/\s/.test(char) && quotes % 2 === 0) return true
+  }
+  return false
+}
+
+/** `"` → `\"` with the preceding backslashes doubled. */
+function escapeArgQuotes(value) {
+  return String(value).replace(/(\\*)"/g, '$1$1\\"')
+}
+
+/**
+ * The CommandLineToArgvW form of one argument, for a `--%` command line.
+ * PowerShell expands `%NAME%` in that line, so a static argument containing
+ * such text is expanded there; agent commands are trusted configuration and
+ * this form is used only when 5.1 cannot pass an argument at all.
+ */
+function windowsCommandLineArg(value) {
+  const text = String(value)
+  if (text !== '' && !/[\s"]/.test(text)) return text
+  return '"' + escapeArgQuotes(text).replace(/(\\+)$/, '$1$1') + '"'
+}
+
+/**
+ * A static argument as PowerShell 5.1 must receive it, or null when only `--%`
+ * can pass it. An empty string is null too: 5.1's legacy passing drops empty
+ * arguments (PowerShell 7.3's PSNativeCommandArgumentPassing notes list
+ * passing `''` as `""` among its changes), and `--%` writes it as `""`.
+ */
+function windowsNativeArg(value) {
+  if (String(value) === '') return null
+  const escaped = escapeArgQuotes(value)
+  if (psWrapsArg(escaped)) return windowsQuote(escaped.replace(/(\\+)$/, '$1$1'))
+  return /\s/.test(escaped) ? null : windowsQuote(escaped)
+}
+
+/**
+ * PowerShell lines shared by draft launchers: `Test-TdQuoted` is psWrapsArg,
+ * and `$prompt` gets its quotes escaped once it has been read from the file.
+ */
+const WINDOWS_PROMPT_ESCAPE_LINES = [
+  "function Test-TdQuoted([string]$s) { $q = 0; foreach ($c in $s.ToCharArray()) { if ($c -eq [char]34) { $q++ } elseif ([char]::IsWhiteSpace($c) -and ($q % 2) -eq 0) { return $true } }; return $false }",
+  "$prompt = $prompt -replace '(\\\\*)\"', '$1$1\\\"'",
+]
+
 /** `& 'exe' '--flag' ...` for a bare command, one single-quoted argument each. */
 function windowsBareInvocation(bareCommand) {
   if (typeof bareCommand !== 'string' || bareCommand.trim() === '') throw new Error('bare agent command is required')
   const tokens = windowsTokens(bareCommand)
   if (tokens.length === 0) throw new Error('bare agent command is required')
-  return '& ' + tokens.map((token) => windowsQuote(token.value)).join(' ')
+  const [executable, ...rest] = tokens.map((token) => token.value)
+  const args = rest.map(windowsNativeArg)
+  if (args.includes(null)) return '& ' + windowsQuote(executable) + ' --% ' + rest.map(windowsCommandLineArg).join(' ')
+  return ['& ' + windowsQuote(executable), ...args].join(' ')
 }
 
 /**
- * `& 'claude' '--prefill' $prompt` for draft mode: every static token stays a
- * single-quoted argument, the token with `{prompt}` becomes the `$prompt`
- * variable, and the draft flag is inserted immediately before it. The attached
- * form becomes `('--message=' + $prompt)`: verified against about_Parsing
- * (PowerShell 5.1): in argument mode "Parentheses (`()`) begin a new
- * expression" and `()` at the start of a token creates a new parsing context,
- * so the concatenated string is passed as one argument
- * (https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_parsing?view=powershell-5.1).
+ * Draft-mode invocation lines: every static token stays an argument, the token
+ * with `{prompt}` becomes the prompt, and the draft flag goes right before it.
+ * The attached form `--message={prompt}` becomes `('--message=' + $prompt)`
+ * (about_Parsing, 5.1: parentheses at the start of a token begin a new
+ * expression, so the concatenation is one argument). When 5.1 would not wrap
+ * the prompt argument although it has whitespace (or a static argument needs
+ * it), the line uses `--%` with the argument in `$env:TD_PROMPT_ARG`.
+ * Trailing backslashes are matched with `\z`: in .NET regex `$` also matches
+ * before a final newline.
  */
-function windowsDraftInvocation(agentCommand, draftFlag) {
+function windowsDraftInvocationLines(agentCommand, draftFlag) {
   assertSafeAgentCommand(agentCommand)
   assertDraftFlag(draftFlag)
   const { words, index, prefix } = promptWord(agentCommand, 'win32')
-  return '& ' + words.flatMap((token, position) => {
-    if (position !== index) return [windowsQuote(token.value)]
-    return [windowsQuote(draftFlag), prefix === '' ? '$prompt' : '(' + windowsQuote(prefix) + ' + $prompt)']
-  }).join(' ')
+  const executable = '& ' + windowsQuote(words[0].value)
+  const before = words.slice(1, index).map((word) => word.value)
+  const after = words.slice(index + 1).map((word) => word.value)
+  const nativeStatic = [...before, ...after].map(windowsNativeArg)
+  const promptArg = prefix === '' ? '$tdArg' : '(' + windowsQuote(prefix) + ' + $tdArg)'
+  const normal = [executable, ...before.map(windowsNativeArg), windowsQuote(draftFlag), promptArg, ...after.map(windowsNativeArg)].join(' ')
+  const verbatim = [executable, '--%', ...before.map(windowsCommandLineArg), draftFlag, '%TD_PROMPT_ARG%', ...after.map(windowsCommandLineArg)].join(' ')
+  const verbatimLines = [
+    "  $env:TD_PROMPT_ARG = " + windowsQuote(prefix) + " + '\"' + ($prompt -replace '(\\\\+)\\z', '$1$1') + '\"'",
+    '  ' + verbatim,
+    '  Remove-Item Env:TD_PROMPT_ARG -ErrorAction SilentlyContinue',
+  ]
+  if (nativeStatic.includes(null)) return verbatimLines.map((line) => line.slice(2))
+  return [
+    '$tdArg = ' + (prefix === '' ? '$prompt' : windowsQuote(prefix) + ' + $prompt'),
+    'if (Test-TdQuoted $tdArg) {',
+    "  $tdArg = $prompt -replace '(\\\\+)\\z', '$1$1'",
+    '  ' + normal,
+    "} elseif ($tdArg -notmatch '\\s') {",
+    '  $tdArg = $prompt',
+    '  ' + normal,
+    '} else {',
+    ...verbatimLines,
+    '}',
+  ]
 }
 
 /**
- * Windows PowerShell 5.1 joins native-command arguments into one command line
- * without escaping embedded `"` (about_Parsing, "Passing arguments that
- * contain quote characters": quotes within the string must be escaped with
- * extra quotes or backslashes, and `\` is the escape of the underlying
- * ProcessStartInfo.Arguments / CommandLineToArgvW rules: 2n backslashes + `"`
- * → n backslashes and a quote delimiter; 2n+1 → n backslashes and a literal
- * quote). So every `"` in the prompt becomes `\"` with its preceding
- * backslashes doubled. This is correct only for 5.1's legacy argument passing
- * (PowerShell 7.3+ `Standard` mode escapes by itself); the launcher always
- * runs `powershell.exe`. Not verified on a real Windows host: a trailing
- * backslash inside an argument PowerShell wraps in quotes, and agents that are
- * `.cmd` shims re-parsed by cmd.exe, remain known limitations.
+ * The script removes itself, then its per-launch directory if nothing else is
+ * left in it. Directory.Delete without recursion throws on a non-empty
+ * directory (Remove-Item would ask for confirmation in an interactive host),
+ * so leftover files are never removed by this line.
  */
-const WINDOWS_PROMPT_QUOTE_ESCAPE = "$prompt = $prompt -replace '(\\\\*)\"', '$1$1\\\"'"
+const WINDOWS_SELF_CLEANUP_LINES = [
+  'Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue',
+  'try { [System.IO.Directory]::Delete((Split-Path -Parent $PSCommandPath)) } catch { }',
+]
 
 /** An exit-status report that keeps the PowerShell window open on failure. */
 function windowsExitStatusLines(prefix) {
@@ -85,7 +175,7 @@ function windowsExitStatusLines(prefix) {
 export function buildWindowsDraftLauncherScript({ cwd, title, agentCommand, promptFile, draftFlag }) {
   if (typeof promptFile !== 'string' || promptFile.trim() === '') throw new Error('prompt file is required')
   if (/[\r\n\u0000]/.test(promptFile)) throw new Error('prompt file must be a single line')
-  const invocation = windowsDraftInvocation(agentCommand, draftFlag)
+  const invocation = windowsDraftInvocationLines(agentCommand, draftFlag)
   const lines = [
     '# Triage Desk launcher (native draft mode; generated for this launch).',
     windowsScriptCwd(cwd),
@@ -94,10 +184,10 @@ export function buildWindowsDraftLauncherScript({ cwd, title, agentCommand, prom
     // Verified: https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_character_encoding?view=powershell-5.1
     '$prompt = Get-Content -Raw -LiteralPath ' + windowsQuote(promptFile) + ' -Encoding UTF8',
     'Remove-Item -LiteralPath ' + windowsQuote(promptFile) + ' -Force -ErrorAction SilentlyContinue',
-    WINDOWS_PROMPT_QUOTE_ESCAPE,
-    invocation,
+    ...WINDOWS_PROMPT_ESCAPE_LINES,
+    ...invocation,
     ...windowsExitStatusLines('Triage Desk: the agent exited with status '),
-    'Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue',
+    ...WINDOWS_SELF_CLEANUP_LINES,
     '',
   ]
   return lines.join('\n')
@@ -118,7 +208,7 @@ export function buildWindowsClipboardLauncherScript({ cwd, title, bareCommand })
     "Write-Host ''",
     invocation,
     ...windowsExitStatusLines('Triage Desk: the agent exited with status '),
-    'Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue',
+    ...WINDOWS_SELF_CLEANUP_LINES,
     '',
   ]
   return lines.join('\n')
@@ -175,7 +265,7 @@ export function buildWindowsPasteLauncherScript({ cwd, title, bareCommand, wrapp
     '  ' + invocation,
     '}',
     ...windowsExitStatusLines('Triage Desk: the agent exited with status '),
-    'Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue',
+    ...WINDOWS_SELF_CLEANUP_LINES,
     '',
   ]
   return lines.join('\n')
@@ -205,7 +295,7 @@ export function buildWindowsLoginLauncherScript({ cwd, ghCommand }) {
     "  Write-Host ''",
     "  Write-Host 'Triage Desk: login finished. Return to the panel and press Check connection.'",
     '}',
-    'Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue',
+    ...WINDOWS_SELF_CLEANUP_LINES,
     '',
   ]
   return lines.join('\n')

@@ -107,7 +107,7 @@ import the launcher layer only through `launcher.js` and the data layer through
     bracketed paste with no Enter. `sanitizePastePrompt` strips control
     characters (keeps newline and tab) so the prompt cannot end the paste early.
     `dev/smoke-paste.mjs` checks both implementations against a fake agent; CI
-    runs it on ubuntu, macOS and Windows;
+    runs it on ubuntu, Windows (inside `npm run check`) and macOS;
   - `clones.js` and `repo-urls.js` — `scanCloneDirs` (per-root budget, symlinks
     followed once by realpath), `parseGitConfigRemotes` / `remoteToRepo` (all
     GitHub remotes, scp form with or without a user), `parseSshConfigHosts` /

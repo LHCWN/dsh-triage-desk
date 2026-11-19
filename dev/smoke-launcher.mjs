@@ -12,6 +12,7 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { Readable } from 'node:stream'
 import { apply } from '../index.js'
+import { canSymlink, withHome, withPosixShell } from './fixtures/platform.mjs'
 import {
   AGENT_PRESETS,
   BUILTIN_SCENARIOS,
@@ -527,21 +528,32 @@ check('executable detection understands quoted paths and assignment values', () 
 
 check('clipboard mode preserves static quoted argument bytes', () => {
   const template = 'printf \'<%s>\\n\' --label "two   spaces" --prompt {prompt} --mode "stay   put"'
-  const bare = bareAgentCommand(template)
-  const result = spawnSync('/bin/sh', ['-c', bare], { encoding: 'utf8' })
-  assert.equal(result.status, 0, result.stderr)
-  assert.equal(result.stdout, '<--label>\n<two   spaces>\n<--mode>\n<stay   put>\n')
-  assert.equal(bareAgentCommand('agent "--prompt" {prompt} --label "a  b"'), 'agent --label "a  b"')
+  const bare = bareAgentCommand(template, 'linux')
+  assert.equal(bare, 'printf \'<%s>\\n\' --label "two   spaces" --mode "stay   put"')
+  // On Windows the quoting is checked by 'Windows invocations preserve quoted
+  // paths and static arguments'.
+  withPosixShell('running the bare command', () => {
+    const result = spawnSync('/bin/sh', ['-c', bare], { encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(result.stdout, '<--label>\n<two   spaces>\n<--mode>\n<stay   put>\n')
+  })
+  assert.equal(bareAgentCommand('agent "--prompt" {prompt} --label "a  b"', 'linux'), 'agent --label "a  b"')
 })
 
 check('Windows invocations preserve quoted paths and static arguments', () => {
   const agentCommand = '"C:\\Program Files\\Agent\\claude.exe" --label "two   spaces" {prompt}'
   const draft = buildWindowsDraftLauncherScript({ cwd: 'C:\\work', title: 'test', agentCommand, promptFile: 'C:\\prompt.txt', draftFlag: '--prefill' })
-  assert.ok(draft.includes("& 'C:\\Program Files\\Agent\\claude.exe' '--label' 'two   spaces' '--prefill' $prompt"), draft)
+  assert.ok(draft.includes("& 'C:\\Program Files\\Agent\\claude.exe' '--label' 'two   spaces' '--prefill' $tdArg"), draft)
   const clipboard = buildWindowsClipboardLauncherScript({ cwd: 'C:\\work', title: 'test', bareCommand: bareAgentCommand(agentCommand) })
   assert.ok(clipboard.includes("& 'C:\\Program Files\\Agent\\claude.exe' '--label' 'two   spaces'"), clipboard)
   const staticDollar = buildWindowsDraftLauncherScript({ cwd: 'C:\\work', title: 'test', agentCommand: 'claude --label \'$prompt\' {prompt}', promptFile: 'C:\\prompt.txt', draftFlag: '--prefill' })
-  assert.ok(staticDollar.includes("& 'claude' '--label' '$prompt' '--prefill' $prompt"), staticDollar)
+  assert.ok(staticDollar.includes("& 'claude' '--label' '$prompt' '--prefill' $tdArg"), staticDollar)
+  // A static argument whose whitespace sits only inside quotes needs --%.
+  const quotedOnly = buildWindowsClipboardLauncherScript({ cwd: 'C:\\work', title: 'test', bareCommand: 'agent --say "\\"a b\\"" --yes' })
+  assert.ok(quotedOnly.includes("& 'agent' --% --say \"\\\"a b\\\"\" --yes"), quotedOnly)
+  // PowerShell 5.1 drops an empty native argument; --% passes it as "".
+  const emptyArg = buildWindowsClipboardLauncherScript({ cwd: 'C:\\work', title: 'test', bareCommand: 'agent --model "" --yes' })
+  assert.ok(emptyArg.includes("& 'agent' --% --model \"\" --yes"), emptyArg)
 })
 
 check('bare commands drop the prompt and its flag', () => {
@@ -595,9 +607,13 @@ check('prompt substitution rejects quoted, escaped, embedded and repeated placeh
   }
   const prompt = '$(printf INJECTED) `printf BACKTICK` "quotes" and single\'quotes'
   const command = buildDraftCommand('printf "%s\\n" {prompt}', prompt, '--prefill')
-  const result = spawnSync('/bin/sh', ['-c', command], { encoding: 'utf8' })
-  assert.equal(result.status, 0, result.stderr)
-  assert.equal(result.stdout, '--prefill\n' + prompt + '\n', 'untrusted prompt content stays literal shell data')
+  // Windows gets the prompt through a file read into $prompt, run for real by
+  // smoke:windows.
+  withPosixShell('running the draft command', () => {
+    const result = spawnSync('/bin/sh', ['-c', command], { encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(result.stdout, '--prefill\n' + prompt + '\n', 'untrusted prompt content stays literal shell data')
+  })
 })
 
 check('native draft command uses the agent flag and quotes the prompt', () => {
@@ -667,7 +683,8 @@ check('windows draft launcher pre-fills an unsent prompt from a file', () => {
   assert.ok(script.includes("Set-Location -LiteralPath 'C:\\Users\\O''Brien\\repo'"))
   assert.ok(script.includes("$Host.UI.RawUI.WindowTitle = 'Triage Desk: acme/widgets #288'"))
   assert.ok(script.includes("$prompt = Get-Content -Raw -LiteralPath 'C:\\Temp\\triage-desk\\prompt.txt'"))
-  assert.ok(script.includes("& 'claude' '--prefill' $prompt"))
+  assert.ok(script.includes("& 'claude' '--prefill' $tdArg"))
+  assert.ok(script.includes("& 'claude' --% --prefill %TD_PROMPT_ARG%"), 'the --% form covers prompts 5.1 cannot pass')
   assert.ok(script.includes('$LASTEXITCODE'))
   assert.ok(!script.includes('{prompt}'))
   assert.ok(!script.includes('https://github.com/'), 'the prompt text must stay out of the script')
@@ -678,7 +695,7 @@ check('windows draft launcher pre-fills an unsent prompt from a file', () => {
     promptFile: 'C:\\Temp\\prompt.txt',
     draftFlag: '--prompt',
   })
-  assert.ok(opencode.includes("& 'opencode' '--prompt' $prompt"))
+  assert.ok(opencode.includes("& 'opencode' '--prompt' $tdArg"))
   const staticArgs = buildWindowsDraftLauncherScript({
     cwd: 'C:\\repo',
     title: 't',
@@ -686,7 +703,7 @@ check('windows draft launcher pre-fills an unsent prompt from a file', () => {
     promptFile: 'C:\\Temp\\prompt.txt',
     draftFlag: '--prefill',
   })
-  assert.ok(staticArgs.includes("& 'my-agent' '--model=opus' '--prefill' $prompt"))
+  assert.ok(staticArgs.includes("& 'my-agent' '--model=opus' '--prefill' $tdArg"))
 })
 
 check('Windows draft reads the UTF-8 prompt explicitly instead of the ANSI default', () => {
@@ -976,7 +993,13 @@ await checkAsync('host detection retains an entire quoted executable path', asyn
 
 await checkAsync('macOS detection reads PATH configured only in the user zshrc', async () => {
   // Real zsh, isolated HOME/ZDOTDIR: never source or alter the user's profile.
-  // Other platforms still check the route's subprocess contract offline.
+  // Linux still checks the route's subprocess contract offline. Skipped on
+  // Windows: the fake darwin host would get Windows paths from node:path, and
+  // smoke:routes already covers the subprocess contract there.
+  if (process.platform === 'win32') {
+    console.log('skip zshrc detection: a fake darwin host cannot use Windows paths')
+    return
+  }
   const shellHome = path.join(fixture, 'shell-home')
   const bin = path.join(shellHome, 'bin')
   await fs.mkdir(bin, { recursive: true })
@@ -1080,7 +1103,8 @@ await checkAsync('Windows draft, clipboard and login routes write UTF-8 BOM scri
       const script = [...files.entries()].find(([file]) => file.endsWith('launch.ps1'))?.[1]
       assert.ok(script, agent + ' script was written')
       assert.equal(script.subarray(0, 3).toString('hex'), 'efbbbf', agent + ' script must identify UTF-8 to PowerShell 5.1')
-      assert.ok(script.toString('utf8').includes('/offline/工作'))
+      // The host normalizes the cwd for the platform it runs on.
+      assert.ok(script.toString('utf8').includes(path.normalize('/offline/工作')))
     }
     const login = await request('/triage-desk/auth/login', 'POST', {})
     assert.equal(login.status, 200, JSON.stringify(login.body))
@@ -1208,9 +1232,14 @@ check('--flag={prompt} stays one literal argument in real /bin/sh', () => {
   const prompt = '$(printf INJECTED) `printf BACKTICK` "double" single\'quote \\ ${HOME} ; | &'
   const template = 'printf "<%s>\\n" --message={prompt} tail'
   const command = buildDraftCommand(template, prompt, '--prefill')
-  const result = spawnSync('/bin/sh', ['-c', command], { encoding: 'utf8' })
-  assert.equal(result.status, 0, result.stderr)
-  assert.equal(result.stdout, '<--prefill>\n<--message=' + prompt + '>\n<tail>\n', command)
+  assert.ok(command.startsWith('printf "<%s>\\n" --prefill --message=\''), command)
+  // The Windows form of --flag={prompt} is checked by 'Windows draft passes
+  // --flag= and the prompt as one expression argument'.
+  withPosixShell('running the --flag= command', () => {
+    const result = spawnSync('/bin/sh', ['-c', command], { encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(result.stdout, '<--prefill>\n<--message=' + prompt + '>\n<tail>\n', command)
+  })
 })
 
 check('clipboard mode drops the whole --flag={prompt} word', () => {
@@ -1222,10 +1251,12 @@ check('Windows draft passes --flag= and the prompt as one expression argument', 
   const script = buildWindowsDraftLauncherScript({
     cwd: 'C:\\work', title: 't', agentCommand: 'aider --model=x --message={prompt}', promptFile: 'C:\\p.txt', draftFlag: '--prefill',
   })
-  assert.ok(script.includes("& 'aider' '--model=x' '--prefill' ('--message=' + $prompt)"), script)
+  assert.ok(script.includes("& 'aider' '--model=x' '--prefill' ('--message=' + $tdArg)"), script)
+  assert.ok(script.includes("& 'aider' --% --model=x --prefill %TD_PROMPT_ARG%"), script)
+  assert.ok(script.includes("$env:TD_PROMPT_ARG = '--message=' + '\"'"), script)
   // PS 5.1 does not escape embedded quotes for native commands: the script does.
   const escape = "$prompt = $prompt -replace '(\\\\*)\"', '$1$1\\\"'"
-  assert.ok(script.includes(escape + '\n& '), script)
+  assert.ok(script.includes(escape + "\n$tdArg = '--message=' + $prompt\nif (Test-TdQuoted $tdArg) {"), script)
   assert.ok(script.indexOf(escape) > script.indexOf('Get-Content'))
 })
 
@@ -1242,14 +1273,17 @@ check('POSIX launchers add the agent directory to PATH only when missing', () =>
   const guard = script.split('\n').find((line) => line.startsWith('case '))
   assert.ok(guard, script)
   assert.ok(script.indexOf(guard) < script.indexOf('\nagent\n'))
-  for (const [shell, PATH, expected] of [
-    ['/bin/sh', '/usr/bin:/bin', "/opt/it's dir:/usr/bin:/bin"],
-    ['/bin/sh', "/x:/opt/it's dir:/usr/bin", "/x:/opt/it's dir:/usr/bin"],
-    ['/bin/sh', '', "/opt/it's dir"],
-  ]) {
-    const result = spawnSync(shell, ['-c', guard + '\nprintf "%s" "$PATH"'], { env: { PATH }, encoding: 'utf8' })
-    assert.equal(result.stdout, expected, PATH)
-  }
+  // Windows launchers do not touch PATH.
+  withPosixShell('running the PATH guard', () => {
+    for (const [PATH, expected] of [
+      ['/usr/bin:/bin', "/opt/it's dir:/usr/bin:/bin"],
+      ["/x:/opt/it's dir:/usr/bin", "/x:/opt/it's dir:/usr/bin"],
+      ['', "/opt/it's dir"],
+    ]) {
+      const result = spawnSync('/bin/sh', ['-c', guard + '\nprintf "%s" "$PATH"'], { env: { PATH }, encoding: 'utf8' })
+      assert.equal(result.stdout, expected, PATH)
+    }
+  })
   assert.equal(buildDraftLauncherScript({ cwd: '/tmp', title: 't', command: 'x' }).includes('case '), false, 'no binDir, no PATH line')
 })
 
@@ -1488,12 +1522,18 @@ await checkAsync('a manual clone path matches the repository case-insensitively 
   }, async ({ request }) => {
     const result = await request('/triage-desk/launch', 'POST', { url: 'https://github.com/ACME/app/pull/1', agent: 'codex' })
     assert.equal(result.status, 200, JSON.stringify(result.body))
-    assert.equal(result.body.cwd, '/offline/acme-app')
+    assert.equal(result.body.cwd, path.normalize('/offline/acme-app'))
     assert.equal(result.body.cwdMode, 'clone')
   }, { repoPaths: { 'acme/App': '/offline/acme-app' } })
 })
 
 await checkAsync('clone scans follow symlinked directories without looping', async () => {
+  // A standard Windows account without Developer Mode cannot create symlinks
+  // (EPERM): that is an environment limit, so the check is skipped there.
+  if (!(await canSymlink(fixture))) {
+    console.log('skip symlink scan: this account cannot create symlinks')
+    return
+  }
   const root = path.join(fixture, 'links')
   const outside = path.join(fixture, 'outside-tree', 'linked-repo')
   await fs.mkdir(path.join(root, 'nested'), { recursive: true })
@@ -1524,9 +1564,7 @@ await checkAsync('auto clone roots keep existing defaults beside discovered root
   await fs.writeFile(path.join(nestedDefault, '.git', 'config'), '[remote "origin"]\n\turl = git@github-work:acme/deep.git\n')
   await fs.writeFile(path.join(discovered, '.git', 'config'), '[remote "origin"]\n\turl = https://github.com/acme/tool.git\n')
   const routes = new Map()
-  const oldHome = process.env.HOME
-  process.env.HOME = home
-  try {
+  await withHome(home, async () => {
     apply({
       logger: () => ({ info() {}, warn() {}, error() {} }),
       effect: (fn) => fn(),
@@ -1546,12 +1584,10 @@ await checkAsync('auto clone roots keep existing defaults beside discovered root
     const dirs = payload.dirs.map((dir) => dir.path)
     assert.ok(dirs.includes(path.join(home, 'Documents', 'GitHub')), JSON.stringify(dirs))
     assert.ok(dirs.includes(path.join(home, 'Playground')), JSON.stringify(dirs))
-    assert.equal(dirs.some((dir) => dir.endsWith('/Projects')), false, 'missing defaults are not scanned')
+    assert.equal(dirs.some((dir) => dir.endsWith(path.sep + 'Projects')), false, 'missing defaults are not scanned')
     const repos = payload.clones.map((clone) => clone.repo).sort()
     assert.deepEqual(repos, ['acme/deep', 'acme/tool'])
-  } finally {
-    process.env.HOME = oldHome
-  }
+  })
 })
 
 /* ------------------------------------------------------------------------ */

@@ -1,0 +1,5 @@
+# Keep LF everywhere: smokes compare generated scripts and fixtures byte for
+# byte, and a Windows checkout would otherwise turn them into CRLF.
+* text=auto eol=lf
+*.png binary
+*.svg text eol=lf

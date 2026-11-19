@@ -79,7 +79,10 @@ Other panel features:
   "what needs my attention?" is answered from one source of truth. When you ask
   explicitly, it also opens a terminal for a URL (for example "open Codex on PR
   288"), with the same prompt delivery as the panel: the agent may start, but
-  nothing is submitted.
+  nothing is submitted. The report says how old the snapshot is, adds a
+  `Status: stale|partial — reason` line when the last refresh failed or some
+  sources could not be read, and tells an empty inbox apart from requested
+  sections that are empty while others are not.
 - **Settings in the panel**: organizations, personal repositories, auto-refresh
   interval, green-CI merge rule, bot-review handling, terminal, prompt delivery,
   agents, launch scenarios, and clone search. Terminal settings are grouped under
@@ -280,7 +283,10 @@ review it and press Enter*.
 it is visible in the process list. The default scenario's prompt is just the
 GitHub URL; longer scenario prompts and section lists are visible there as well.
 The paste wrapper reads the prompt from a temporary file that it deletes once
-read; the clipboard receives it in every mode.
+read; the clipboard receives it in every mode. Each launch writes its script into
+its own `triage-desk-*` temporary directory; the script removes itself and the
+then-empty directory, and directories older than a day are swept at startup and
+before each launch.
 
 ### Launch steps
 
@@ -513,9 +519,16 @@ the settings endpoint and read with defaults in code, so the bundle needs no
 - **Windows**: PowerShell scripts are written as UTF-8 with a BOM and draft
   prompt files are read explicitly as UTF-8; a `;` in the tab title or script
   path is escaped as `\;` for Windows Terminal; double quotes in the prompt are
-  escaped for PowerShell 5.1's native argument passing. A prompt argument ending
-  in a backslash and agents installed as `.cmd` shims have not been verified on a
-  real Windows host.
+  escaped for PowerShell 5.1's native argument passing. `npm run smoke:windows`
+  runs the draft and clipboard launchers for real on Windows in CI: a
+  drive-letter clone path with non-ASCII characters and `;`, a prompt with
+  quotes and a trailing backslash, an `.exe` agent and an npm-style `.cmd` shim.
+  A `.cmd` shim runs through `cmd.exe`, which reads the command line again and
+  does not treat `\"` as an escaped quote: in a prompt with double quotes, `&`,
+  `|`, `<`, `>` and `^` can fall outside cmd.exe's quoting and act as
+  operators, `%NAME%` is expanded, and a line break ends the command. Such
+  prompts are not passed intact to a `.cmd` agent; an `.exe` agent is not
+  affected.
 - **Linux launch errors**: launches observe immediate startup errors for 500 ms
   and then report success; the emulator keeps running without a lifetime
   timeout. Failures after that window are not reported.
@@ -547,8 +560,11 @@ npm test              # alias for npm run check
 
 The pre-commit hook runs `npm run check`; it is enabled by the `prepare` script
 (`git config core.hooksPath .githooks`). CI (`.github/workflows/check.yml`) runs
-the same command with `npm ci`, and runs `smoke:paste` on ubuntu, macOS, and
-Windows. Pull requests from organization members also get an automated review
+the same command with `npm ci` on ubuntu and Windows (`check` and
+`check (windows-latest)`, which include `smoke:paste` and `smoke:windows`), and
+runs `smoke:paste` on macOS as `paste (macos-latest)`.
+Checks that need a POSIX shell, macOS, or symlink rights run only where those
+exist; each such skip is commented in the smoke. Pull requests from organization members also get an automated review
 from the DeepSeek review bot (`.github/workflows/deepseek-review.yml`); it reads
 the diff through the GitHub API and never checks out or runs pull request code.
 The local install and reload rules are in [DEV_LOCAL.md](DEV_LOCAL.md).
@@ -587,6 +603,10 @@ Checks:
   the prompt arrives as one bracketed paste with no Enter, a folder-trust dialog
   holds the paste until Enter, an agent that never stops redrawing still gets
   the paste, and the agent's exit status is passed through.
+- `npm run smoke:windows`: runs the generated PowerShell 5.1 launchers on
+  Windows with a recording agent and checks the exact arguments and working
+  directory it receives, and that each launcher removes its per-launch
+  directory; skipped on other platforms.
 - `npm run smoke:host`: **live, opt-in only**. Runs the host half against a fake
   Cordis context and the real `gh` CLI (requires `gh auth login`); it spends
   GitHub quota, so it is not part of `npm run check` or CI.

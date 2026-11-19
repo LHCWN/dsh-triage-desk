@@ -17,6 +17,14 @@ function posixLauncherShell(platform) {
   return { shebang: '#!/bin/zsh', interactive: '/bin/zsh -i' }
 }
 
+/**
+ * The per-launch directory holds only the script (or, in paste mode, the
+ * wrapper until the agent exits). rmdir never removes a directory that still
+ * has files, so these lines cannot delete anything else.
+ */
+const POSIX_REMOVE_LAUNCH_DIR = 'rmdir -- "${0%/*}" 2>/dev/null'
+const POSIX_SELF_CLEANUP_LINES = ['rm -f -- "$0"', POSIX_REMOVE_LAUNCH_DIR]
+
 function assertAbsoluteCwd(cwd) {
   if (typeof cwd !== 'string' || !path.isAbsolute(cwd)) throw new Error('cwd must be absolute')
 }
@@ -52,7 +60,7 @@ export function buildDraftLauncherScript({ cwd, title, command, binDir, platform
   const lines = [
     shell.shebang,
     '# Triage Desk launcher (native draft mode; generated for this launch).',
-    'rm -f -- "$0"',
+    ...POSIX_SELF_CLEANUP_LINES,
     'cd -- ' + shellQuote(cwd) + ' || {',
     "  printf 'Triage Desk: the clone directory is gone: %s\\n' " + shellQuote(cwd),
     '  exec ' + shell.interactive,
@@ -81,7 +89,7 @@ export function buildLoginLauncherScript({ cwd, ghCommand, platform = 'darwin' }
   const lines = [
     shell.shebang,
     '# Triage Desk GitHub login (generated for this launch).',
-    'rm -f -- "$0"',
+    ...POSIX_SELF_CLEANUP_LINES,
     'cd -- ' + shellQuote(cwd) + ' || exec ' + shell.interactive,
     "printf '\\nTriage Desk: follow the prompts below, finish in the browser, then return to the panel.\\n\\n'",
     shellQuote(ghCommand) + ' auth login --hostname github.com --git-protocol https --web',
@@ -110,7 +118,7 @@ export function buildClipboardLauncherScript({ cwd, title, bareCommand, binDir, 
   const lines = [
     shell.shebang,
     '# Triage Desk launcher (clipboard mode; generated for this launch).',
-    'rm -f -- "$0"',
+    ...POSIX_SELF_CLEANUP_LINES,
     'cd -- ' + shellQuote(cwd) + ' || {',
     "  printf 'Triage Desk: the clone directory is gone: %s\\n' " + shellQuote(cwd),
     '  exec ' + shell.interactive,
@@ -159,6 +167,7 @@ export function buildPasteLauncherScript({ cwd, title, bareCommand, python, wrap
     [shellQuote(python), '-I', shellQuote(wrapperFile), shellQuote(promptFile), shellQuote(shellPath), '-c', shellQuote(bareCommand)].join(' '),
     'TD_STATUS=$?',
     'rm -f -- ' + shellQuote(wrapperFile),
+    POSIX_REMOVE_LAUNCH_DIR,
     'if [ "$TD_STATUS" -ne 0 ]; then',
     "  printf '\\nTriage Desk: the agent exited with status %s\\n' \"$TD_STATUS\"",
     'fi',

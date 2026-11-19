@@ -11,14 +11,15 @@ import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { withHome } from './fixtures/platform.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 // The fake subprocess layer answers macOS commands (Terminal, osascript, open),
 // so the host must see darwin on every runner, including Linux CI. Set before
 // the host modules are imported: `apply` captures the platform once.
 Object.defineProperty(process, 'platform', { value: 'darwin' })
-const { apply } = await import(path.join(here, '..', 'index.js'))
+const { apply } = await import(pathToFileURL(path.join(here, '..', 'index.js')).href)
 const {
   SCENARIO_SECTION_IDS,
   SCENARIO_SECTION_LABELS,
@@ -28,7 +29,7 @@ const {
   defaultScenarios,
   openTerminalPlan,
   PASTE_WRAPPER_PY,
-} = await import(path.join(here, '..', 'launcher.js'))
+} = await import(pathToFileURL(path.join(here, '..', 'launcher.js')).href)
 
 const fixture = await fs.mkdtemp(path.join(os.tmpdir(), 'triage-desk-routes-'))
 const cloneDir = path.join(fixture, 'Playground', 'widgets')
@@ -973,35 +974,34 @@ await recordAsync('the clone picker reads every remote, prefers upstream, and ma
   const home = path.join(fixture, 'picker-home')
   await fs.mkdir(path.join(home, '.ssh'), { recursive: true })
   await fs.writeFile(path.join(home, '.ssh', 'config'), 'Host github-work\n  HostName github.com\n')
-  const oldHome = process.env.HOME
   const oldRemotes = captured.gitRemotes
-  process.env.HOME = home
   captured.pickChoice = cloneDir
-  try {
-    const pick = async (remotes) => {
-      captured.gitRemotes = remotes
-      captured.gitCalls.length = 0
-      const res = await callHandler('/triage-desk/pick-clone', 'POST')
-      const call = captured.gitCalls[0]
-      assert.deepEqual(call.slice(1), ['-C', cloneDir, 'config', '--local', '--get-regexp', '^remote\\..*\\.url$'])
-      return { status: res.statusCode, body: await json(res) }
+  await withHome(home, async () => {
+    try {
+      const pick = async (remotes) => {
+        captured.gitRemotes = remotes
+        captured.gitCalls.length = 0
+        const res = await callHandler('/triage-desk/pick-clone', 'POST')
+        const call = captured.gitCalls[0]
+        assert.deepEqual(call.slice(1), ['-C', cloneDir, 'config', '--local', '--get-regexp', '^remote\\..*\\.url$'])
+        return { status: res.statusCode, body: await json(res) }
+      }
+      const upstream = await pick(
+        'remote.origin.url git@github.com:me/forked-widgets.git\n'
+        + 'remote.upstream.url https://github.com/acme/widgets.git\n',
+      )
+      assert.equal(upstream.status, 200)
+      assert.equal(upstream.body.repo, 'acme/widgets')
+      const alias = await pick('remote.gitlab.url git@gitlab.com:x/y.git\nremote.work.url git@github-work:acme/x.git\n')
+      assert.equal(alias.body.repo, 'acme/x', 'first GitHub remote through the ~/.ssh/config alias')
+      const none = await pick('remote.origin.url git@gitlab.com:x/y.git\n')
+      assert.equal(none.status, 409)
+      assert.equal(none.body.error.code, 'not-a-github-clone')
+    } finally {
+      captured.gitRemotes = oldRemotes
+      captured.pickChoice = null
     }
-    const upstream = await pick(
-      'remote.origin.url git@github.com:me/forked-widgets.git\n'
-      + 'remote.upstream.url https://github.com/acme/widgets.git\n',
-    )
-    assert.equal(upstream.status, 200)
-    assert.equal(upstream.body.repo, 'acme/widgets')
-    const alias = await pick('remote.gitlab.url git@gitlab.com:x/y.git\nremote.work.url git@github-work:acme/x.git\n')
-    assert.equal(alias.body.repo, 'acme/x', 'first GitHub remote through the ~/.ssh/config alias')
-    const none = await pick('remote.origin.url git@gitlab.com:x/y.git\n')
-    assert.equal(none.status, 409)
-    assert.equal(none.body.error.code, 'not-a-github-clone')
-  } finally {
-    process.env.HOME = oldHome
-    captured.gitRemotes = oldRemotes
-    captured.pickChoice = null
-  }
+  })
 })
 
 await recordAsync('GitHub auth status and login button', async () => {

@@ -323,8 +323,9 @@ export function createLaunch({
       // `open -a Terminal` with no file would otherwise pop an empty window.
       if (platform === 'darwin' && opened?.terminal?.id === 'terminal') {
         // Terminal can start without being brought to the current Space;
-        // activate the already-running app (no new window is created).
-        await runProcess(['/usr/bin/open', '-a', 'Terminal'], { cwd: tempDir, timeoutMs: 5000, signal }).catch(
+        // activate the already-running app (no new window is created). It
+        // runs in the host cwd: the launcher may already have removed tempDir.
+        await runProcess(['/usr/bin/open', '-a', 'Terminal'], { timeoutMs: 5000, signal }).catch(
           () => undefined,
         )
       }
@@ -365,7 +366,7 @@ export function createLaunch({
       await writeLauncherScript(launcherFile, script)
       const opened = await openTerminal(launcherFile, 'Triage Desk: GitHub login', undefined, launcherSettings.terminal)
       if (platform === 'darwin' && opened?.terminal?.id === 'terminal') {
-        await runProcess(['/usr/bin/open', '-a', 'Terminal'], { cwd: tempDir, timeoutMs: 5000 }).catch(
+        await runProcess(['/usr/bin/open', '-a', 'Terminal'], { timeoutMs: 5000 }).catch(
           () => undefined,
         )
       }
