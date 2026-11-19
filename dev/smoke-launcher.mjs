@@ -1243,7 +1243,8 @@ check('Windows draft passes --flag= and the prompt as one expression argument', 
   assert.ok(script.includes("& 'aider' '--model=x' '--prefill' ('--message=' + $prompt)"), script)
   // PS 5.1 does not escape embedded quotes for native commands: the script does.
   const escape = "$prompt = $prompt -replace '(\\\\*)\"', '$1$1\\\"'"
-  assert.ok(script.includes(escape + '\n& '), script)
+  const trailing = "if ($prompt -match '\\s') { $prompt = $prompt -replace '(\\\\+)$', '$1$1' }"
+  assert.ok(script.includes(escape + '\n' + trailing + '\n& '), script)
   assert.ok(script.indexOf(escape) > script.indexOf('Get-Content'))
 })
 

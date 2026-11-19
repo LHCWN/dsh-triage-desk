@@ -14,7 +14,7 @@
  */
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { promises as fs, existsSync, rmSync, writeFileSync } from 'node:fs'
+import { promises as fs, existsSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { buildWindowsClipboardLauncherScript, buildWindowsDraftLauncherScript } from '../launcher.js'
@@ -42,6 +42,8 @@ await fs.writeFile(shim, '@"' + process.execPath + '" "%~dp0record-args.mjs" %*\
 // The clone directory: drive letter, non-ASCII characters, a space and `;`.
 const clone = path.join(root, '工作 repo; ü')
 await fs.mkdir(clone, { recursive: true })
+// The temp dir can be an 8.3 short path (RUNNER~1); the agent reports the long one.
+const longPath = (value) => realpathSync.native(value)
 
 const checks = []
 async function check(name, callback) {
@@ -93,7 +95,7 @@ for (const [label, agentCommand] of [
     assert.equal(run.head, 'efbbbf', 'the script starts with a UTF-8 BOM')
     assert.ok(run.recorded, 'the agent ran: ' + run.result.stdout + run.result.stderr)
     assert.deepEqual(run.recorded.argv, ['--prefill', PROMPT])
-    assert.equal(run.recorded.cwd, clone, 'the non-ASCII drive-letter cwd survives')
+    assert.equal(longPath(run.recorded.cwd), longPath(clone), 'the non-ASCII drive-letter cwd survives')
     assert.equal(run.dirLeft, false, 'the launcher removes its directory')
   })
 }
@@ -106,7 +108,7 @@ await check('clipboard launcher keeps static arguments of a .cmd shim', async ()
   }))
   assert.ok(run.recorded, 'the agent ran: ' + run.result.stdout + run.result.stderr)
   assert.deepEqual(run.recorded.argv, ['--label', 'two words', '--yes'])
-  assert.equal(run.recorded.cwd, clone)
+  assert.equal(longPath(run.recorded.cwd), longPath(clone))
   assert.equal(run.dirLeft, false)
 })
 

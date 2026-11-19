@@ -58,13 +58,19 @@ function windowsDraftInvocation(agentCommand, draftFlag) {
  * ProcessStartInfo.Arguments / CommandLineToArgvW rules: 2n backslashes + `"`
  * → n backslashes and a quote delimiter; 2n+1 → n backslashes and a literal
  * quote). So every `"` in the prompt becomes `\"` with its preceding
- * backslashes doubled. This is correct only for 5.1's legacy argument passing
- * (PowerShell 7.3+ `Standard` mode escapes by itself); the launcher always
- * runs `powershell.exe`. Not verified on a real Windows host: a trailing
- * backslash inside an argument PowerShell wraps in quotes, and agents that are
- * `.cmd` shims re-parsed by cmd.exe, remain known limitations.
+ * backslashes doubled. PowerShell 5.1 also wraps an argument that contains
+ * whitespace in quotes without touching trailing backslashes, so `a b\`
+ * would become `"a b\"` and the closing quote would be read as a literal one:
+ * trailing backslashes are doubled when the prompt contains whitespace. This
+ * is correct only for 5.1's legacy argument passing (PowerShell 7.3+
+ * `Standard` mode escapes by itself); the launcher always runs
+ * `powershell.exe`. dev/smoke-windows.mjs checks both rules on Windows with an
+ * `.exe` agent and an npm-style `.cmd` shim.
  */
-const WINDOWS_PROMPT_QUOTE_ESCAPE = "$prompt = $prompt -replace '(\\\\*)\"', '$1$1\\\"'"
+const WINDOWS_PROMPT_QUOTE_ESCAPE = [
+  "$prompt = $prompt -replace '(\\\\*)\"', '$1$1\\\"'",
+  "if ($prompt -match '\\s') { $prompt = $prompt -replace '(\\\\+)$', '$1$1' }",
+].join('\n')
 
 /**
  * The script removes itself, then its per-launch directory if nothing else is
