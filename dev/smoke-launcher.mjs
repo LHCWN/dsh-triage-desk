@@ -543,11 +543,14 @@ check('clipboard mode preserves static quoted argument bytes', () => {
 check('Windows invocations preserve quoted paths and static arguments', () => {
   const agentCommand = '"C:\\Program Files\\Agent\\claude.exe" --label "two   spaces" {prompt}'
   const draft = buildWindowsDraftLauncherScript({ cwd: 'C:\\work', title: 'test', agentCommand, promptFile: 'C:\\prompt.txt', draftFlag: '--prefill' })
-  assert.ok(draft.includes("& 'C:\\Program Files\\Agent\\claude.exe' '--label' 'two   spaces' '--prefill' $prompt"), draft)
+  assert.ok(draft.includes("& 'C:\\Program Files\\Agent\\claude.exe' '--label' 'two   spaces' '--prefill' $tdArg"), draft)
   const clipboard = buildWindowsClipboardLauncherScript({ cwd: 'C:\\work', title: 'test', bareCommand: bareAgentCommand(agentCommand) })
   assert.ok(clipboard.includes("& 'C:\\Program Files\\Agent\\claude.exe' '--label' 'two   spaces'"), clipboard)
   const staticDollar = buildWindowsDraftLauncherScript({ cwd: 'C:\\work', title: 'test', agentCommand: 'claude --label \'$prompt\' {prompt}', promptFile: 'C:\\prompt.txt', draftFlag: '--prefill' })
-  assert.ok(staticDollar.includes("& 'claude' '--label' '$prompt' '--prefill' $prompt"), staticDollar)
+  assert.ok(staticDollar.includes("& 'claude' '--label' '$prompt' '--prefill' $tdArg"), staticDollar)
+  // A static argument whose whitespace sits only inside quotes needs --%.
+  const quotedOnly = buildWindowsClipboardLauncherScript({ cwd: 'C:\\work', title: 'test', bareCommand: 'agent --say "\\"a b\\"" --yes' })
+  assert.ok(quotedOnly.includes("& 'agent' --% --say \"\\\"a b\\\"\" --yes"), quotedOnly)
 })
 
 check('bare commands drop the prompt and its flag', () => {
@@ -677,7 +680,8 @@ check('windows draft launcher pre-fills an unsent prompt from a file', () => {
   assert.ok(script.includes("Set-Location -LiteralPath 'C:\\Users\\O''Brien\\repo'"))
   assert.ok(script.includes("$Host.UI.RawUI.WindowTitle = 'Triage Desk: acme/widgets #288'"))
   assert.ok(script.includes("$prompt = Get-Content -Raw -LiteralPath 'C:\\Temp\\triage-desk\\prompt.txt'"))
-  assert.ok(script.includes("& 'claude' '--prefill' $prompt"))
+  assert.ok(script.includes("& 'claude' '--prefill' $tdArg"))
+  assert.ok(script.includes("& 'claude' --% --prefill %TD_PROMPT_ARG%"), 'the --% form covers prompts 5.1 cannot pass')
   assert.ok(script.includes('$LASTEXITCODE'))
   assert.ok(!script.includes('{prompt}'))
   assert.ok(!script.includes('https://github.com/'), 'the prompt text must stay out of the script')
@@ -688,7 +692,7 @@ check('windows draft launcher pre-fills an unsent prompt from a file', () => {
     promptFile: 'C:\\Temp\\prompt.txt',
     draftFlag: '--prompt',
   })
-  assert.ok(opencode.includes("& 'opencode' '--prompt' $prompt"))
+  assert.ok(opencode.includes("& 'opencode' '--prompt' $tdArg"))
   const staticArgs = buildWindowsDraftLauncherScript({
     cwd: 'C:\\repo',
     title: 't',
@@ -696,7 +700,7 @@ check('windows draft launcher pre-fills an unsent prompt from a file', () => {
     promptFile: 'C:\\Temp\\prompt.txt',
     draftFlag: '--prefill',
   })
-  assert.ok(staticArgs.includes("& 'my-agent' '--model=opus' '--prefill' $prompt"))
+  assert.ok(staticArgs.includes("& 'my-agent' '--model=opus' '--prefill' $tdArg"))
 })
 
 check('Windows draft reads the UTF-8 prompt explicitly instead of the ANSI default', () => {
@@ -1244,11 +1248,12 @@ check('Windows draft passes --flag= and the prompt as one expression argument', 
   const script = buildWindowsDraftLauncherScript({
     cwd: 'C:\\work', title: 't', agentCommand: 'aider --model=x --message={prompt}', promptFile: 'C:\\p.txt', draftFlag: '--prefill',
   })
-  assert.ok(script.includes("& 'aider' '--model=x' '--prefill' ('--message=' + $prompt)"), script)
+  assert.ok(script.includes("& 'aider' '--model=x' '--prefill' ('--message=' + $tdArg)"), script)
+  assert.ok(script.includes("& 'aider' --% --model=x --prefill %TD_PROMPT_ARG%"), script)
+  assert.ok(script.includes("$env:TD_PROMPT_ARG = '--message=' + '\"'"), script)
   // PS 5.1 does not escape embedded quotes for native commands: the script does.
   const escape = "$prompt = $prompt -replace '(\\\\*)\"', '$1$1\\\"'"
-  const trailing = "if ($prompt -match '\\s') { $prompt = $prompt -replace '(\\\\+)$', '$1$1' }"
-  assert.ok(script.includes(escape + '\n' + trailing + '\n& '), script)
+  assert.ok(script.includes(escape + "\n$tdArg = '--message=' + $prompt\nif (Test-TdQuoted $tdArg) {"), script)
   assert.ok(script.indexOf(escape) > script.indexOf('Get-Content'))
 })
 

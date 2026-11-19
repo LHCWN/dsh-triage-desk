@@ -124,6 +124,15 @@ await check('clipboard launcher keeps static arguments of a .cmd shim', async ()
   }))
   assert.ok(run.recorded, 'the agent ran: ' + run.result.stdout + run.result.stderr)
   assert.deepEqual(run.recorded.argv, ['--label', 'two words', '--yes'])
+  // Whitespace only inside quote pairs: PowerShell 5.1 cannot pass it, so the
+  // launcher switches to --% with the command-line form.
+  const verbatim = await runLauncher(() => buildWindowsClipboardLauncherScript({
+    cwd: clone,
+    title: 'Triage Desk: clipboard',
+    bareCommand: '"' + process.execPath + '" "' + recorder + '" --say "\\"a b\\"" --yes',
+  }))
+  assert.ok(verbatim.recorded, 'the agent ran: ' + verbatim.result.stdout + verbatim.result.stderr)
+  assert.deepEqual(verbatim.recorded.argv, ['--say', '"a b"', '--yes'])
   assert.equal(realpathSync.native(run.recorded.cwd), realpathSync.native(clone))
   assert.equal(run.dirLeft, false)
 })
