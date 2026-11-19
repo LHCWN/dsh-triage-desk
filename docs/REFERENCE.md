@@ -462,6 +462,9 @@ plugins as they are. If it was the only entry, leave `[]` on a line of its
 own: the file must stay a YAML list, and DSH does not start the profile when it
 holds only comments.
 
+This section was checked against DSH 0.2.2-rc.5; the plugin supports
+`>=0.2.2-rc.2 <0.3.0`.
+
 ## How it works
 
 - **Host half** (`index.js`, `host/`, `github.js`): collects a snapshot through
