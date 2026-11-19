@@ -4,7 +4,7 @@
  * Windows.
  */
 import { spawnSync } from 'node:child_process'
-import { promises as fs } from 'node:fs'
+import { promises as fs, rmSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -14,6 +14,37 @@ import path from 'node:path'
  * counterparts assert the generated PowerShell instead.
  */
 export const POSIX_SHELL = process.platform !== 'win32' && spawnSync('/bin/sh', ['-c', 'exit 0']).status === 0
+
+/**
+ * Runs the part of a check that executes generated shell code, or logs a skip
+ * when there is no POSIX shell (Windows). Every such skip goes through here so
+ * it is visible in the output.
+ */
+export function withPosixShell(label, callback) {
+  if (!POSIX_SHELL) {
+    console.log('skip ' + label + ': needs a POSIX shell')
+    return
+  }
+  callback()
+}
+
+/**
+ * Removes `dir` on every exit: success, a skip, a failed assertion, or an
+ * abort. A signal's default action skips the `exit` event, so SIGINT, SIGTERM
+ * and SIGHUP leave through process.exit with the usual 128 + signal status.
+ */
+export function removeOnExit(dir) {
+  process.on('exit', () => {
+    try {
+      rmSync(dir, { recursive: true, force: true })
+    } catch {
+      // best effort: a file still held open on Windows stays for the OS to clean
+    }
+  })
+  for (const [signal, status] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]]) {
+    process.once(signal, () => process.exit(status))
+  }
+}
 
 /**
  * Runs `callback` with `home` as the home directory. `os.homedir()` reads
@@ -26,7 +57,7 @@ export async function withHome(home, callback) {
   process.env.HOME = home
   process.env.USERPROFILE = home
   try {
-    assertHome(home)
+    if (os.homedir() !== home) throw new Error('os.homedir() did not follow the fake home: ' + os.homedir())
     return await callback()
   } finally {
     for (const [name, value] of Object.entries(saved)) {
@@ -34,10 +65,6 @@ export async function withHome(home, callback) {
       else process.env[name] = value
     }
   }
-}
-
-function assertHome(home) {
-  if (os.homedir() !== home) throw new Error('os.homedir() did not follow the fake home: ' + os.homedir())
 }
 
 /**

@@ -5,8 +5,9 @@
  * received, so the checks are byte-exact:
  *   - a drive-letter working directory with non-ASCII characters and `;`
  *     survives (the UTF-8 BOM makes PowerShell 5.1 read the script as UTF-8);
- *   - a prompt with spaces, quotes and a trailing backslash arrives as one
- *     argument, for an .exe agent and for an npm-style `.cmd` shim;
+ *   - prompts with spaces, quotes and trailing backslashes arrive as one
+ *     argument, for an .exe agent and for an npm-style `.cmd` shim, and static
+ *     arguments follow the same rules;
  *   - the clipboard launcher keeps static arguments;
  *   - every launcher removes itself and its per-launch directory.
  *
@@ -14,10 +15,11 @@
  */
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { promises as fs, existsSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { promises as fs, existsSync, realpathSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { buildWindowsClipboardLauncherScript, buildWindowsDraftLauncherScript } from '../launcher.js'
+import { removeOnExit } from './fixtures/platform.mjs'
 
 if (process.platform !== 'win32') {
   console.log('windows smoke SKIPPED (runs only on Windows)')
@@ -25,7 +27,7 @@ if (process.platform !== 'win32') {
 }
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'triage-desk-windows-'))
-process.on('exit', () => rmSync(root, { recursive: true, force: true }))
+removeOnExit(root)
 
 // The recording agent and its npm-style shim live in a folder with spaces.
 const tools = path.join(root, 'agent tools')
@@ -42,8 +44,8 @@ await fs.writeFile(shim, '@"' + process.execPath + '" "%~dp0record-args.mjs" %*\
 // The clone directory: drive letter, non-ASCII characters, a space and `;`.
 const clone = path.join(root, '工作 repo; ü')
 await fs.mkdir(clone, { recursive: true })
-// The temp dir can be an 8.3 short path (RUNNER~1); the agent reports the long one.
-const longPath = (value) => realpathSync.native(value)
+// The temp dir can be an 8.3 short path (RUNNER~1); the agent reports the long
+// one, so both sides are compared through realpathSync.native.
 
 const checks = []
 async function check(name, callback) {
@@ -57,21 +59,23 @@ async function check(name, callback) {
   }
 }
 
-/** Writes `script` like the host does (UTF-8 BOM) into its own launch directory and runs it. */
+/**
+ * Writes `script` with a UTF-8 BOM, as the host does (the host's own write is
+ * checked by smoke:launcher), into its own launch directory and runs it.
+ */
 async function runLauncher(build) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'triage-desk-'))
   const record = path.join(root, 'record-' + path.basename(dir) + '.json')
   const scriptFile = path.join(dir, 'launch.ps1')
   const script = build(dir)
   await fs.writeFile(scriptFile, '\uFEFF' + script, 'utf8')
-  const head = (await fs.readFile(scriptFile)).subarray(0, 3).toString('hex')
   const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptFile], {
     env: { ...process.env, TD_RECORD: record },
     encoding: 'utf8',
     timeout: 60_000,
   })
   const recorded = existsSync(record) ? JSON.parse(await fs.readFile(record, 'utf8')) : null
-  return { head, result, recorded, dirLeft: existsSync(dir) }
+  return { result, recorded, dirLeft: existsSync(dir) }
 }
 
 const PROMPT = 'Review C:\\work\\a b with "quotes" and a trailing backslash\\'
@@ -92,13 +96,25 @@ for (const [label, agentCommand] of [
         draftFlag: '--prefill',
       })
     })
-    assert.equal(run.head, 'efbbbf', 'the script starts with a UTF-8 BOM')
     assert.ok(run.recorded, 'the agent ran: ' + run.result.stdout + run.result.stderr)
     assert.deepEqual(run.recorded.argv, ['--prefill', PROMPT])
-    assert.equal(longPath(run.recorded.cwd), longPath(clone), 'the non-ASCII drive-letter cwd survives')
+    assert.equal(realpathSync.native(run.recorded.cwd), realpathSync.native(clone), 'the non-ASCII drive-letter cwd survives')
     assert.equal(run.dirLeft, false, 'the launcher removes its directory')
   })
 }
+
+await check('draft launcher keeps quoted-only spaces, bare trailing backslashes and static arguments', async () => {
+  const agentCommand = '"' + process.execPath + '" "' + recorder + '" --dir "C:\\My Repos\\\\" --say \\"hi\\" {prompt}'
+  for (const prompt of ['"a b"', 'plain\\', 'two\\ \\\\']) {
+    const run = await runLauncher((dir) => {
+      const promptFile = path.join(dir, 'prompt.txt')
+      writeFileSync(promptFile, prompt, 'utf8')
+      return buildWindowsDraftLauncherScript({ cwd: clone, title: 't', agentCommand, promptFile, draftFlag: '--prefill' })
+    })
+    assert.ok(run.recorded, 'the agent ran: ' + run.result.stdout + run.result.stderr)
+    assert.deepEqual(run.recorded.argv, ['--dir', 'C:\\My Repos\\', '--say', '"hi"', '--prefill', prompt], JSON.stringify(prompt))
+  }
+})
 
 await check('clipboard launcher keeps static arguments of a .cmd shim', async () => {
   const run = await runLauncher(() => buildWindowsClipboardLauncherScript({
@@ -108,7 +124,7 @@ await check('clipboard launcher keeps static arguments of a .cmd shim', async ()
   }))
   assert.ok(run.recorded, 'the agent ran: ' + run.result.stdout + run.result.stderr)
   assert.deepEqual(run.recorded.argv, ['--label', 'two words', '--yes'])
-  assert.equal(longPath(run.recorded.cwd), longPath(clone))
+  assert.equal(realpathSync.native(run.recorded.cwd), realpathSync.native(clone))
   assert.equal(run.dirLeft, false)
 })
 

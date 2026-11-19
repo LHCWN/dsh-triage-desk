@@ -1,7 +1,10 @@
 name: check
 
 on:
+  # Branches are checked through their pull request; pushes check main only,
+  # so a PR commit does not run every job twice.
   push:
+    branches: [main]
   pull_request:
 
 permissions:
@@ -34,15 +37,15 @@ jobs:
       - run: npm run check
 
   # The paste wrapper has one implementation per platform family (Python pty on
-  # macOS/Linux, C# over ConPTY on Windows), so its end-to-end smoke runs on all
-  # three. It needs only Node (the fake agent) and the runner's Python or
-  # PowerShell 5.1; no npm install.
+  # macOS/Linux, C# over ConPTY on Windows). `npm run check` already runs its
+  # smoke on ubuntu and Windows; this job adds macOS. It needs only Node (the
+  # fake agent) and the runner's Python; no npm install.
   paste:
     name: paste (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:

@@ -12,7 +12,7 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { Readable } from 'node:stream'
 import { apply } from '../index.js'
-import { POSIX_SHELL, canSymlink, withHome } from './fixtures/platform.mjs'
+import { canSymlink, withHome, withPosixShell } from './fixtures/platform.mjs'
 import {
   AGENT_PRESETS,
   BUILTIN_SCENARIOS,
@@ -530,13 +530,13 @@ check('clipboard mode preserves static quoted argument bytes', () => {
   const template = 'printf \'<%s>\\n\' --label "two   spaces" --prompt {prompt} --mode "stay   put"'
   const bare = bareAgentCommand(template, 'linux')
   assert.equal(bare, 'printf \'<%s>\\n\' --label "two   spaces" --mode "stay   put"')
-  // Executing it needs a POSIX shell; on Windows the quoting is checked by
-  // 'Windows invocations preserve quoted paths and static arguments'.
-  if (POSIX_SHELL) {
+  // On Windows the quoting is checked by 'Windows invocations preserve quoted
+  // paths and static arguments'.
+  withPosixShell('running the bare command', () => {
     const result = spawnSync('/bin/sh', ['-c', bare], { encoding: 'utf8' })
     assert.equal(result.status, 0, result.stderr)
     assert.equal(result.stdout, '<--label>\n<two   spaces>\n<--mode>\n<stay   put>\n')
-  }
+  })
   assert.equal(bareAgentCommand('agent "--prompt" {prompt} --label "a  b"', 'linux'), 'agent --label "a  b"')
 })
 
@@ -601,13 +601,13 @@ check('prompt substitution rejects quoted, escaped, embedded and repeated placeh
   }
   const prompt = '$(printf INJECTED) `printf BACKTICK` "quotes" and single\'quotes'
   const command = buildDraftCommand('printf "%s\\n" {prompt}', prompt, '--prefill')
-  // Running the POSIX command needs /bin/sh; Windows gets the prompt through a
-  // file read into $prompt, asserted in the Windows draft launcher checks.
-  if (POSIX_SHELL) {
+  // Windows gets the prompt through a file read into $prompt, run for real by
+  // smoke:windows.
+  withPosixShell('running the draft command', () => {
     const result = spawnSync('/bin/sh', ['-c', command], { encoding: 'utf8' })
     assert.equal(result.status, 0, result.stderr)
     assert.equal(result.stdout, '--prefill\n' + prompt + '\n', 'untrusted prompt content stays literal shell data')
-  }
+  })
 })
 
 check('native draft command uses the agent flag and quotes the prompt', () => {
@@ -989,7 +989,10 @@ await checkAsync('macOS detection reads PATH configured only in the user zshrc',
   // Linux still checks the route's subprocess contract offline. Skipped on
   // Windows: the fake darwin host would get Windows paths from node:path, and
   // smoke:routes already covers the subprocess contract there.
-  if (process.platform === 'win32') return
+  if (process.platform === 'win32') {
+    console.log('skip zshrc detection: a fake darwin host cannot use Windows paths')
+    return
+  }
   const shellHome = path.join(fixture, 'shell-home')
   const bin = path.join(shellHome, 'bin')
   await fs.mkdir(bin, { recursive: true })
@@ -1223,12 +1226,13 @@ check('--flag={prompt} stays one literal argument in real /bin/sh', () => {
   const template = 'printf "<%s>\\n" --message={prompt} tail'
   const command = buildDraftCommand(template, prompt, '--prefill')
   assert.ok(command.startsWith('printf "<%s>\\n" --prefill --message=\''), command)
-  // Executing it needs /bin/sh; the Windows form of --flag={prompt} is checked
-  // by 'Windows draft passes --flag= and the prompt as one expression argument'.
-  if (!POSIX_SHELL) return
-  const result = spawnSync('/bin/sh', ['-c', command], { encoding: 'utf8' })
-  assert.equal(result.status, 0, result.stderr)
-  assert.equal(result.stdout, '<--prefill>\n<--message=' + prompt + '>\n<tail>\n', command)
+  // The Windows form of --flag={prompt} is checked by 'Windows draft passes
+  // --flag= and the prompt as one expression argument'.
+  withPosixShell('running the --flag= command', () => {
+    const result = spawnSync('/bin/sh', ['-c', command], { encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(result.stdout, '<--prefill>\n<--message=' + prompt + '>\n<tail>\n', command)
+  })
 })
 
 check('clipboard mode drops the whole --flag={prompt} word', () => {
@@ -1261,15 +1265,17 @@ check('POSIX launchers add the agent directory to PATH only when missing', () =>
   const guard = script.split('\n').find((line) => line.startsWith('case '))
   assert.ok(guard, script)
   assert.ok(script.indexOf(guard) < script.indexOf('\nagent\n'))
-  // Running the guard needs /bin/sh; Windows launchers do not touch PATH.
-  for (const [shell, PATH, expected] of POSIX_SHELL ? [
-    ['/bin/sh', '/usr/bin:/bin', "/opt/it's dir:/usr/bin:/bin"],
-    ['/bin/sh', "/x:/opt/it's dir:/usr/bin", "/x:/opt/it's dir:/usr/bin"],
-    ['/bin/sh', '', "/opt/it's dir"],
-  ] : []) {
-    const result = spawnSync(shell, ['-c', guard + '\nprintf "%s" "$PATH"'], { env: { PATH }, encoding: 'utf8' })
-    assert.equal(result.stdout, expected, PATH)
-  }
+  // Windows launchers do not touch PATH.
+  withPosixShell('running the PATH guard', () => {
+    for (const [PATH, expected] of [
+      ['/usr/bin:/bin', "/opt/it's dir:/usr/bin:/bin"],
+      ["/x:/opt/it's dir:/usr/bin", "/x:/opt/it's dir:/usr/bin"],
+      ['', "/opt/it's dir"],
+    ]) {
+      const result = spawnSync('/bin/sh', ['-c', guard + '\nprintf "%s" "$PATH"'], { env: { PATH }, encoding: 'utf8' })
+      assert.equal(result.stdout, expected, PATH)
+    }
+  })
   assert.equal(buildDraftLauncherScript({ cwd: '/tmp', title: 't', command: 'x' }).includes('case '), false, 'no binDir, no PATH line')
 })
 

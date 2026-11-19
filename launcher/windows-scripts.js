@@ -22,12 +22,25 @@ function windowsScriptCwd(cwd) {
   return 'Set-Location -LiteralPath ' + windowsQuote(cwd)
 }
 
+/**
+ * A static agent argument prepared for PowerShell 5.1's native argument
+ * passing, by the same two rules the launcher applies to `$prompt` at run time
+ * (WINDOWS_PROMPT_ESCAPE_LINES): `"` becomes `\"` with its preceding
+ * backslashes doubled, and trailing backslashes are doubled when the value
+ * contains whitespace (5.1 then wraps it in quotes).
+ */
+function windowsNativeArg(value) {
+  let arg = String(value).replace(/(\\*)"/g, '$1$1\\"')
+  if (/\s/.test(arg)) arg = arg.replace(/(\\+)$/, '$1$1')
+  return windowsQuote(arg)
+}
+
 /** `& 'exe' '--flag' ...` for a bare command, one single-quoted argument each. */
 function windowsBareInvocation(bareCommand) {
   if (typeof bareCommand !== 'string' || bareCommand.trim() === '') throw new Error('bare agent command is required')
   const tokens = windowsTokens(bareCommand)
   if (tokens.length === 0) throw new Error('bare agent command is required')
-  return '& ' + tokens.map((token) => windowsQuote(token.value)).join(' ')
+  return '& ' + tokens.map((token, position) => (position === 0 ? windowsQuote(token.value) : windowsNativeArg(token.value))).join(' ')
 }
 
 /**
@@ -45,7 +58,8 @@ function windowsDraftInvocation(agentCommand, draftFlag) {
   assertDraftFlag(draftFlag)
   const { words, index, prefix } = promptWord(agentCommand, 'win32')
   return '& ' + words.flatMap((token, position) => {
-    if (position !== index) return [windowsQuote(token.value)]
+    if (position === 0) return [windowsQuote(token.value)]
+    if (position !== index) return [windowsNativeArg(token.value)]
     return [windowsQuote(draftFlag), prefix === '' ? '$prompt' : '(' + windowsQuote(prefix) + ' + $prompt)']
   }).join(' ')
 }
@@ -67,10 +81,10 @@ function windowsDraftInvocation(agentCommand, draftFlag) {
  * `powershell.exe`. dev/smoke-windows.mjs checks both rules on Windows with an
  * `.exe` agent and an npm-style `.cmd` shim.
  */
-const WINDOWS_PROMPT_QUOTE_ESCAPE = [
+const WINDOWS_PROMPT_ESCAPE_LINES = [
   "$prompt = $prompt -replace '(\\\\*)\"', '$1$1\\\"'",
   "if ($prompt -match '\\s') { $prompt = $prompt -replace '(\\\\+)$', '$1$1' }",
-].join('\n')
+]
 
 /**
  * The script removes itself, then its per-launch directory if nothing else is
@@ -111,7 +125,7 @@ export function buildWindowsDraftLauncherScript({ cwd, title, agentCommand, prom
     // Verified: https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_character_encoding?view=powershell-5.1
     '$prompt = Get-Content -Raw -LiteralPath ' + windowsQuote(promptFile) + ' -Encoding UTF8',
     'Remove-Item -LiteralPath ' + windowsQuote(promptFile) + ' -Force -ErrorAction SilentlyContinue',
-    WINDOWS_PROMPT_QUOTE_ESCAPE,
+    ...WINDOWS_PROMPT_ESCAPE_LINES,
     invocation,
     ...windowsExitStatusLines('Triage Desk: the agent exited with status '),
     ...WINDOWS_SELF_CLEANUP_LINES,

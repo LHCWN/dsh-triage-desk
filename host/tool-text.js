@@ -36,15 +36,18 @@ export function formatToolText(snapshot, wanted, now = Date.now()) {
   const parts = []
   for (const id of SECTION_IDS) parts.push(`${id}: ${counts[id] || 0}`)
   lines.push(parts.join(' · '))
-  const lastError = snapshot.meta && snapshot.meta.lastError
-  if (snapshot.status === 'stale' || snapshot.status === 'partial') {
-    const reason = lastError && lastError.message ? lastError.message : snapshot.status === 'partial' ? 'some sources could not be read' : 'the latest refresh failed'
-    lines.push(`Status: ${snapshot.status} — ${reason} (snapshot from ${snapshot.generatedAt})`)
+  // A stale snapshot carries the failed refresh in meta.lastError; a partial
+  // one names its unreadable sources in the warnings below.
+  if (snapshot.status === 'stale') {
+    const reason = snapshot.meta?.lastError?.message || 'the latest refresh failed'
+    lines.push(`Status: stale — ${reason} (snapshot from ${snapshot.generatedAt})`)
+  } else if (snapshot.status === 'partial') {
+    lines.push('Status: partial — some sources could not be read')
   }
   let printed = 0
   let elsewhere = 0
   for (const section of snapshot.sections || []) {
-    const items = Array.isArray(section.items) ? section.items : []
+    const items = section.items
     if (wanted !== null && !wanted.has(section.id)) {
       elsewhere += items.length
       continue
@@ -60,10 +63,10 @@ export function formatToolText(snapshot, wanted, now = Date.now()) {
       lines.push(`- ${tag}${item.repo} ${number} — ${label} [${item.reason}] ${item.url}`)
     }
   }
-  if (printed === 0 && elsewhere > 0) {
-    lines.push('', `Nothing in the requested sections; ${elsewhere} item(s) are in other sections.`)
-  } else if (printed === 0) {
-    lines.push('', 'Nothing needs your attention right now.')
+  if (printed === 0) {
+    lines.push('', elsewhere > 0
+      ? `Nothing in the requested sections; ${elsewhere} item(s) are in other sections.`
+      : 'Nothing needs your attention right now.')
   }
   if (Array.isArray(snapshot.warnings) && snapshot.warnings.length > 0) {
     lines.push('', `Warnings: ${snapshot.warnings.map((entry) => entry.message).join('; ')}`)

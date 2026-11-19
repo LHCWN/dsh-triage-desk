@@ -555,7 +555,8 @@ npm test              # alias for npm run check
 The pre-commit hook runs `npm run check`; it is enabled by the `prepare` script
 (`git config core.hooksPath .githooks`). CI (`.github/workflows/check.yml`) runs
 the same command with `npm ci` on ubuntu and Windows (`check` and
-`check (windows-latest)`), and runs `smoke:paste` on ubuntu, macOS, and Windows.
+`check (windows-latest)`, which include `smoke:paste` and `smoke:windows`), and
+runs `smoke:paste` on macOS as `paste (macos-latest)`.
 Checks that need a POSIX shell, macOS, or symlink rights run only where those
 exist; each such skip is commented in the smoke. Pull requests from organization members also get an automated review
 from the DeepSeek review bot (`.github/workflows/deepseek-review.yml`); it reads
