@@ -384,6 +384,10 @@ Windows that is the only launch that does not run a detected path: any other
 agent either runs by its detected path or is refused with the detection reason
 (*not installed*, *not executable*).
 
+Detection results are reused for two minutes. Before a launch runs a detected
+path it checks that the file is still there; when it is gone (the agent was moved
+or reinstalled), the launch detects again once and uses the fresh answer.
+
 **Command rules.** An agent command must contain `{prompt}` exactly once,
 unquoted and unescaped, after the executable word: either as its own argument
 (`codex {prompt}`) or directly after a `--flag=` (`aider --message={prompt}`).

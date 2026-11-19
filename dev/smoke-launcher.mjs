@@ -1226,6 +1226,109 @@ await checkAsync('Windows detection reports the drive-rooted path it checked; a 
   }
 })
 
+await checkAsync('a launch builds the bare command only for paste and clipboard, failing as open-failed', async () => {
+  // `--prompt {prompt}` follows the command rule, but its bare form (prompt
+  // and its value-less flag removed) is empty. A failing login-shell probe
+  // leaves the command unpinned (probe-failed), so nothing replaces the word.
+  const agents = [
+    { id: 'drafted', label: 'Drafted', command: '--prompt {prompt}', draftFlag: '--prefill' },
+    { id: 'bare', label: 'Bare', command: '--prompt {prompt}' },
+    // Windows quoting cannot split this command (an unclosed `'`), so
+    // detection finds no program and the launch stops before any script.
+    { id: 'quoted', label: 'Quoted', command: "claude --name O\\'Brien {prompt}" },
+  ]
+  const oldTerminal = process.env.TERMINAL
+  process.env.TERMINAL = '/usr/bin/gnome-terminal'
+  try {
+    await withPlatformHost('linux', (spec, handle) => {
+      if (spec.argv[3] === 'triage-desk') return handle(1, '', 'broken rc')
+      if (spec.argv[0] === '/usr/bin/gnome-terminal' || spec.argv[0] === 'wl-copy') return handle()
+      throw new Error('unexpected subprocess: ' + spec.argv.join(' '))
+    }, async ({ request }) => {
+      const drafted = await request('/triage-desk/launch', 'POST', { url: PR_URL, agent: 'drafted' })
+      assert.equal(drafted.status, 200, JSON.stringify(drafted.body))
+      assert.equal(drafted.body.mode, 'draft', 'a draft never needs the bare form')
+      const bare = await request('/triage-desk/launch', 'POST', { url: PR_URL, agent: 'bare' })
+      assert.equal(bare.status, 502, JSON.stringify(bare.body))
+      assert.equal(bare.body.error.code, 'open-failed')
+      assert.match(bare.body.error.message, /no executable after removing the prompt/)
+    }, { agents, defaultAgent: 'drafted', promptDelivery: 'clipboard' })
+  } finally {
+    if (oldTerminal === undefined) delete process.env.TERMINAL
+    else process.env.TERMINAL = oldTerminal
+  }
+  for (const promptDelivery of ['paste', 'clipboard']) {
+    await withPlatformHost('win32', (spec, handle) => {
+      if (spec.argv[0] === 'powershell.exe') return handle(1, '')
+      if (spec.argv[0] === 'clip.exe' || spec.argv[0] === 'wt') return handle()
+      throw new Error('unexpected subprocess: ' + spec.argv.join(' '))
+    }, async ({ request }) => {
+      // No .exe was detected, so even the agent with a draft flag pastes or copies.
+      for (const agent of ['drafted', 'bare']) {
+        const result = await request('/triage-desk/launch', 'POST', { url: PR_URL, agent })
+        assert.equal(result.status, 502, promptDelivery + ' ' + agent + ': ' + JSON.stringify(result.body))
+        assert.equal(result.body.error.code, 'open-failed')
+        assert.match(result.body.error.message, /no executable after removing the prompt/)
+      }
+      const quoted = await request('/triage-desk/launch', 'POST', { url: PR_URL, agent: 'quoted' })
+      assert.equal(quoted.status, 400, JSON.stringify(quoted.body))
+      assert.equal(quoted.body.error.code, 'agent-missing')
+    }, { agents, defaultAgent: 'drafted', promptDelivery })
+  }
+})
+
+await checkAsync('a launch detects again once when the cached agent path is gone', async () => {
+  // Detection is cached for 120 s and every launch runs the path it found, so
+  // an agent moved or reinstalled meanwhile is looked up again (all platforms).
+  const oldTerminal = process.env.TERMINAL
+  process.env.TERMINAL = '/usr/bin/gnome-terminal'
+  try {
+    for (const platform of ['win32', 'linux']) {
+      const windows = platform === 'win32'
+      const [oldPath, newPath] = windows ? ['C:\\old\\codex.exe', 'C:\\new\\codex.exe'] : ['/old/bin/codex', '/new/bin/codex']
+      // `null`: the second probe fails, so the launch runs the bare name.
+      for (const fresh of [newPath, null]) {
+        const name = platform + (fresh === null ? ', failed re-detection' : '')
+        let probes = 0
+        await withPlatformHost(platform, (spec, handle) => {
+          // Linux also probes for python3 and terminals: count the agent probes.
+          if (windows ? spec.argv[0] === 'powershell.exe' : spec.argv[3] === 'triage-desk' && spec.argv.includes('codex')) {
+            probes += 1
+            const found = probes === 1 ? oldPath : fresh
+            return found === null ? handle(1, '') : handle(0, probeOutput(['codex'], () => found))
+          }
+          if (['clip.exe', 'wt', 'wl-copy', '/usr/bin/gnome-terminal'].includes(spec.argv[0])) return handle()
+          throw new Error('unexpected subprocess: ' + spec.argv.join(' '))
+        }, async ({ request, files }) => {
+          const before = (await request('/triage-desk/config')).body.config.detectedAgents.codex
+          assert.equal(before.path, oldPath, name)
+          const access = fs.access
+          fs.access = async (file, mode) => {
+            if (file === oldPath) throw Object.assign(new Error('ENOENT: ' + file), { code: 'ENOENT' })
+            return access(file, mode)
+          }
+          const script = async () => {
+            const result = await request('/triage-desk/launch', 'POST', { url: PR_URL, agent: 'codex' })
+            assert.equal(result.status, 200, name + ': ' + JSON.stringify(result.body))
+            const file = [...files.entries()].find(([entry]) => entry.endsWith(windows ? 'launch.ps1' : 'launch.command'))
+            return file[1].toString('utf8').split('\n')
+          }
+          const runs = fresh === null ? 'codex' : fresh
+          assert.ok((await script()).includes(windows ? '& ' + windowsQuote(runs) : runs), name + ': runs ' + runs)
+          assert.equal(probes, 2, name + ': one forced re-detection')
+          if (fresh !== null) {
+            await script()
+            assert.equal(probes, 2, name + ': a path that still exists is not looked up again')
+          }
+        }, { promptDelivery: 'clipboard' })
+      }
+    }
+  } finally {
+    if (oldTerminal === undefined) delete process.env.TERMINAL
+    else process.env.TERMINAL = oldTerminal
+  }
+})
+
 await checkAsync('macOS launch opens an iTerm2 tab and reuses it on re-launch', async () => {
   // The fixture fs.stat reports every directory as present, so detectIterm sees
   // iTerm2 installed and the launch takes the tab path. An absolute agent
@@ -1402,6 +1505,12 @@ check('Windows pins the detected executable as a double-quoted absolute path, or
     assert.equal(pinned, '"' + detected + '" {prompt} --x', detected)
     assert.equal(bareAgentCommand(pinned, 'win32'), '"' + detected + '" --x', detected)
   }
+  // The first word skips only the expansion and operator checks: `{prompt}`
+  // in it still counts, so the prompt can never become the program.
+  for (const command of ['a{prompt} {prompt}', '{prompt} {prompt}', '"C:\\{prompt}\\claude.exe" {prompt}', '{prompt} --x']) {
+    assert.throws(() => bareAgentCommand(command, 'win32'), /exactly one \{prompt\}/, command)
+  }
+  assert.equal(pin('claude {prompt}', 'C:\\{prompt}\\claude.exe'), 'claude {prompt}', 'a path containing {prompt} is not pinned')
   // A path ending in `\\` keeps it: the backslash is doubled before the quote.
   const trailing = bareAgentCommand(pin('claude {prompt}', 'C:\\tools\\'), 'win32')
   assert.ok(buildWindowsClipboardLauncherScript({ cwd: 'C:\\w', title: 't', bareCommand: trailing }).includes("\n& 'C:\\tools\\'\n"))

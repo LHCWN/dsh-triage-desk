@@ -105,11 +105,14 @@ export const AGENT_COMMAND_RULE =
  * word that is not `VAR=value` is checked as a plain program name: it may be a
  * detected path pinned by withAgentExecutable, and every Windows builder runs
  * it as a PowerShell literal (`& '<path>'`), where a backtick or `$(` is
- * literal too.
+ * literal too. Only those checks are skipped: a `{prompt}` in that word
+ * still breaks the rule.
  */
 export function assertSafeAgentCommand(command, platform) {
   const first = platform === 'win32' ? commandWords(command, 'win32')?.[0] : undefined
-  const checked = first === undefined || ASSIGNMENT_WORD.test(first.raw) ? command : 'agent' + command.slice(first.end)
+  const plainProgram = first !== undefined && !ASSIGNMENT_WORD.test(first.raw)
+  if (plainProgram && first.raw.includes(PROMPT_TOKEN)) throw new Error('agent ' + AGENT_COMMAND_RULE)
+  const checked = plainProgram ? 'agent' + command.slice(first.end) : command
   if (!hasSafePromptPlaceholder(checked)) throw new Error('agent ' + AGENT_COMMAND_RULE)
 }
 
@@ -268,8 +271,9 @@ export function withAgentExecutable(agentCommand, executablePath, platform = pro
  */
 function windowsPin(agentCommand, detectedPath) {
   const trimmed = typeof detectedPath === 'string' ? detectedPath.trim() : ''
-  // A Windows path cannot contain `"`, so the quoted word stays one word.
-  if (trimmed === '' || /[\r\n\u0000"]/.test(trimmed)) return null
+  // A Windows path cannot contain `"`, so the quoted word stays one word; a
+  // `{prompt}` in it would break the command rule (assertSafeAgentCommand).
+  if (trimmed === '' || /[\r\n\u0000"]/.test(trimmed) || trimmed.includes(PROMPT_TOKEN)) return null
   const normalized = path.win32.normalize(trimmed)
   if (!/^(?:[A-Za-z]:\\|\\\\)/.test(normalized)) return null
   const first = commandWords(agentCommand, 'win32')?.[0]

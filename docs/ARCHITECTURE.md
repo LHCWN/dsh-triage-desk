@@ -52,8 +52,8 @@ import the launcher layer only through `launcher.js` and the data layer through
     fallback, native directory picker, `resolveClone`;
   - `launch.js` — `createLaunch`: scenario/agent resolution,
     `renderScenarioPrompt`, `launchForItem` (runs the detected path through
-    `withAgentExecutable`, and on macOS/Linux passes its directory as
-    `binDir`; picks the delivery mode — `draft` when `draftCommandFor` returns
+    `withAgentExecutable`, detecting again with `force` when the cached path
+    is gone, and on macOS/Linux passes its directory as `binDir`; picks the delivery mode — `draft` when `draftCommandFor` returns
     a command, `paste` when `promptDelivery` is `paste` and
     `detectPasteSupport` allows it, else `clipboard` with
     `delivery.pasteBlocked` naming the reason; the clipboard always gets a

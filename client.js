@@ -3872,12 +3872,15 @@ window.__ModuleLoader__.load({
         const scanAgents = form.agents
         const commandOf = (agent) => String(agent.command || '').trim()
         // Duplicate check only, not the command rule (that lives on the host):
-        // the first word that is not a VAR=value assignment, unquoted. It keeps
-        // rows typed during the scan, and an older host's answer, from adding
-        // a second row for a program that is already configured.
+        // the first word that is not a VAR=value assignment, unquoted; on
+        // Windows the first word, as the host's agentExecutable reads it
+        // (PowerShell runs a leading VAR=value as the program). It keeps rows
+        // typed during the scan, and an older host's answer, from adding a
+        // second row for a program that is already configured.
+        const windowsCommands = configValue(config, 'platform') === 'win32'
         const programOf = (command) => {
           const words = String(command || '').trim().split(/\s+/)
-          const word = words.find((entry) => entry !== '' && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(entry)) || ''
+          const word = words.find((entry) => entry !== '' && (windowsCommands || !/^[A-Za-z_][A-Za-z0-9_]*=/.test(entry))) || ''
           return word.replace(/^['"]|['"]$/g, '')
         }
         setFindingAgents(true)
