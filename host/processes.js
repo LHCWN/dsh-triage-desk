@@ -331,8 +331,10 @@ export function createProcesses({ ctx, settings, platform }) {
   }
 
   /**
-   * Whether the paste wrapper can run here, cached for ten minutes:
-   * `{ available, reason, python }`. macOS and Linux need a working Python 3
+   * Whether the paste wrapper can run here: `{ available, reason, python }`.
+   * A working setup is cached for ten minutes; a missing one only for 30 s, so
+   * installing Python after the Settings hint is noticed within a minute (the
+   * shared tool lookup is cached for 60 s). macOS and Linux need a working Python 3
    * with `pty` (found through the login-shell PATH); on macOS `/usr/bin/python3`
    * is only a stub until the Command Line Tools are installed, and running it
    * then opens an install dialog, so `xcode-select -p` is checked first.
@@ -341,7 +343,8 @@ export function createProcesses({ ctx, settings, platform }) {
    */
   let pasteSupport = null
   const detectPasteSupport = async () => {
-    if (pasteSupport !== null && Date.now() - pasteSupport.at < 600_000) return pasteSupport.value
+    const maxAge = pasteSupport?.value.available ? 600_000 : 30_000
+    if (pasteSupport !== null && Date.now() - pasteSupport.at < maxAge) return pasteSupport.value
     let value
     if (platform === 'win32') {
       const build = Number(String(os.release()).split('.')[2])

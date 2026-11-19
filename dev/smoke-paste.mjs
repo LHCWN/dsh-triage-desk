@@ -29,10 +29,18 @@ const PROMPT = sanitizePastePrompt(
 assert.ok(!PROMPT.includes('\x1b'), 'ESC is removed before pasting')
 assert.ok(!PROMPT.includes('\r'), 'CRLF becomes LF')
 
+/**
+ * A Python 3 with `pty`, or null. On macOS `/usr/bin/python3` is only an
+ * installer stub until the Command Line Tools exist, and running it opens a
+ * dialog, so it is skipped then (as the host does); every probe has a timeout.
+ */
 function python() {
+  const stubOnly = process.platform === 'darwin' && spawnSync('/usr/bin/xcode-select', ['-p'], { timeout: 5000 }).status !== 0
   for (const candidate of ['python3', 'python']) {
-    const probe = spawnSync(candidate, ['-I', '-c', 'import pty, sys; print(sys.version_info[0])'], { encoding: 'utf8' })
-    if (probe.status === 0 && probe.stdout.trim() === '3') return candidate
+    const located = spawnSync('/bin/sh', ['-c', 'command -v "$0"', candidate], { encoding: 'utf8', timeout: 5000 }).stdout.trim()
+    if (located === '' || (stubOnly && located === '/usr/bin/' + candidate)) continue
+    const probe = spawnSync(located, ['-I', '-c', 'import pty, sys; print(sys.version_info[0])'], { encoding: 'utf8', timeout: 10_000 })
+    if (probe.status === 0 && probe.stdout.trim() === '3') return located
   }
   return null
 }
