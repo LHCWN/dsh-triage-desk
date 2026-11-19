@@ -457,8 +457,9 @@ same override.
   **Remove** in Plugin Manager) drops the package from the profile's
   dependencies and from `dsh.profile.bundles` in its `package.json`. DSH does
   not edit the profile patch, so the override stays. While the plugin is not
-  installed, DSH logs the loader warning `patch: entry "triage-desk" not found`
-  each time it composes the profile. The warning has no other effect.
+  installed, DSH logs the loader warning `patch: entry triage-desk not found`
+  each time it composes the profile (a config dump shows the id in quotes).
+  The warning has no other effect.
 - **Reinstalling** inserts the row again and the kept override applies to it:
   the previous settings come back, and so does a row left switched off.
 
