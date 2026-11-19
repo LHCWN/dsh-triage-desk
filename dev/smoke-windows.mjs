@@ -12,11 +12,10 @@
  *   - the clipboard launcher keeps static arguments of an npm-style `.cmd` shim;
  *   - the paste launcher types the hostile prompt into a `.cmd` shim agent
  *     intact; the command it smuggles in never runs;
- *   - paste launches run an `.exe`, `.cmd` and `.ps1` agent by the path
- *     detection reported, pinned as the host pins it; the command's own name
- *     is not on PATH, so the bare name could not start it. The `.ps1` is
- *     marked as downloaded and runs under the launcher's Process-scope Bypass,
- *     inherited by the paste host's nested `powershell.exe`;
+ *   - paste launches run a `.cmd`, `.exe` and `.ps1` agent by the path
+ *     detection reported, pinned as the host pins it (the command's own name
+ *     is not on PATH); the `.ps1` runs under the launcher's Bypass
+ *     (docs/REFERENCE.md#agents);
  *   - every launcher removes itself and its per-launch directory.
  *
  * Run with `npm run smoke:windows`. Not shipped in the npm package.
@@ -63,10 +62,8 @@ await fs.writeFile(shim, '@"' + process.execPath + '" "%~dp0record-args.mjs" %*\
 const fakeAgent = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-agent.mjs')
 const agentShim = path.join(tools, 'fake-agent.cmd')
 await fs.writeFile(agentShim, '@"' + process.execPath + '" "' + fakeAgent + '" %*\r\n')
-// And behind an npm-style PowerShell shim; it exits with the agent's status.
-// It first records the execution policy it runs under into TD_RECORD (UTF-8
-// without a BOM), and it is marked as downloaded (Zone.Identifier ZoneId=3),
-// which RemoteSigned and Restricted refuse and Unrestricted prompts for.
+// And behind an npm-style PowerShell shim, marked as downloaded
+// (Zone.Identifier ZoneId=3); it records its execution policy into TD_RECORD.
 const agentPs1 = path.join(tools, 'fake-agent.ps1')
 await fs.writeFile(agentPs1, [
   'if ($env:TD_RECORD) {',
@@ -84,6 +81,25 @@ const clone = path.join(root, '工作 repo; ü')
 await fs.mkdir(clone, { recursive: true })
 // The temp dir can be an 8.3 short path (RUNNER~1); the agent reports the long
 // one, so both sides are compared through realpathSync.native.
+
+/**
+ * A runLauncher build for paste mode: writes the prompt and the paste host
+ * source into the launch directory as the host does (host/launch.js).
+ */
+function pasteLauncher({ bareCommand, prompt, title }) {
+  return (dir) => {
+    const promptFile = path.join(dir, 'prompt.txt')
+    const wrapperFile = path.join(dir, 'paste-host.cs')
+    writeFileSync(promptFile, sanitizePastePrompt(prompt), 'utf8')
+    writeFileSync(wrapperFile, PASTE_WRAPPER_CS, 'utf8')
+    return buildWindowsPasteLauncherScript({ cwd: clone, title, bareCommand, wrapperFile, promptFile })
+  }
+}
+
+/** The bare command the host runs for `agentCommand` once detection found `detected`. */
+function pinnedBareCommand(agentCommand, detected) {
+  return bareAgentCommand(withAgentExecutable(agentCommand, detected, 'win32'), 'win32')
+}
 
 const checks = []
 async function check(name, callback) {
@@ -205,22 +221,13 @@ await check('clipboard launcher keeps static arguments of a .cmd shim', async ()
   assert.equal(run.dirLeft, false)
 })
 
-await check('paste launcher types a hostile prompt into a .cmd shim agent intact', async () => {
+// Paste launches run the program detection reported (issue #11): each
+// command names a program that is not on PATH, so only the pin can start it.
+await check('paste launcher types a hostile prompt into a .cmd shim agent intact, by its detected path', async () => {
   const result = path.join(root, 'paste-result.json')
-  const run = await runLauncher((dir) => {
-    const promptFile = path.join(dir, 'prompt.txt')
-    const wrapperFile = path.join(dir, 'paste-host.cs')
-    // As the host writes them (host/launch.js, paste mode).
-    writeFileSync(promptFile, sanitizePastePrompt(HOSTILE), 'utf8')
-    writeFileSync(wrapperFile, PASTE_WRAPPER_CS, 'utf8')
-    return buildWindowsPasteLauncherScript({
-      cwd: clone,
-      title: 'Triage Desk: paste [Claude Code]',
-      bareCommand: '"' + agentShim + '" plain "' + result + '"',
-      wrapperFile,
-      promptFile,
-    })
-  }, 90_000)
+  const bareCommand = pinnedBareCommand('td-not-on-path plain "' + result + '" {prompt}', agentShim)
+  assert.equal(bareCommand, '"' + agentShim + '" plain "' + result + '"')
+  const run = await runLauncher(pasteLauncher({ bareCommand, prompt: HOSTILE, title: 'Triage Desk: paste [Claude Code]' }), 90_000)
   const output = run.result.stdout + run.result.stderr
   assert.ok(existsSync(result), 'the agent ran: ' + output)
   assertUnsentPaste(JSON.parse(await fs.readFile(result, 'utf8')), HOSTILE, output)
@@ -229,41 +236,21 @@ await check('paste launcher types a hostile prompt into a .cmd shim agent intact
   assert.equal(run.dirLeft, false, 'the launcher removes its prompt, host source and directory')
 })
 
-// Paste mode runs the program detection reported (issue #11). Each agent's
-// command names a program that is not on PATH, so only the pinned path can
-// start it: the host's pin (withAgentExecutable) and bare command are used.
 for (const [kind, detected, args] of [
   ['an .exe', process.execPath, '"' + fakeAgent + '" plain'],
-  ['a .cmd', agentShim, 'plain'],
   ['a .ps1', agentPs1, 'plain'],
 ]) {
   await check('paste launcher runs ' + kind + ' agent by its detected path', async () => {
     const result = path.join(root, 'pinned-' + path.extname(detected).slice(1) + '.json')
-    const agentCommand = 'td-not-on-path ' + args + ' "' + result + '" {prompt}'
-    const pinned = withAgentExecutable(agentCommand, detected, 'win32')
-    assert.equal(pinned, '"' + detected + '" ' + args + ' "' + result + '" {prompt}')
-    const run = await runLauncher((dir) => {
-      const promptFile = path.join(dir, 'prompt.txt')
-      const wrapperFile = path.join(dir, 'paste-host.cs')
-      writeFileSync(promptFile, sanitizePastePrompt(PROMPT), 'utf8')
-      writeFileSync(wrapperFile, PASTE_WRAPPER_CS, 'utf8')
-      return buildWindowsPasteLauncherScript({
-        cwd: clone,
-        title: 'Triage Desk: paste [Agent]',
-        bareCommand: bareAgentCommand(pinned, 'win32'),
-        wrapperFile,
-        promptFile,
-      })
-    }, 90_000)
+    const bareCommand = pinnedBareCommand('td-not-on-path ' + args + ' "' + result + '" {prompt}', detected)
+    assert.equal(bareCommand, '"' + detected + '" ' + args + ' "' + result + '"')
+    const run = await runLauncher(pasteLauncher({ bareCommand, prompt: PROMPT, title: 'Triage Desk: paste [Agent]' }), 90_000)
     const output = run.result.stdout + run.result.stderr
     assert.ok(existsSync(result), 'the agent ran: ' + output)
     assertUnsentPaste(JSON.parse(await fs.readFile(result, 'utf8')), PROMPT, output)
     assert.doesNotMatch(output, /could not type the prompt/, 'the ConPTY host ran')
     if (kind === 'a .ps1') {
-      // The paste host's nested powershell.exe gets no -ExecutionPolicy of its
-      // own: a Process-scope Bypass there is the launcher's, inherited through
-      // $Env:PSExecutionPolicyPreference (about_Execution_Policies, 5.1), so
-      // the downloaded-marked shim runs whatever the machine policy is.
+      // The nested powershell.exe inherits the launcher's Process-scope Bypass.
       assert.deepEqual(run.recorded, { process: 'Bypass', effective: 'Bypass' },
         'the .ps1 agent runs under the launch window\'s Bypass: ' + output)
     }
