@@ -437,8 +437,13 @@ function settingsHarness({
     refreshSeconds: 1200,
     ...configExtra,
   }
-  // `host.snapshot` replaces the served snapshot for later loads.
-  const host = { saveError: null, unavailable: false, configReads: 0, snapshot: null }
+  // `host.snapshot` replaces the served snapshot for later loads. Snapshot
+  // reads are counted; `holdSnapshots` parks them in `pendingSnapshots` until
+  // released, and `failSnapshots` answers that many of them with a 404.
+  const host = {
+    saveError: null, unavailable: false, configReads: 0, snapshot: null,
+    snapshotReads: 0, holdSnapshots: false, failSnapshots: 0, pendingSnapshots: [],
+  }
   const response = (status, payload) => ({ status, ok: status >= 200 && status < 300, json: async () => payload })
   const document = {
     visibilityState: 'visible',
@@ -488,7 +493,15 @@ function settingsHarness({
       if (url === '/triage-desk/config') return Promise.resolve(response(200, { config, saveError: host.saveError }))
       if (url === '/triage-desk/auth') return Promise.resolve(response(200, { auth: state.auth }))
       if (url === '/triage-desk/snapshot') {
-        return Promise.resolve(response(200, host.snapshot ?? snapshotPayload ?? { sections: [], settings: { refreshSeconds: 1200 } }))
+        host.snapshotReads += 1
+        // Like the host, the default snapshot reports the saved refresh setting
+        // as of when the read started.
+        const served = host.snapshot ?? snapshotPayload ?? { sections: [], settings: { refreshSeconds: config.refreshSeconds } }
+        const failed = host.failSnapshots > 0
+        if (failed) host.failSnapshots -= 1
+        const answer = failed ? response(404, null) : response(200, served)
+        if (host.holdSnapshots) return new Promise((resolve) => host.pendingSnapshots.push(() => resolve(answer)))
+        return Promise.resolve(answer)
       }
       throw new Error('unexpected request: ' + url)
     },
@@ -588,7 +601,7 @@ async function editSettings(harness) {
 {
   const harness = settingsHarness()
   await editSettings(harness)
-  harness.reply(200, { ok: true, restarting: true })
+  harness.reply(200, { ok: true })
   await harness.flush()
   assert.ok(harness.text().includes('settings.saved'), 'confirmed persistence shows Saved')
   assert.ok(harness.text().includes('settings.done'), 'confirmed persistence marks the form clean')
@@ -596,6 +609,62 @@ async function editSettings(harness) {
   assert.equal(harness.store.get().pollSeconds, 60, 'confirmed refresh setting updates polling immediately')
   assert.ok([...harness.timers.values()].some((timer) => timer.delay === 60_000), 'confirmed refresh setting schedules its new timer')
   assert.ok(![...harness.timers.values()].some((timer) => timer.delay === 1_200_000), 'confirmed refresh setting cancels its old timer')
+  harness.dispose()
+}
+
+{
+  // A confirmed save reads the snapshot once, without forcing a GitHub scan.
+  const harness = settingsHarness()
+  await editSettings(harness)
+  const reads = harness.host.snapshotReads
+  harness.reply(200, { ok: true })
+  await harness.flush()
+  assert.equal(harness.host.snapshotReads, reads + 1, 'a confirmed save reads the snapshot right away')
+  assert.equal(harness.store.get().status, 'ready')
+  harness.dispose()
+}
+
+{
+  // A read in flight at save time started under the old settings: the store
+  // reads again once it settles, and only that read sets the poll cadence.
+  const harness = settingsHarness()
+  await editSettings(harness)
+  harness.host.holdSnapshots = true
+  void harness.store.load(false)
+  const reads = harness.host.snapshotReads
+  harness.reply(200, { ok: true })
+  await harness.flush()
+  assert.equal(harness.host.snapshotReads, reads, 'the post-save read joins the read already in flight')
+  assert.equal(harness.host.pendingSnapshots.length, 1)
+  harness.host.holdSnapshots = false
+  harness.host.pendingSnapshots.shift()()
+  await harness.flush()
+  assert.equal(harness.host.snapshotReads, reads + 1, 'the pre-save read is followed by a read for the saved settings')
+  assert.equal(harness.store.get().status, 'ready')
+  assert.equal(harness.store.get().data.settings.refreshSeconds, 60, 'the panel shows the snapshot for the saved settings')
+  assert.equal(harness.store.get().pollSeconds, 60)
+  harness.dispose()
+}
+
+for (const recovers of [true, false]) {
+  // A save that fell back to a restart: the first read can 404 before the
+  // restarted plugin registered its routes again. It retries once, quietly.
+  const label = recovers ? 'retry succeeds' : 'retry fails'
+  const harness = settingsHarness()
+  await editSettings(harness)
+  harness.host.failSnapshots = recovers ? 1 : 2
+  const reads = harness.host.snapshotReads
+  harness.reply(200, { ok: true })
+  await harness.flush()
+  assert.equal(harness.host.snapshotReads, reads + 1, label + ': the save reads the snapshot right away')
+  assert.notEqual(harness.store.get().status, 'error', label + ': the first failed read after a save is not shown')
+  await harness.fire(1500)
+  assert.equal(harness.host.snapshotReads, reads + 2, label + ': the failed post-save read is retried once')
+  if (recovers) assert.equal(harness.store.get().status, 'ready', label)
+  else {
+    assert.equal(harness.store.get().status, 'error', label + ': a second failure is shown')
+    assert.ok(![...harness.timers.values()].some((timer) => timer.delay === 1500), label + ': no further quick retry')
+  }
   harness.dispose()
 }
 

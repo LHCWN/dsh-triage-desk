@@ -129,7 +129,9 @@ Details: [terminal launcher reference](docs/REFERENCE.md#terminal-launcher).
 
 ## Settings
 
-The gear in the panel header opens Settings. The most used fields:
+The gear in the panel header opens Settings. A save usually applies to the
+running plugin without restarting it, so the `triage_desk` tool stays
+available while you save. The most used fields:
 
 | Field | Default | Meaning |
 |---|---|---|

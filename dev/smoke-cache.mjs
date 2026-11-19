@@ -1,7 +1,8 @@
 /**
  * Dev smoke test for the host snapshot cache: successful snapshots are cached,
- * failures are not, forced refreshes are queued instead of dropped, and the TTL
- * can be supplied by a function (used for the low-quota adaptive TTL).
+ * failures are not, forced refreshes are queued instead of dropped (unless the
+ * cache was retired), and the TTL can be supplied by a function (used for the
+ * low-quota adaptive TTL).
  * Run with `npm run smoke:cache`. Not shipped in the npm package.
  */
 import assert from 'node:assert/strict'
@@ -95,6 +96,29 @@ await check('a forced read during an in-flight build is queued', async () => {
   await tick()
   assert.equal(builds, 2, 'the queued forced refresh should start after the first build')
   await cache.read(false)
+})
+
+await check('a retired cache drops the forced read queued during its last build', async () => {
+  let builds = 0
+  let release
+  const cache = createSnapshotCache(
+    () => {
+      builds += 1
+      return new Promise((resolve) => {
+        release = resolve
+      })
+    },
+    60_000,
+    () => true,
+  )
+  const first = cache.read(false)
+  void cache.read(true)
+  cache.retire()
+  await tick()
+  release(okSnapshot)
+  assert.equal(await first, okSnapshot, 'the in-flight build still answers its readers')
+  await tick()
+  assert.equal(builds, 1, 'no rebuild is queued for a cache nobody reads')
 })
 
 await check('the TTL can be read from a function', async () => {

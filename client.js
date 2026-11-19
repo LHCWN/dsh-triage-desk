@@ -37,6 +37,9 @@ window.__ModuleLoader__.load({
     // Restart window before a 202 (older host) save is read back.
     const APPLY_CONFIRM_MS = 5000
     const APPLY_CONFIRM_ATTEMPTS = 2
+    // A save that fell back to a restart leaves the routes briefly missing:
+    // the first snapshot read after it gets one quiet retry this much later.
+    const SAVE_RELOAD_RETRY_MS = 1500
     const MINUTE_MS = 60_000
     const SAVE_STATUSES = ['saving', 'applying', 'saved']
 
@@ -204,7 +207,7 @@ window.__ModuleLoader__.load({
       'settings.invalidScenarioAgent': 'Scenario “{scenario}” is pinned to an unknown agent “{agent}” — choose another agent.',
       'settings.scenarioAgentUnknown': 'Unknown agent ({agent})',
       'settings.unavailable': 'This profile cannot save settings from the panel — edit the plugin row config in cordis.patch.yml.',
-      'settings.restartHint': 'Changes restart the plugin; the panel refreshes itself.',
+      'settings.applyHint': 'Changes usually apply without restarting the plugin; the panel refreshes itself.',
       'settings.minutes': '{n} min',
       'settings.hours': '{n} h',
       'settings.minuteUnit': 'min',
@@ -489,7 +492,7 @@ window.__ModuleLoader__.load({
       'settings.invalidScenarioAgent': '场景“{scenario}”绑定了未知智能体“{agent}”——请选择其他智能体。',
       'settings.scenarioAgentUnknown': '未知智能体（{agent}）',
       'settings.unavailable': '此配置无法从面板保存设置——请编辑 cordis.patch.yml 中该插件的配置。',
-      'settings.restartHint': '修改会重启插件；面板会自动刷新。',
+      'settings.applyHint': '修改通常无需重启插件即可生效；面板会自动刷新。',
       'settings.minutes': '{n} 分钟',
       'settings.hours': '{n} 小时',
       'settings.minuteUnit': '分钟',
@@ -1895,6 +1898,8 @@ window.__ModuleLoader__.load({
       let inflight = null
       let pendingForce = false
       let configRevision = 0
+      // The configRevision whose post-save snapshot read may still retry once.
+      let saveReloadRevision = -1
       let transientRetried = false
       // One recovery slot shared by the transient retry and the failure backoff.
       let retryTimer = null
@@ -2020,18 +2025,47 @@ window.__ModuleLoader__.load({
             return payload
           })
           .catch((error) => {
+            // A read started before a confirmed save is followed by a fresh one
+            // (see finally); its failure says nothing about the saved settings.
+            if (loadRevision !== configRevision) return null
+            if (loadRevision === saveReloadRevision) {
+              // The first read after a save: the plugin may still be coming
+              // back from a restart. Retry once before showing the failure.
+              saveReloadRevision = -1
+              cancelRetry()
+              retryTimer = setTimeout(() => {
+                retryTimer = null
+                if (subscribers > 0 && !disposed && !pageHidden()) void load(false)
+                else set({ refreshing: false })
+              }, SAVE_RELOAD_RETRY_MS)
+              return null
+            }
             set({ status: 'error', error: String((error && error.message) || error), refreshing: false })
             scheduleErrorRetry()
             return null
           })
           .finally(() => {
             inflight = null
+            if (loadRevision === saveReloadRevision) saveReloadRevision = -1
             if (pendingForce) {
               pendingForce = false
               void load(true)
+            } else if (loadRevision !== configRevision) {
+              // Started before a confirmed save: read again for the saved settings.
+              void load(false)
             }
           })
         return inflight
+      }
+
+      /**
+       * The snapshot read after a confirmed save. A read already in flight
+       * started under the old settings, so load() follows it with a fresh one;
+       * the first read for the saved settings retries once if it fails.
+       */
+      const reloadAfterSave = () => {
+        saveReloadRevision = configRevision
+        return load(false)
       }
 
       const loadConfig = (options) => {
@@ -2138,7 +2172,7 @@ window.__ModuleLoader__.load({
               config: Object.assign({}, state.config, patch),
               ...(Number.isFinite(seconds) && seconds >= 15 ? { pollSeconds: seconds } : {}),
             })
-            // 200 arrives after the restarted host committed the write: read the
+            // 200 arrives after the host wrote and applied the config: read the
             // normalized config back (fresh invalidAgents, detection, sources).
             // A failed read keeps the merged patch and the saved status.
             void loadConfig({ quiet: true })
@@ -2326,7 +2360,7 @@ window.__ModuleLoader__.load({
       }
 
       return {
-        get, set, subscribe, load, loadConfig, saveConfig, loadAuth, loginGithub,
+        get, set, subscribe, load, reloadAfterSave, loadConfig, saveConfig, loadAuth, loginGithub,
         snooze, unsnooze, setSnooze, setSnoozes, snoozeItems, unsnoozeIds, showToast, dismissToast, dispose,
       }
     }
@@ -4685,7 +4719,7 @@ window.__ModuleLoader__.load({
             label: t('settings.bots'),
           }),
         ),
-        h('p', { className: 'adx-form-note' }, t('settings.restartHint')),
+        h('p', { className: 'adx-form-note' }, t('settings.applyHint')),
         h(
           'details',
           { className: 'adx-advanced' },
@@ -5025,24 +5059,11 @@ window.__ModuleLoader__.load({
       const [search, setSearch] = useState('')
       const [stuck, setStuck] = useState(false)
       const scrollRef = useRef(null)
-      const timersRef = useRef([])
       // Written by SettingsView in a layout effect, so the gear/Back/Cancel
       // guard reads the committed dirty state without waiting for a re-render.
       const settingsDirtyRef = useRef(false)
       const [confirmLeave, setConfirmLeave] = useState(false)
       const [tick, setTick] = useState(() => Date.now())
-      const later = (callback, delay) => {
-        const id = window.setTimeout(callback, delay)
-        timersRef.current.push(id)
-        return id
-      }
-
-      useEffect(() => {
-        return () => {
-          for (const id of timersRef.current) window.clearTimeout(id)
-          timersRef.current = []
-        }
-      }, [])
 
       // Relative times ("updated 3 min ago", row ages) advance once a minute
       // while the page is mounted; `now` reaches memoized Section/Row as a prop.
@@ -5231,12 +5252,9 @@ window.__ModuleLoader__.load({
         leaveSettings()
       }
       const keepEditing = () => setConfirmLeave(false)
-      const afterSave = () => {
-        // The plugin restarts after a config save; a non-forced poll picks up
-        // the fresh snapshot once it is back without triggering extra GitHub scans.
-        later(() => void store.load(false), 1500)
-        later(() => void store.load(false), 4500)
-      }
+      // The save is applied by the time it is confirmed; a non-forced read
+      // serves the snapshot for the saved settings without an extra GitHub scan.
+      const afterSave = () => void store.reloadAfterSave()
 
       const settingsButton = h(
         'button',

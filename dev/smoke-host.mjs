@@ -59,6 +59,7 @@ const ctx = {
     const disposer = callback()
     return typeof disposer === 'function' ? disposer : () => {}
   },
+  on: () => () => {},
   webServer: {
     register: (route) => {
       captured.routes.set(route.path, route)

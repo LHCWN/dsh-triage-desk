@@ -561,6 +561,18 @@ function authorOf(actor) {
   }
 }
 
+/** The `settings` block a snapshot reports: the saved settings it was built for. */
+function snapshotSettings(settings) {
+  return {
+    orgs: settings.orgs,
+    includePersonal: settings.includePersonal,
+    sourcesAuto: settings.orgs.length === 0,
+    refreshSeconds: settings.refreshSeconds,
+    requireGreenChecks: settings.requireGreenChecks,
+    includeBotReviews: settings.includeBotReviews,
+  }
+}
+
 /**
  * Build the snapshot. Throws a GhError on environment failures; section-level
  * failures are collected as warnings so one bad query does not blank the page.
@@ -1379,14 +1391,7 @@ async function buildSnapshot(ctx, settings, signal) {
     orgs: orgLoginsScanned,
     org: orgLoginsScanned.length > 0 ? orgLoginsScanned[0] : '',
     user: { login: viewerLogin, name: viewerNode.name || null, avatarUrl: viewerNode.avatarUrl || null },
-    settings: {
-      orgs: settings.orgs,
-      includePersonal: settings.includePersonal,
-      sourcesAuto: settings.orgs.length === 0,
-      refreshSeconds: settings.refreshSeconds,
-      requireGreenChecks: settings.requireGreenChecks,
-      includeBotReviews: settings.includeBotReviews,
-    },
+    settings: snapshotSettings(settings),
     counts,
     sections: Object.keys(sections).map((id) => ({ id, items: sections[id] })),
     warnings,
@@ -1530,4 +1535,4 @@ function normalizeSettings(config) {
   }
 }
 
-export { buildSnapshot, normalizeSettings, SECTION_IDS, GhError, NEW_ISSUE_WINDOW_DAYS }
+export { buildSnapshot, normalizeSettings, snapshotSettings, SECTION_IDS, GhError, NEW_ISSUE_WINDOW_DAYS }

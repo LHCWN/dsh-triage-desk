@@ -16,14 +16,20 @@ import the launcher layer only through `launcher.js` and the data layer through
   `host/` factories, the exact web routes, the `triage_desk` tool and the
   system-prompt section. It keeps its public exports (`apply`, `inject`,
   `name`, `createSnapshotCache`, `shouldCacheSnapshot`, `hasTransientWarnings`).
+  `wire(config, previous)` builds the settings and the `host/` factories,
+  keeping the parts whose inputs a save left unchanged. An `internal/update`
+  listener applies a saved config through it without restarting the plugin and
+  falls back to the restart when wiring throws.
 - `host/` — one responsibility per module, each a factory over `{ ctx,
   settings, platform, log, … }` where it needs plugin state:
   - `snapshot-cache.js` — `createSnapshotCache` (single flight, queued forced
-    refresh, `raceAbort` so a cancelled caller never cancels the shared build),
-    `shouldCacheSnapshot`, `hasTransientWarnings`;
+    refresh, `retire` for a replaced cache, `raceAbort` so a cancelled caller
+    never cancels the shared build), `shouldCacheSnapshot`,
+    `hasTransientWarnings`;
   - `snapshot.js` — `createSnapshotStore`: build, adaptive TTL on low quota, and
     the stale fallback (a failed build serves the previous snapshot as `stale`
-    with `meta.lastError`);
+    with `meta.lastError`; a store a save replaced hands over its snapshot as
+    that fallback until the new store caches a build);
   - `config.js` — `EDITABLE_FIELDS`, `sanitizePatch`, `publicConfig` (adds
     `detectedAgents[id].draft` from `draftCommandFor`);
   - `processes.js` — `createProcesses`: `runProcess`, executable lookup,
@@ -149,9 +155,11 @@ whole file.
   slot shared by the transient retry and `scheduleErrorRetry`
   (`ERROR_RETRY_SECONDS` 15/60/300, each capped by the poll interval), and a
   save generation protecting confirmed settings/cadence from older in-flight
-  config/snapshot reads. `confirmAccepted` handles an older running host that
-  answers a save with 202: the status becomes `applying` and the config is read
-  back after the restart;
+  config/snapshot reads (a snapshot read started before a save is followed by a
+  fresh one). `reloadAfterSave` is the panel's read after a confirmed save; its
+  first failure is retried once after `SAVE_RELOAD_RETRY_MS`.
+  `confirmAccepted` handles an older running host that answers a save with 202:
+  the status becomes `applying` and the config is read back after the restart;
 - `staleDetail` puts the current failure (`meta.lastError`) into the stale banner;
 - snooze lives in the store (`snoozed`, `snooze(item, until?)` returning the
   replaced entry, `setSnooze(id, entry)` for Undo, `unsnooze(id)`), persisted
@@ -266,9 +274,9 @@ Snapshot sections are fixed: `review`, `rereview`, `merge`, `respond`, `ci`,
   unused or undeclared variables; add a case there when changing section
   classification, pagination, quota limits or snapshot failure handling.
 - `POST /triage-desk/config` returns 200 only after `configEditor.edit` resolves,
-  that is, after the profile write and the plugin restart; failures return 500
-  with `save-failed`. Client success requires this confirmation, and edits made
-  during a pending save remain dirty.
+  that is, after the profile write and the loader's `fiber.update`; failures
+  return 500 with `save-failed`. Client success requires this confirmation, and
+  edits made during a pending save remain dirty.
 - `dev/smoke-client.mjs` covers store lifetimes, polling, the error-retry
   schedule and visibility handling with fake timers.
 - `dev/smoke-render.mjs` renders the real client with a fixture, including the

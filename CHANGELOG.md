@@ -40,6 +40,17 @@
 
 ### Agent tool
 
+- **Saving settings no longer interrupts the tool.** A save is applied to the
+  running plugin instead of restarting it, so a `triage_desk` call made while
+  settings are being saved is answered instead of failing with
+  `unknown tool "triage_desk"`. A save that leaves the GitHub settings
+  unchanged (for example only agents, terminal or scenarios) keeps the cached
+  snapshot instead of scanning GitHub again; after a GitHub settings change, a
+  failed first scan shows the previous snapshot marked stale instead of an
+  error. A config that cannot be applied live still falls back to a restart.
+  The panel reads the snapshot right after a confirmed save (again after a read
+  that was already running, and once more 1.5 s later if that read fails while
+  a restarted plugin comes back).
 - **Stale and partial snapshots are reported.** The `triage_desk` report adds a
   `Status: stale|partial — reason` line, and its header says how old the
   snapshot is.

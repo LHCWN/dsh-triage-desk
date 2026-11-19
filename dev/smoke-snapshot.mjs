@@ -866,7 +866,7 @@ await check('an oversized response is not fetched twice', async () => {
 /* ------------------------------------------- host: stale fallback, abort */
 
 function hostCtx(fake) {
-  const captured = { tool: null }
+  const captured = { tool: null, update: null, routes: new Map() }
   const logger = { info: () => {}, warn: () => {}, error: () => {} }
   const entry = { id: 'triage-desk', options: { id: 'triage-desk', name: 'dsh-triage-desk' } }
   const ctx = {
@@ -876,7 +876,12 @@ function hostCtx(fake) {
       const disposer = callback()
       return typeof disposer === 'function' ? disposer : () => {}
     },
-    webServer: { register: () => () => {} },
+    webServer: {
+      register: (route) => {
+        captured.routes.set(route.path, route)
+        return () => {}
+      },
+    },
     connection: { requestRejection: () => undefined },
     tools: {
       register: (definition) => {
@@ -885,6 +890,10 @@ function hostCtx(fake) {
       },
     },
     systemPrompt: { section: () => () => {} },
+    on: (name, listener) => {
+      if (name === 'internal/update') captured.update = listener
+      return () => {}
+    },
     fiber: { entry },
     get: (name) => (name === 'configEditor' ? { entries: () => [entry], edit: async () => {} } : undefined),
   }
@@ -911,6 +920,31 @@ await check('a refresh that loses every source keeps the previous snapshot as st
   failing = false
   const third = await captured.tool.execute({})
   assert.equal(third.status, 'ok', 'the good snapshot is still cached')
+})
+
+await check('a GitHub settings save whose first build fails serves the previous snapshot as stale', async () => {
+  let failing = false
+  const prs = [pull({ number: 8, headOid: 'i8', headAt: '2026-01-01T09:00:00Z', requested: true })]
+  const fake = fakeCtx({ search: () => (failing ? rateLimited() : ok(searchData({ prs }))) })
+  const { ctx, captured } = hostCtx(fake)
+  apply(ctx, { cwd: process.cwd() })
+  assert.equal((await captured.tool.execute({})).status, 'ok')
+  failing = true
+  // The save rewires the GitHub part live (a new snapshot store); no restart.
+  captured.update({ cwd: process.cwd(), includeBotReviews: true }, () => assert.fail('the save must not restart'))
+  const saved = await captured.tool.execute({})
+  assert.equal(saved.status, 'stale', 'the new store falls back to the replaced store\'s snapshot')
+  assert.equal(saved.counts.review, 1)
+  assert.match(saved.text, /PR 8/)
+  const served = await (await captured.routes.get('/triage-desk/snapshot').resource({
+    headers: new Headers(),
+    url: 'http://127.0.0.1/triage-desk/snapshot',
+  })).json()
+  assert.equal(served.status, 'stale')
+  assert.equal(served.settings.includeBotReviews, true, 'the stale fallback reports the saved settings')
+  failing = false
+  const rebuilt = await captured.tool.execute({})
+  assert.equal(rebuilt.status, 'ok', 'the first successful build replaces the fallback')
 })
 
 await check('a cancelled tool call does not cancel the shared build', async () => {

@@ -505,14 +505,22 @@ This section was checked against DSH 0.2.2-rc.5; the plugin supports
   shows the current failure. Delayed recovery is cancelled when the last view
   unmounts or the plugin is disposed, including when an older response arrives
   afterward. No build step, no external network calls.
-- **Settings** are saved through DSH's config editor into the profile patch; a
-  change restarts the plugin and the panel refreshes itself. The host answers
-  only after the profile write and the plugin restart complete, and only then
-  does the panel show **Saved**. A failed write keeps the form open with the
-  error and the edits available for retry. Settings reads started before a
-  confirmed save cannot overwrite its values or status. Leaving Settings with
-  unsaved edits (Back, Cancel, or the gear) asks whether to discard them or keep
-  editing.
+- **Settings** are saved through DSH's config editor into the profile patch and
+  applied to the running plugin without a restart: the `triage_desk` tool and
+  the routes stay registered, so an agent calling the tool during a save is
+  answered (with the settings it started under). A save that leaves the GitHub
+  settings (sources, refresh interval, green checks, bot reviews) unchanged
+  keeps the cached snapshot; otherwise the next read builds a new one, and if
+  that first build fails the previous snapshot is served marked stale. A config
+  that cannot be applied live falls back to a plugin restart. The host answers
+  only after the profile write and the loader applied the config, and only then
+  does the panel show **Saved** and read the snapshot: a read already running
+  is followed by a fresh one, and a failed first read (a restarted plugin whose
+  routes are not back yet) is retried once after 1.5 s before it is shown. A
+  failed write keeps the form open with the error and the edits available for
+  retry. Settings reads started before a confirmed save cannot overwrite its
+  values or status. Leaving Settings with unsaved edits (Back, Cancel, or the
+  gear) asks whether to discard them or keep editing.
 - **Launches**: scenarios are normalized and their prompts rendered in
   `launcher.js` (pure helpers: tokens, the item list block, trimming).
   `POST /triage-desk/launch` validates the scenario and URLs, resolves the clone,
@@ -646,8 +654,8 @@ Checks:
   `PullSearch`, `IssueSearch`, `PullSearchPage`, `BranchScan`) and rejects
   queries with unused or undeclared variables: section classification, search
   pagination and truncation, branch CI, quota stops, partial and failed sources,
-  the previous snapshot kept as stale, and a cancelled tool call not cancelling
-  the build.
+  the previous snapshot kept as stale (also across a GitHub settings save), and
+  a cancelled tool call not cancelling the build.
 - `npm run smoke:paste`: end-to-end check of the paste wrapper against a fake
   agent (the Python pty wrapper on macOS and Linux, the ConPTY host on Windows):
   the prompt arrives as one bracketed paste with no Enter, a folder-trust dialog
