@@ -5,14 +5,13 @@
  * received, so the checks are byte-exact:
  *   - a drive-letter working directory with non-ASCII characters and `;`
  *     survives (the UTF-8 BOM makes PowerShell 5.1 read the script as UTF-8);
- *   - prompts with spaces, quotes and trailing backslashes arrive as one
- *     argument, for an .exe agent and for an npm-style `.cmd` shim, and static
- *     arguments follow the same rules;
- *   - the clipboard launcher keeps static arguments;
- *   - a hostile prompt (`"`, `& | < > ^`, `%PATH%`, a line break) reaches an
- *     .exe agent intact as a draft argument, and is typed into a `.cmd` shim
- *     through the paste launcher (the host never passes a prompt argument to
- *     a `.cmd`/`.bat`, issue #5); the command it smuggles in never runs;
+ *   - draft prompts with spaces, quotes and trailing backslashes, and a
+ *     hostile one (`"`, `& | < > ^`, `%PATH%`, a line break), arrive at an .exe
+ *     agent as one intact argument, and static arguments follow the same rules
+ *     (the host drafts only an .exe, issue #5);
+ *   - the clipboard launcher keeps static arguments of an npm-style `.cmd` shim;
+ *   - the paste launcher types the hostile prompt into a `.cmd` shim agent
+ *     intact; the command it smuggles in never runs;
  *   - every launcher removes itself and its per-launch directory.
  *
  * Run with `npm run smoke:windows`. Not shipped in the npm package.
@@ -30,6 +29,7 @@ import {
   buildWindowsPasteLauncherScript,
   sanitizePastePrompt,
 } from '../launcher.js'
+import { assertUnsentPaste } from './fixtures/paste.mjs'
 import { removeOnExit } from './fixtures/platform.mjs'
 
 if (process.platform !== 'win32') {
@@ -78,7 +78,7 @@ async function check(name, callback) {
  * Writes `script` with a UTF-8 BOM, as the host does (the host's own write is
  * checked by smoke:launcher), into its own launch directory and runs it.
  */
-async function runLauncher(build) {
+async function runLauncher(build, timeout = 60_000) {
   // Under root, so a launcher that fails to remove it is still cleaned up.
   const dir = await fs.mkdtemp(path.join(root, 'triage-desk-'))
   const record = path.join(root, 'record-' + path.basename(dir) + '.json')
@@ -88,33 +88,37 @@ async function runLauncher(build) {
   const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptFile], {
     env: { ...process.env, TD_RECORD: record },
     encoding: 'utf8',
-    timeout: 90_000,
+    timeout,
   })
   const recorded = existsSync(record) ? JSON.parse(await fs.readFile(record, 'utf8')) : null
   return { result, recorded, dirLeft: existsSync(dir) }
 }
 
 const PROMPT = 'Review C:\\work\\a b with "quotes" and a trailing backslash\\'
+// cmd.exe would run `type nul > canary` if the prompt reached it on a command
+// line: in `x \"y & ...` the `&` is outside cmd.exe's quotes.
+const canary = path.join(root, 'injected.txt')
+const HOSTILE = 'Review x "y & type nul > ' + canary + ' & rem | more < in > out ^ caret %PATH%\n' +
+  'second line: "a & b" | c < d > e ^ f %PATH% end'
+assert.equal(sanitizePastePrompt(HOSTILE), HOSTILE, 'the hostile prompt has nothing the paste removes')
 
-for (const [label, agentCommand] of [
-  ['an .exe agent', '"' + process.execPath + '" "' + recorder + '" {prompt}'],
-  ['an npm-style .cmd shim', '"' + shim + '" {prompt}'],
-]) {
-  await check('draft launcher passes the prompt to ' + label + ' as one argument', async () => {
+for (const [label, prompt] of [['the prompt', PROMPT], ['a hostile prompt', HOSTILE]]) {
+  await check('draft launcher passes ' + label + ' to an .exe agent as one intact argument', async () => {
     const run = await runLauncher((dir) => {
       const promptFile = path.join(dir, 'prompt.txt')
-      writeFileSync(promptFile, PROMPT, 'utf8')
+      writeFileSync(promptFile, prompt, 'utf8')
       return buildWindowsDraftLauncherScript({
         cwd: clone,
         title: 'Triage Desk: a;b [Agent]',
-        agentCommand,
+        agentCommand: '"' + process.execPath + '" "' + recorder + '" {prompt}',
         promptFile,
         draftFlag: '--prefill',
       })
     })
     assert.ok(run.recorded, 'the agent ran: ' + run.result.stdout + run.result.stderr)
-    assert.deepEqual(run.recorded.argv, ['--prefill', PROMPT])
+    assert.deepEqual(run.recorded.argv, ['--prefill', prompt])
     assert.equal(realpathSync.native(run.recorded.cwd), realpathSync.native(clone), 'the non-ASCII drive-letter cwd survives')
+    assert.equal(existsSync(canary), false, 'nothing in the prompt ran')
     assert.equal(run.dirLeft, false, 'the launcher removes its directory')
   })
 }
@@ -162,31 +166,6 @@ await check('clipboard launcher keeps static arguments of a .cmd shim', async ()
   assert.equal(run.dirLeft, false)
 })
 
-// cmd.exe would run `type nul > canary` if the prompt reached it on a command
-// line: in `x \"y & ...` the `&` is outside cmd.exe's quotes.
-const canary = path.join(root, 'injected.txt')
-const HOSTILE = 'Review x "y & type nul > ' + canary + ' & rem | more < in > out ^ caret %PATH%\n' +
-  'second line: "a & b" | c < d > e ^ f %PATH% end'
-assert.equal(sanitizePastePrompt(HOSTILE), HOSTILE, 'the hostile prompt has nothing the paste removes')
-
-await check('draft launcher passes a hostile prompt to an .exe agent intact', async () => {
-  const run = await runLauncher((dir) => {
-    const promptFile = path.join(dir, 'prompt.txt')
-    writeFileSync(promptFile, HOSTILE, 'utf8')
-    return buildWindowsDraftLauncherScript({
-      cwd: clone,
-      title: 't',
-      agentCommand: '"' + process.execPath + '" "' + recorder + '" {prompt}',
-      promptFile,
-      draftFlag: '--prefill',
-    })
-  })
-  assert.ok(run.recorded, 'the agent ran: ' + run.result.stdout + run.result.stderr)
-  assert.deepEqual(run.recorded.argv, ['--prefill', HOSTILE])
-  assert.equal(existsSync(canary), false, 'nothing in the prompt ran')
-  assert.equal(run.dirLeft, false)
-})
-
 await check('paste launcher types a hostile prompt into a .cmd shim agent intact', async () => {
   const result = path.join(root, 'paste-result.json')
   const run = await runLauncher((dir) => {
@@ -202,16 +181,10 @@ await check('paste launcher types a hostile prompt into a .cmd shim agent intact
       wrapperFile,
       promptFile,
     })
-  })
+  }, 90_000)
   const output = run.result.stdout + run.result.stderr
   assert.ok(existsSync(result), 'the agent ran: ' + output)
-  const recorded = JSON.parse(await fs.readFile(result, 'utf8'))
-  const paste = recorded.events.find((event) => event.type === 'paste')
-  assert.ok(paste, 'the agent received a paste: ' + JSON.stringify(recorded) + output)
-  assert.equal(paste.text, HOSTILE, 'the prompt is typed in byte for byte')
-  assert.equal(paste.before, '', 'nothing is typed before the paste')
-  // HOSTILE has no paste end marker of its own, so the first one closes it.
-  assert.ok(!/[\r\n]$/.test(recorded.input.slice(recorded.input.indexOf('\x1b[201~') + 6)), 'no Enter after the paste')
+  assertUnsentPaste(JSON.parse(await fs.readFile(result, 'utf8')), HOSTILE, output)
   assert.doesNotMatch(output, /could not type the prompt/, 'the ConPTY host ran')
   assert.equal(existsSync(canary), false, 'nothing in the prompt ran')
   assert.equal(run.dirLeft, false, 'the launcher removes its prompt, host source and directory')

@@ -17,6 +17,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PASTE_WRAPPER_CS, PASTE_WRAPPER_PY, sanitizePastePrompt } from '../launcher.js'
+import { assertUnsentPaste } from './fixtures/paste.mjs'
 import { removeOnExit } from './fixtures/platform.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -107,11 +108,7 @@ function runWrapper(mode, onOutput = () => {}) {
 
 const started = Date.now()
 const plain = await runWrapper('plain')
-const paste = plain.recorded.events.find((event) => event.type === 'paste')
-assert.ok(paste, 'the agent received a paste: ' + JSON.stringify(plain.recorded) + plain.stderr)
-assert.equal(paste.text, PROMPT, 'the paste is the prompt, byte for byte')
-assert.equal(paste.before, '', 'nothing is typed before the paste')
-assert.ok(!/[\r\n]$/.test(plain.recorded.input.slice(plain.recorded.input.indexOf('\x1b[201~') + 6)), 'no Enter after the paste')
+assertUnsentPaste(plain.recorded, PROMPT, plain.stderr)
 assert.equal(plain.code, 7, 'the agent exit status is passed through')
 assert.equal(plain.promptLeft, false, 'the prompt file is removed')
 console.log('ok   plain: one bracketed paste, unsent, exit status kept (' + (Date.now() - started) + ' ms)')
