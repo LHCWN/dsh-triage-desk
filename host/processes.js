@@ -274,7 +274,9 @@ export function createProcesses({ ctx, settings, platform }) {
     const options = []
     if (platform === 'darwin') {
       for (const entry of catalog) {
-        const location = await appInstalled(entry.apps)
+        // Terminal.app ships with macOS and cannot be removed, so it is always
+        // offered; the others are checked at their standard locations.
+        const location = entry.id === 'terminal' ? entry.apps[0] : await appInstalled(entry.apps)
         options.push({ id: entry.id, label: entry.label, tabs: entry.tabs, available: location !== '', path: location })
       }
     } else if (platform === 'linux') {
