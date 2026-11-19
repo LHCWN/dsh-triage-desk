@@ -59,6 +59,11 @@
 ### Package
 
 - **Shorter plugin description** in both locales.
+- **Uninstall keeps settings, now documented.** Removing the plugin leaves its
+  saved settings in the profile's `cordis.patch.yml`, and a reinstall picks
+  them up again. The new *Install and updating* reference section shows the
+  row and how to delete it to start from the defaults. `check:docs` now also
+  checks README links to `#section` anchors.
 
 ## 0.1.0 — 2026-11-15
 

@@ -15,6 +15,7 @@ overview; [ARCHITECTURE.md](ARCHITECTURE.md) maps files and contracts.
   - [Agents](#agents)
 - [Clone discovery](#clone-discovery)
 - [Configuration](#configuration)
+- [Install and updating](#install-and-updating)
 - [How it works](#how-it-works)
 - [Limitations](#limitations)
 - [Development](#development)
@@ -425,6 +426,48 @@ The same fields can be set manually in `cordis.patch.yml`:
 There is intentionally no `export const Config`: the row config is validated by
 the settings endpoint and read with defaults in code, so the bundle needs no
 `@deepseek-ai/*` dependency (a linked local bundle cannot resolve them).
+
+## Install and updating
+
+The install and update commands are in the [README](../README.md#install).
+This section covers what stays in the profile.
+
+The package's own `cordis.patch.yml` only inserts the plugin row (`id:
+triage-desk`, `name: dsh-triage-desk`), with no `config`. The first **Save** in
+Settings adds an override for that row to the profile's own patch file,
+`$DSH_HOME/profiles/<profile>/cordis.patch.yml` (`DSH_HOME` defaults to `.dsh`
+in your home folder on macOS, Linux and Windows):
+
+```yaml
+- id: triage-desk
+  name: dsh-triage-desk
+  config:
+    orgs:
+      - acme
+    refreshSeconds: 600
+    # … the other fields Settings saved
+```
+
+Turning the plugin's row off in Plugin Manager writes `disabled: true` into the
+same override.
+
+- **Updating** (`dsh plugin --profile <profile> add dsh-triage-desk@latest`)
+  replaces only the package. The override stays and applies to the new version.
+- **Removing** (`dsh plugin --profile <profile> remove dsh-triage-desk`, or
+  **Remove** in Plugin Manager) drops the package from the profile's
+  dependencies and from `dsh.profile.bundles` in its `package.json`. DSH does
+  not edit the profile patch, so the override stays. While the plugin is not
+  installed, DSH logs the loader warning `patch: entry "triage-desk" not found`
+  each time it composes the profile. The warning has no other effect.
+- **Reinstalling** inserts the row again and the kept override applies to it:
+  the previous settings come back, and so does a row left switched off.
+
+To start from the defaults, quit DSH and delete the whole `- id: triage-desk`
+override (the line and everything indented under it) from the profile's
+`cordis.patch.yml`. Do this before or after removing the plugin. Deleting it
+also stops the warning. Leave the rows of other plugins as they are. If it was
+the only entry, leave `[]` on a line of its own: the file must stay a YAML
+list, and DSH does not start the profile when it holds only comments.
 
 ## How it works
 
