@@ -64,6 +64,7 @@ import {
   buildWindowsPasteLauncherScript,
   normalizeTerminalChoice,
   sanitizePastePrompt,
+  windowsQuote,
 } from '../launcher.js'
 
 const checks = []
@@ -912,6 +913,13 @@ await checkAsync('clone roots are discovered without hard-coded names', async ()
   assert.ok(!roots.some((root) => root.includes('Documents')), 'deep nested clones do not promote a root')
 })
 
+/** The agent command a Windows paste launcher hands its ConPTY host (`-EncodedCommand`). */
+function encodedCommand(script) {
+  const payload = script.match(/-EncodedCommand ' \+ '([A-Za-z0-9+/=]+)'/)
+  assert.ok(payload, script)
+  return Buffer.from(payload[1], 'base64').toString('utf16le')
+}
+
 /** Fake login-shell probe output in the buildExecutableProbe format. */
 function probeOutput(names, locate, commandV = locate) {
   return names.map((name) => ['__td__', name, locate(name), commandV(name)].join('\t')).join('\n') + '\n'
@@ -985,7 +993,7 @@ await checkAsync('host detection retains an entire quoted executable path', asyn
   await withPlatformHost('darwin', () => { throw new Error('an absolute executable must not need a PATH probe') }, async ({ request }) => {
     const config = await request('/triage-desk/config')
     assert.equal(config.status, 200)
-    assert.deepEqual(config.body.config.detectedAgents.custom, { available: true, path: '/offline/Agent Tools/claude', executable: '/offline/Agent Tools/claude' })
+    assert.deepEqual(config.body.config.detectedAgents.custom, { available: true, path: '/offline/Agent Tools/claude', executable: '/offline/Agent Tools/claude', draft: false })
   }, {
     agents: [{ id: 'custom', label: 'Custom', command: '"/offline/Agent Tools/claude" {prompt}' }],
     defaultAgent: 'custom',
@@ -1116,47 +1124,45 @@ await checkAsync('Windows draft, clipboard and login routes write UTF-8 BOM scri
 })
 
 await checkAsync('Windows keeps the native draft for an .exe agent only; .cmd/.bat shims get the prompt typed in', async () => {
-  // cmd.exe re-reads a .cmd/.bat command line, so a prompt argument is not
-  // safe there (issue #5). ConPTY support is read from os.release(): pin it.
+  // ConPTY support is read from os.release(): pin it.
   const release = os.release
   const cases = [
-    { name: 'an .exe agent', probe: [0, 'C:\\bin\\claude.exe'], build: '10.0.22631', mode: 'draft', blocked: null },
-    { name: "an .exe agent under a path with spaces and a quote", probe: [0, "C:\\Program Files (x86)\\O'Neil\\claude.EXE"], build: '10.0.22631', mode: 'draft', blocked: null },
-    { name: 'an npm .cmd shim', probe: [0, 'C:\\npm\\claude.cmd'], build: '10.0.22631', mode: 'paste', blocked: null },
-    { name: 'a .BAT file', probe: [0, 'C:\\tools\\CLAUDE.BAT'], build: '10.0.22631', mode: 'paste', blocked: null },
-    { name: 'a .ps1 shim', probe: [0, 'C:\\npm\\claude.ps1'], build: '10.0.22631', mode: 'paste', blocked: null },
-    { name: 'an unresolved executable', probe: [1, ''], build: '10.0.22631', mode: 'paste', blocked: null },
-    { name: 'a .cmd shim without ConPTY', probe: [0, 'C:\\npm\\claude.cmd'], build: '10.0.17134', mode: 'clipboard', blocked: 'windows-old' },
-    { name: 'a .cmd shim with clipboard delivery', probe: [0, 'C:\\npm\\claude.cmd'], build: '10.0.22631', mode: 'clipboard', blocked: null, config: { promptDelivery: 'clipboard' } },
+    { name: 'an .exe agent', path: 'C:\\bin\\claude.exe', mode: 'draft' },
+    { name: 'an .exe agent under a path with spaces and a quote', path: "C:\\Program Files (x86)\\O'Neil\\claude.EXE", mode: 'draft' },
+    { name: 'an npm .cmd shim', path: 'C:\\npm\\claude.cmd', mode: 'paste' },
+    { name: 'a .BAT file', path: 'C:\\tools\\CLAUDE.BAT', mode: 'paste' },
+    { name: 'a .ps1 shim', path: 'C:\\npm\\claude.ps1', mode: 'paste' },
+    { name: 'an unresolved executable', path: '', mode: 'paste' },
+    { name: 'a .cmd shim without ConPTY', path: 'C:\\npm\\claude.cmd', build: '10.0.17134', mode: 'clipboard', blocked: 'windows-old' },
+    { name: 'a .cmd shim with clipboard delivery', path: 'C:\\npm\\claude.cmd', mode: 'clipboard', config: { promptDelivery: 'clipboard' } },
   ]
   try {
-    for (const entry of cases) {
-      os.release = () => entry.build
+    for (const { name, path: detected, build = '10.0.22631', mode, blocked = null, config } of cases) {
+      os.release = () => build
       await withPlatformHost('win32', (spec, handle) => {
-        if (spec.argv[0] === 'powershell.exe') return handle(entry.probe[0], entry.probe[0] === 0 ? '__td__\tclaude\t' + entry.probe[1] + '\t\n' : '')
+        // An empty path fails the probe, so detection cannot resolve the agent.
+        if (spec.argv[0] === 'powershell.exe') return detected === '' ? handle(1, '') : handle(0, probeOutput(['claude'], () => detected))
         if (spec.argv[0] === 'clip.exe' || spec.argv[0] === 'wt') return handle()
         throw new Error('unexpected subprocess: ' + spec.argv.join(' '))
       }, async ({ request, files }) => {
+        const settings = await request('/triage-desk/config')
+        assert.equal(settings.body.config.detectedAgents.claude.draft, mode === 'draft', name + ': the client is told the same')
         const result = await request('/triage-desk/launch', 'POST', { url: PR_URL, agent: 'claude' })
-        assert.equal(result.status, 200, entry.name + ': ' + JSON.stringify(result.body))
-        assert.equal(result.body.mode, entry.mode, entry.name)
-        assert.deepEqual(result.body.delivery, { mode: entry.mode, pasteBlocked: entry.blocked, platform: 'win32' }, entry.name)
+        assert.equal(result.status, 200, name + ': ' + JSON.stringify(result.body))
+        assert.equal(result.body.mode, mode, name)
+        assert.deepEqual(result.body.delivery, { mode, pasteBlocked: blocked, platform: 'win32' }, name)
         const script = [...files.entries()].find(([file]) => file.endsWith('launch.ps1'))?.[1].toString('utf8') || ''
-        assert.equal(script.includes('--prefill'), entry.mode === 'draft', entry.name + ': the prompt argument is used only for a native draft')
-        if (entry.mode === 'draft') {
-          // The launch runs the file detection checked: a profile alias,
-          // function or a different PATH order in the launch shell cannot
-          // swap the .exe for a .cmd shim that would get the prompt argument.
-          const quoted = "& '" + entry.probe[1].split("'").join("''") + "'"
-          assert.ok(script.split('\n').some((line) => line.trimStart().startsWith(quoted + ' ')), entry.name + ': the draft runs the detected .exe')
-          assert.ok(!script.includes("& 'claude'"), entry.name + ': the draft never runs the bare name')
+        assert.equal(script.includes('--prefill'), mode === 'draft', name + ': the prompt argument is used only for a native draft')
+        if (mode === 'draft') {
+          const quoted = '& ' + windowsQuote(detected) + ' '
+          assert.ok(script.split('\n').some((line) => line.trimStart().startsWith(quoted)), name + ': the draft runs the detected .exe')
+          assert.ok(!script.includes("& 'claude'"), name + ': the draft never runs the bare name')
         }
-        if (entry.mode === 'paste') {
-          assert.ok(script.includes('(paste mode;'), entry.name)
-          const payload = script.match(/-EncodedCommand ' \+ '([A-Za-z0-9+/=]+)'/)
-          assert.equal(Buffer.from(payload[1], 'base64').toString('utf16le'), "& 'claude'", entry.name + ': the agent runs bare')
+        if (mode === 'paste') {
+          assert.ok(script.includes('(paste mode;'), name)
+          assert.equal(encodedCommand(script), "& 'claude'", name + ': the agent runs bare')
         }
-      }, entry.config)
+      }, config)
     }
   } finally {
     os.release = release
@@ -1440,9 +1446,9 @@ await checkAsync('detection reports aliases/functions and launch pins the detect
     }, async ({ request, files }) => {
       const config = await request('/triage-desk/config')
       const detected = config.body.config.detectedAgents
-      assert.deepEqual(detected.claude, { available: true, path: '/home/me/.nvm/versions/node/v22/bin/claude', executable: 'claude' })
-      assert.deepEqual(detected.codex, { available: false, path: null, reason: 'function', executable: 'codex' })
-      assert.deepEqual(detected.gemini, { available: false, path: null, reason: 'alias', executable: 'gemini' })
+      assert.deepEqual(detected.claude, { available: true, path: '/home/me/.nvm/versions/node/v22/bin/claude', executable: 'claude', draft: true })
+      assert.deepEqual(detected.codex, { available: false, path: null, reason: 'function', executable: 'codex', draft: false })
+      assert.deepEqual(detected.gemini, { available: false, path: null, reason: 'alias', executable: 'gemini', draft: false })
       assert.deepEqual(config.body.config.invalidAgents, [])
       const blocked = await request('/triage-desk/launch', 'POST', { url: PR_URL, agent: 'codex' })
       assert.equal(blocked.status, 400)
@@ -1476,7 +1482,7 @@ await checkAsync('a bash login shell is probed interactively and its job-control
       throw new Error('unexpected subprocess: ' + spec.argv.join(' '))
     }, async ({ request }) => {
       const config = await request('/triage-desk/config')
-      assert.deepEqual(config.body.config.detectedAgents.claude, { available: true, path: '/home/me/.nvm/bin/claude', executable: 'claude' })
+      assert.deepEqual(config.body.config.detectedAgents.claude, { available: true, path: '/home/me/.nvm/bin/claude', executable: 'claude', draft: true })
     })
     // Settings costs two login-shell probes: the agents, and one shared lookup
     // of the machine tools (terminal emulators and python3 for the paste wrapper).
@@ -1734,9 +1740,7 @@ check('paste launcher scripts run the wrapper on POSIX and the ConPTY host on Wi
     wrapperFile: 'C:\\Temp\\td\\paste-host.cs',
     promptFile: 'C:\\Temp\\td\\prompt.txt',
   })
-  const payload = windows.match(/-EncodedCommand ' \+ '([A-Za-z0-9+/=]+)'/)
-  assert.ok(payload, windows)
-  assert.equal(Buffer.from(payload[1], 'base64').toString('utf16le'), "& 'codex' '--model=gpt-5'")
+  assert.equal(encodedCommand(windows), "& 'codex' '--model=gpt-5'")
   assert.ok(windows.includes('[TriageDesk.PasteHost]::Run($tdCommand, $tdPrompt, (Get-Location).ProviderPath)'))
   assert.ok(windows.includes("if (-not $tdPasted) {\n  & 'codex' '--model=gpt-5'\n}"), 'a failed host runs the agent directly')
   assert.ok(windows.includes("Set-Location -LiteralPath 'C:\\Users\\O''Brien\\repo'"))

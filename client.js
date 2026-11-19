@@ -2533,14 +2533,16 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * How a launch hands `agent` its prompt: `draft`, `paste` or `clipboard`
-     * (mirrors the host). On Windows the native draft is used only when the
-     * detected executable is an .exe (the host's windowsDraftArgumentSafe).
+     * How a launch hands `agent` its prompt: `draft`, `paste` or `clipboard`.
+     * The host reports `detectedAgents[id].draft` (its draftCommandFor); when
+     * that field is absent, every agent with a draft flag drafts.
      */
     function promptDeliveryFor(config, agent) {
       const detected = (agent && (configValue(config, 'detectedAgents') || {})[agent.id]) || {}
-      const draftSafe = configValue(config, 'platform') !== 'win32' || /\.exe$/i.test(String(detected.path || '').trim())
-      if (agent && typeof agent.draftFlag === 'string' && agent.draftFlag !== '' && draftSafe) return 'draft'
+      const draft = typeof detected.draft === 'boolean'
+        ? detected.draft
+        : Boolean(agent && typeof agent.draftFlag === 'string' && agent.draftFlag !== '')
+      if (draft) return 'draft'
       const paste = configValue(config, 'promptPaste')
       if (configValue(config, 'promptDelivery') !== 'clipboard' && paste && paste.available === true) return 'paste'
       return 'clipboard'

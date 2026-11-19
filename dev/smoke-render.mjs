@@ -1135,20 +1135,20 @@ for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-
   assert.ok(menu.text().includes('launch.via.paste:GNOME Terminal'), 'Codex gets the prompt typed in')
   menu.dispose()
 
-  // Windows keeps the native draft for an .exe only (the host's
-  // windowsDraftArgumentSafe); a .cmd shim of Claude Code gets the prompt typed in.
-  for (const [file, via] of [['C:\\bin\\claude.exe', 'draft'], ['C:\\npm\\claude.cmd', 'paste']]) {
+  // The host's `detectedAgents[id].draft` decides when present (above it is
+  // absent and the draft flag decides): `false` for a Windows `.cmd` shim.
+  for (const [draft, via] of [[true, 'draft'], [false, 'paste']]) {
     const windowsMenu = settingsHarness({
       snapshotPayload: snapshot,
       configExtra: {
         ...configExtra,
         platform: 'win32',
-        detectedAgents: { claude: { available: true, path: file, executable: 'claude' } },
+        detectedAgents: { claude: { available: true, path: 'C:\\npm\\claude.cmd', executable: 'claude', draft } },
       },
     })
     await windowsMenu.flush()
     windowsMenu.click(windowsMenu.nodes().filter((node) => node.type === 'button' && node.props['aria-label'] === 'launch.title')[0])
-    assert.ok(windowsMenu.text().includes('launch.via.' + via + ':GNOME Terminal'), 'Claude Code as ' + file + ' on Windows: ' + via)
+    assert.ok(windowsMenu.text().includes('launch.via.' + via + ':GNOME Terminal'), 'draft: ' + draft + ' → ' + via)
     windowsMenu.dispose()
   }
 }

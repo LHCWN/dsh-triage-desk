@@ -27,6 +27,7 @@ export {
   agentExecutable,
   bareAgentCommand,
   buildDraftCommand,
+  draftCommandFor,
   hasSafePromptPlaceholder,
   shellQuote,
   withAgentExecutable,
@@ -102,7 +103,6 @@ export {
   buildWindowsDraftLauncherScript,
   buildWindowsLoginLauncherScript,
   buildWindowsPasteLauncherScript,
-  windowsDraftArgumentSafe,
   windowsQuote,
 } from './launcher/windows-scripts.js'
 

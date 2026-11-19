@@ -24,7 +24,8 @@ import the launcher layer only through `launcher.js` and the data layer through
   - `snapshot.js` — `createSnapshotStore`: build, adaptive TTL on low quota, and
     the stale fallback (a failed build serves the previous snapshot as `stale`
     with `meta.lastError`);
-  - `config.js` — `EDITABLE_FIELDS`, `sanitizePatch`, `publicConfig`;
+  - `config.js` — `EDITABLE_FIELDS`, `sanitizePatch`, `publicConfig` (adds
+    `detectedAgents[id].draft` from `draftCommandFor`);
   - `processes.js` — `createProcesses`: `runProcess`, executable lookup,
     clipboard, `openTerminal(scriptPath, title, signal, choice)` (resolves the
     saved terminal choice, falling back to Automatic when it is not installed;
@@ -44,14 +45,11 @@ import the launcher layer only through `launcher.js` and the data layer through
     fallback, native directory picker, `resolveClone`;
   - `launch.js` — `createLaunch`: scenario/agent resolution,
     `renderScenarioPrompt`, `launchForItem` (runs the detected path and passes
-    its directory as `binDir`; picks the delivery mode — `draft` for agents with
-    a native draft flag (on Windows only when `windowsDraftArgumentSafe` accepts
-    the detected path: an `.exe`, never a `.cmd`/`.bat` that `cmd.exe` would
-    re-parse; `withWindowsAgentExecutable` then runs that `.exe` by its
-    absolute path, or the draft is not used), `paste` when `promptDelivery` is `paste` and
-    `detectPasteSupport` allows it, else `clipboard` with `delivery.pasteBlocked`
-    naming the reason; the clipboard always gets a copy), temp directories,
-    `openLoginTerminal`;
+    its directory as `binDir`; picks the delivery mode — `draft` when
+    `draftCommandFor` returns a command, `paste` when `promptDelivery` is
+    `paste` and `detectPasteSupport` allows it, else `clipboard` with
+    `delivery.pasteBlocked` naming the reason; the clipboard always gets a
+    copy), temp directories, `openLoginTerminal`;
   - `gh.js` — `createGh`: `gh`/`git` resolution and auth status;
   - `http.js`, `errors.js`, `tool-text.js` — JSON body/response helpers,
     `BadRequest`/`LaunchError`, and the tool's text rendering.
@@ -80,11 +78,14 @@ import the launcher layer only through `launcher.js` and the data layer through
   - `agent-command.js` — `commandWords` (static word decoding with raw spans),
     `agentExecutable`, `hasSafePromptPlaceholder` and its one user-facing
     wording `AGENT_COMMAND_RULE`, `shellQuote`, and the command variants
-    (`bareAgentCommand`, `buildDraftCommand`,
-    `withAgentExecutable`). `{prompt}` appears once, unquoted, after an
-    executable word, either as a whole word or directly after `-x=`/`--flag=`;
-    backticks, `$(`, `${`, unquoted `; & | < > ( )` and word-initial `#` are
-    rejected. The host is the only implementation of this rule;
+    (`bareAgentCommand`, `buildDraftCommand`, `withAgentExecutable`,
+    `withWindowsAgentExecutable`), and `draftCommandFor`, the one decision
+    whether a launch uses the native draft (on Windows only for an `.exe`,
+    never a `.cmd`/`.bat` that `cmd.exe` would re-parse, run by its absolute
+    path). `{prompt}` appears once, unquoted, after an executable word, either
+    as a whole word or directly after `-x=`/`--flag=`; backticks, `$(`, `${`,
+    unquoted `; & | < > ( )` and word-initial `#` are rejected. The host is the
+    only implementation of this rule;
   - `agents.js` — presets, discoverable CLIs, `normalizeAgentConfig` returning
     `{ agents, invalidAgents }` (rejected saved agents are reported, never
     launched; presets apply only when no saved agent is valid);
@@ -119,12 +120,12 @@ import the launcher layer only through `launcher.js` and the data layer through
     `lookupRepoPath` (case-insensitive `repoPaths`);
   - `posix-scripts.js`, `windows-scripts.js`, `terminal-plan.js` — POSIX and
     PowerShell 5.1 launcher/login scripts (draft, paste, clipboard and login
-    variants; `windowsDraftArgumentSafe`, which the client's
-    `promptDeliveryFor` mirrors), `openTerminalPlan(platform, capabilities)`
-    (macOS `app`: iTerm2 or Ghostty tab, Terminal.app window; shared-window
-    tabs on Windows/Linux; `wt: ''` asks for a plain PowerShell window), `focusTerminalPlan(platform,
-    capabilities)` (best-effort raise-by-title for focus-or-reuse in iTerm2,
-    Ghostty, wmctrl/xdotool; `null` when unsupported), and
+    variants), `openTerminalPlan(platform, capabilities)` (macOS `app`:
+    iTerm2 or Ghostty tab, Terminal.app window; shared-window tabs on
+    Windows/Linux; `wt: ''` asks for a plain PowerShell window),
+    `focusTerminalPlan(platform, capabilities)` (best-effort raise-by-title
+    for focus-or-reuse in iTerm2, Ghostty, wmctrl/xdotool; `null` when
+    unsupported), and
     `buildItermTabAppleScript` / `buildGhosttyTabAppleScript` (Ghostty 1.4
     AppleScript dictionary);
   - `common.js` — small shared helpers.
@@ -244,11 +245,12 @@ fields the client reads with a fallback for an older host: `invalidAgents`,
 terminal picker), `promptPaste` (detectPasteSupport; null means unknown and the
 launch menu assumes the clipboard), `platform` (paste keys in hints and toasts),
 the launch result's `terminal` and `delivery: { mode, pasteBlocked, platform }`,
-`detectedAgents[id].executable`, review items' `optional` flag (absent →
-counted), and the optional `{ commands }` body of `POST /triage-desk/agents/find`
-(the host leaves out agents whose executable is already configured; an oversized
-or non-JSON body is a 400; an older host ignores the body and the client
-compares exact commands and the program word).
+`detectedAgents[id].executable`, `detectedAgents[id].draft` (whether the
+launch uses the native draft; absent → the agent's draft flag decides), review
+items' `optional` flag (absent → counted), and the optional `{ commands }` body
+of `POST /triage-desk/agents/find` (the host leaves out agents whose executable
+is already configured; an oversized or non-JSON body is a 400; an older host
+ignores the body and the client compares exact commands and the program word).
 
 Snapshot sections are fixed: `review`, `rereview`, `merge`, `respond`, `ci`,
 `issues`. Keep the host response shape and client expectations in sync.

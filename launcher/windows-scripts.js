@@ -43,22 +43,6 @@ function windowsScriptCwd(cwd) {
  * to 5.1's legacy passing; the launcher always runs `powershell.exe`.
  */
 
-/**
- * Whether a native draft can hand the prompt to this Windows executable as a
- * command-line argument: only for a resolved `.exe`, the case the rules above
- * were measured against (dev/smoke-windows.mjs). A `.cmd`/`.bat` runs through
- * `cmd.exe` (CreateProcess documentation: a batch file needs the command
- * interpreter, `cmd.exe /c`), which parses the line again and does not treat
- * `\"` as an escaped quote: `& | < > ^` can fall outside its quotes and act as
- * operators, `%NAME%` is expanded and a line break ends the command (issue #5;
- * the "BatBadBut" class, CVE-2024-24576). A `.ps1` shim re-passes the argument
- * through another layer that was not measured, and an unresolved path is
- * unknown. Those agents get the prompt typed in or on the clipboard instead.
- */
-export function windowsDraftArgumentSafe(executablePath) {
-  return typeof executablePath === 'string' && /\.exe$/i.test(executablePath.trim())
-}
-
 /** Whether PowerShell 5.1 wraps this native argument in quotes (see above). */
 function psWrapsArg(value) {
   let quotes = 0

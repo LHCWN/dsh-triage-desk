@@ -23,6 +23,7 @@ import {
   TERMINAL_AUTO,
   TERMINAL_IDS,
   defaultScenarios,
+  draftCommandFor,
   expandHome,
   hasSafePromptPlaceholder,
   validateDefaultScenario,
@@ -48,11 +49,28 @@ export const EDITABLE_FIELDS = [
 ]
 
 /**
+ * The agent detection map as the client sees it: each detected agent also
+ * carries `draft`, whether a launch uses its native draft (draftCommandFor,
+ * with the path the launch would run).
+ */
+function detectedAgentsView(detected, agents, platform) {
+  const view = { ...detected }
+  for (const agent of agents) {
+    const status = view[agent.id]
+    if (status === undefined || status === null) continue
+    const detectedPath = status.available === true && typeof status.path === 'string' ? status.path : ''
+    view[agent.id] = { ...status, draft: draftCommandFor(agent, detectedPath, platform) !== null }
+  }
+  return view
+}
+
+/**
  * `detected` is the agent detection map; `environment` carries what the host
  * found on this machine: `terminals` (detectTerminals) and `promptPaste`
  * (whether the paste wrapper can run, and why not).
  */
 export function publicConfig(settings, runtime, launcher, detected, environment = {}) {
+  const platform = environment.platform || process.platform
   return {
     orgs: settings.orgs,
     includePersonal: settings.includePersonal,
@@ -76,10 +94,10 @@ export function publicConfig(settings, runtime, launcher, detected, environment 
     promptDelivery: launcher.promptDelivery,
     terminals: environment.terminals || null,
     promptPaste: environment.promptPaste || null,
-    platform: environment.platform || process.platform,
+    platform,
     supportsPrompt: true,
     supportsAgentDiscovery: true,
-    detectedAgents: detected || {},
+    detectedAgents: detectedAgentsView(detected || {}, launcher.agents, platform),
     editable: runtime.editable,
     // Display labels the client preview uses instead of its own copies.
     labels: { sections: SCENARIO_SECTION_LABELS, reasons: SCENARIO_REASON_LABELS },
