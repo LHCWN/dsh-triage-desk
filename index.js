@@ -147,13 +147,14 @@ export function apply(ctx, config = {}) {
    * Saved settings are applied to this running instance. Restarting it would
    * unregister the `triage_desk` tool and the routes until the plugin is back,
    * and an agent calling the tool meanwhile gets `unknown tool "triage_desk"`.
-   * configEditor.edit ends in the loader's `fiber.update(config)`, which runs
-   * this fiber's `internal/update` listeners as a waterfall around the
-   * restart; a listener that returns without calling `next()` keeps the
-   * instance (cordis `src/fiber.ts` update() and `src/events.ts`; the loader's
-   * Group plugin applies its config the same way). A config that cannot be
-   * wired falls back to the restart, which reports the failure through the
-   * fiber. Routes and the tool take the wiring once per request, so a request
+   * configEditor.edit ends in the loader's `fiber.update(config, true)`, which
+   * runs only this fiber's `internal/update` listeners, as
+   * `(resolvedConfig, next)`, in a waterfall around the restart; a listener
+   * that returns without calling `next()` keeps the instance. Verified against
+   * the cordis DSH bundles (@deepseek-ai/cordis 4.1.0: `src/fiber.ts`
+   * Fiber.update(), the per-fiber hook in `src/events.ts`). A config that
+   * cannot be wired falls back to the restart, which reports the failure
+   * through the fiber. Routes and the tool take the wiring once per request, so a request
    * in flight finishes on the wiring it started with.
    */
   ctx.on('internal/update', (nextConfig, next) => {
