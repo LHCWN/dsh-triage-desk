@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+### Launching agents
+
+- **Prompts are typed into the agent.** Agents without a native draft flag no
+  longer open empty with the prompt on the clipboard: a small paste wrapper runs
+  the agent in a pseudo-terminal, waits until its input box is ready (bracketed
+  paste on and the screen settled; a folder-trust dialog waits for your Enter),
+  and pastes the prompt without sending it. macOS and Linux use Python 3's `pty`
+  module, Windows uses ConPTY (Windows 10 1809+) through PowerShell 5.1. Claude
+  Code keeps its native `--prefill` draft. Verified with Codex, opencode and
+  Antigravity; the clipboard still gets a copy.
+- **Prompt delivery setting.** *Type into the agent* (default) or *Copy to
+  clipboard* (`promptDelivery`: `paste` | `clipboard`). When Python 3 or ConPTY
+  is missing, Settings says what to install and launches use the clipboard.
+- **Terminal choice.** *Open agents in* picks Automatic or an installed terminal
+  of the current platform (`terminal`): Terminal, iTerm2 or Ghostty on macOS;
+  GNOME Terminal, Konsole, Xfce Terminal, Ghostty, kitty, Alacritty or xterm on
+  Linux; Windows Terminal or a PowerShell window on Windows. Ghostty on macOS
+  opens tabs and re-launching the same agent on an item switches to its tab. A
+  chosen terminal that is not installed falls back to Automatic.
+- **Clearer launch feedback.** The toast names the agent and terminal and says
+  where the prompt is; the clipboard hint shows the right keys per platform
+  (⌘V, Ctrl+Shift+V, Ctrl+V) instead of always Cmd+V; each launch menu shows
+  where the selected agent opens and how it gets the prompt.
+
 ## 0.1.0 — 2026-11-15
 
 First public release.

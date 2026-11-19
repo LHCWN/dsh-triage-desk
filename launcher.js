@@ -61,7 +61,13 @@ export {
 
 export { MAX_RENDERED_PROMPT, buildItemsBlock, buildScenarioPrompt, promptVars } from './launcher/prompt.js'
 
-export { MAX_CLONE_DIRS, MAX_REPO_PATHS, normalizeLauncherConfig } from './launcher/settings.js'
+export {
+  DEFAULT_PROMPT_DELIVERY,
+  MAX_CLONE_DIRS,
+  MAX_REPO_PATHS,
+  PROMPT_DELIVERY_MODES,
+  normalizeLauncherConfig,
+} from './launcher/settings.js'
 
 export {
   DEFAULT_CLONE_DIRS,
@@ -73,13 +79,42 @@ export {
   scanCloneDirs,
 } from './launcher/clones.js'
 
-export { buildClipboardLauncherScript, buildDraftLauncherScript, buildLoginLauncherScript } from './launcher/posix-scripts.js'
+export {
+  buildClipboardLauncherScript,
+  buildDraftLauncherScript,
+  buildLoginLauncherScript,
+  buildPasteLauncherScript,
+} from './launcher/posix-scripts.js'
+
+export {
+  PASTE_DEADLINE_MS,
+  PASTE_QUIET_MS,
+  PASTE_SETTLE_MS,
+  PASTE_TRUST_PATTERN,
+  PASTE_WRAPPER_CS,
+  PASTE_WRAPPER_PY,
+  sanitizePastePrompt,
+} from './launcher/paste-wrapper.js'
 
 export {
   buildWindowsClipboardLauncherScript,
   buildWindowsDraftLauncherScript,
   buildWindowsLoginLauncherScript,
+  buildWindowsPasteLauncherScript,
   windowsQuote,
 } from './launcher/windows-scripts.js'
 
-export { buildItermTabAppleScript, focusTerminalPlan, openTerminalPlan } from './launcher/terminal-plan.js'
+export {
+  buildGhosttyTabAppleScript,
+  buildItermTabAppleScript,
+  focusTerminalPlan,
+  openTerminalPlan,
+} from './launcher/terminal-plan.js'
+
+export {
+  TERMINAL_AUTO,
+  TERMINAL_CATALOG,
+  TERMINAL_IDS,
+  normalizeTerminalChoice,
+  terminalCatalog,
+} from './launcher/terminals.js'

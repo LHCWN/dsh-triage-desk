@@ -63,6 +63,44 @@ export function buildItermTabAppleScript(scriptPath) {
   ].join('\n')
 }
 
+/**
+ * Ghostty (1.4+) AppleScript that runs the generated launcher in a new tab of
+ * the front window, or in a new window when none is open, then focuses the app.
+ * Verified against the dictionary Ghostty ships (`Ghostty.app/Contents/
+ * Resources/Ghostty.sdef`, 1.4.0): `new surface configuration` returns a record
+ * whose `command` replaces the shell and whose `wait after command` keeps the
+ * surface open; `new tab in <window> with configuration` and `new window with
+ * configuration` create the surface; `count of windows` is 0 when none is open.
+ * Checked on macOS 27 with Ghostty 1.4.0: the tab opens in the front window and
+ * its title is then readable as `name of tab`. Ghostty runs `command` through a
+ * shell, so the path is single-quoted as for iTerm2.
+ */
+export function buildGhosttyTabAppleScript(scriptPath) {
+  if (typeof scriptPath !== 'string' || scriptPath.trim() === '' || /[\r\n\u0000]/.test(scriptPath)) {
+    throw new Error('a launcher script path is required')
+  }
+  const shellQuoted = "'" + scriptPath.trim().split("'").join("'\\''") + "'"
+  return [
+    'tell application "Ghostty"',
+    '  set launchConfig to new surface configuration',
+    '  set command of launchConfig to ' + appleScriptString(shellQuoted),
+    '  if (count of windows) = 0 then',
+    '    new window with configuration launchConfig',
+    '  else',
+    '    new tab in front window with configuration launchConfig',
+    '  end if',
+    '  activate',
+    'end tell',
+  ].join('\n')
+}
+
+/** The macOS app a plan targets: an explicit `app`, else iTerm2 when detected, else Terminal. */
+function darwinApp(input) {
+  if (input.app === 'iterm' || input.app === 'ghostty' || input.app === 'terminal') return input.app
+  const iterm = input.iterm === true || (typeof input.iterm === 'string' && input.iterm.trim() !== '')
+  return iterm ? 'iterm' : 'terminal'
+}
+
 const WINDOWS_POWERSHELL_ARGV = [
   'powershell.exe',
   '-NoExit',
@@ -75,8 +113,10 @@ const WINDOWS_POWERSHELL_ARGV = [
 /**
  * Pure plan for opening a terminal: the argv the host spawns plus whether it is
  * a tab or a window attempt. `capabilities` carries `scriptPath`, `title`, the
- * resolved Linux `terminal`, the win32 `wt` path (or true), and the resolved
- * POSIX `shell`; `tab: false` asks for the window fallback. The host tries the
+ * macOS `app` (`terminal`, `iterm` or `ghostty`; the older `iterm: true` still
+ * selects iTerm2), the resolved Linux `terminal`, the win32 `wt` path (or true,
+ * '' for a plain console window), and the resolved POSIX `shell`; `tab: false`
+ * asks for the window fallback. The host tries the
  * tab plan first and retries with the window plan when the spawn fails.
  */
 export function openTerminalPlan(platform, capabilities = {}) {
@@ -87,19 +127,19 @@ export function openTerminalPlan(platform, capabilities = {}) {
   const wantTab = input.tab !== false
 
   if (platform === 'darwin') {
-    // iTerm2 is the only macOS terminal with a verified safe tab API, so prefer
-    // it: `create tab with default profile command "<script>"` adds a tab to
-    // the current window and runs the launcher there (see
-    // buildItermTabAppleScript). Terminal.app automation cannot create a tab —
-    // `do script … in window` writes into the window's current tab, corrupting a
-    // running agent's input — so without iTerm2 we open a new Terminal window.
-    const iterm = input.iterm === true || (typeof input.iterm === 'string' && input.iterm.trim() !== '')
-    if (iterm && wantTab) {
-      return {
-        argv: ['/usr/bin/osascript', '-e', buildItermTabAppleScript(scriptPath)],
-        variant: 'tab',
-      }
+    // iTerm2 and Ghostty have verified tab APIs: the launcher runs as the new
+    // tab's command (buildItermTabAppleScript, buildGhosttyTabAppleScript).
+    // Terminal.app automation cannot create a tab — `do script … in window`
+    // writes into the window's current tab, corrupting a running agent's input —
+    // so Terminal (and the window fallback of the others) opens a new window.
+    const app = darwinApp(input)
+    if (app === 'iterm' && wantTab) {
+      return { argv: ['/usr/bin/osascript', '-e', buildItermTabAppleScript(scriptPath)], variant: 'tab' }
     }
+    if (app === 'ghostty' && wantTab) {
+      return { argv: ['/usr/bin/osascript', '-e', buildGhosttyTabAppleScript(scriptPath)], variant: 'tab' }
+    }
+    if (app === 'ghostty') return { argv: ['/usr/bin/open', '-na', 'Ghostty', '--args', '-e', scriptPath], variant: 'window' }
     return { argv: ['/usr/bin/open', '-a', 'Terminal', scriptPath], variant: 'window' }
   }
 
@@ -186,16 +226,37 @@ export function focusTerminalPlan(platform, capabilities = {}) {
   if (title === '' || /[\r\n\u0000]/.test(title)) return null
 
   if (platform === 'darwin') {
-    // iTerm2 only: find a session whose name contains the title and select its
-    // tab/window. Verified against iTerm2 AppleScript
+    // iTerm2 and Ghostty: find a tab whose title contains the launch title and
+    // select it. Terminal.app offers no equivalent safe lookup, so it returns
+    // null and a new window opens instead.
+    const app = darwinApp(input)
+    const needle = appleScriptString(title)
+    if (app === 'ghostty') {
+      // Ghostty.sdef 1.4.0: a `window` has `tabs`, a `tab` has a `name` (its
+      // title), `select tab` selects it and `activate window` raises its window.
+      const script = [
+        'tell application "Ghostty"',
+        '  set matched to false',
+        '  repeat with w in windows',
+        '    repeat with t in tabs of w',
+        '      if not matched and name of t contains ' + needle + ' then',
+        '        select tab t',
+        '        activate window w',
+        '        set matched to true',
+        '      end if',
+        '    end repeat',
+        '  end repeat',
+        '  if matched then activate',
+        '  return matched',
+        'end tell',
+      ].join('\n')
+      return { argv: ['/usr/bin/osascript', '-e', script] }
+    }
+    if (app !== 'iterm') return null
+    // Verified against iTerm2 AppleScript
     // (https://iterm2.com/documentation-scripting.html): a `window` has `tabs`,
     // a `tab` has `sessions`, a `session` has a `name`, `select` focuses a tab,
     // and `tell current tab of <window> to select`/window `select` raises it.
-    // Terminal.app offers no equivalent safe lookup, so it returns null and a
-    // new window opens instead.
-    const iterm = input.iterm === true || (typeof input.iterm === 'string' && input.iterm.trim() !== '')
-    if (!iterm) return null
-    const needle = appleScriptString(title)
     const script = [
       'tell application "iTerm"',
       '  set matched to false',

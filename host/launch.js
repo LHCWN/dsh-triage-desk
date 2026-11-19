@@ -15,11 +15,16 @@ import {
   buildDraftCommand,
   buildDraftLauncherScript,
   buildLoginLauncherScript,
+  buildPasteLauncherScript,
   buildScenarioPrompt,
   buildWindowsClipboardLauncherScript,
   buildWindowsDraftLauncherScript,
   buildWindowsLoginLauncherScript,
+  buildWindowsPasteLauncherScript,
+  PASTE_WRAPPER_CS,
+  PASTE_WRAPPER_PY,
   parseRepoUrl,
+  sanitizePastePrompt,
   scenarioTitle,
   withAgentExecutable,
 } from '../launcher.js'
@@ -33,6 +38,7 @@ export function createLaunch({
   runProcess,
   copyToClipboard,
   openTerminal,
+  detectPasteSupport,
   detectAgents,
   resolveClone,
   workspaceDirectory,
@@ -231,24 +237,57 @@ export function createLaunch({
       throw new LaunchError('aborted', 'the launch was cancelled')
     }
     // Native draft support (Claude Code --prefill) opens the agent with the
-    // prompt already in its composer. Other agents open bare and get the prompt
-    // via the clipboard.
-    const mode = typeof agent.draftFlag === 'string' ? 'draft' : 'clipboard'
+    // prompt already in its composer. Other agents get it typed into their
+    // input box by the paste wrapper when it can run here, else via the
+    // clipboard; `delivery.reason` says why paste was not used.
     const windows = platform === 'win32'
+    let mode = 'clipboard'
+    let pasteBlocked = null
+    let python = null
+    if (typeof agent.draftFlag === 'string') {
+      mode = 'draft'
+    } else if (launcherSettings.promptDelivery === 'paste') {
+      const support = await detectPasteSupport().catch(() => ({ available: false, reason: 'python-missing', python: null }))
+      if (support.available) {
+        mode = 'paste'
+        python = support.python
+      } else {
+        pasteBlocked = support.reason
+      }
+    }
     // Best effort and never throws; this launch's own directory is too new to qualify.
     void cleanupStaleTempDirs()
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'triage-desk-'))
+    let opened
     try {
-      if (mode === 'draft') {
-        // Keep the prompt on the clipboard too: it doubles as a fallback if an
-        // older agent build does not support the draft flag.
-        await copyToClipboard(prompt).catch(() => undefined)
-      } else {
+      if (mode === 'clipboard') {
         await copyToClipboard(prompt)
+      } else {
+        // Keep the prompt on the clipboard too: it is the fallback when an
+        // older agent build lacks the draft flag or the paste cannot be typed.
+        await copyToClipboard(prompt).catch(() => undefined)
       }
       const launcherFile = path.join(tempDir, windows ? 'launch.ps1' : 'launch.command')
       let script
-      if (windows && mode === 'draft') {
+      if (mode === 'paste') {
+        const promptFile = path.join(tempDir, 'prompt.txt')
+        const wrapperFile = path.join(tempDir, windows ? 'paste-host.cs' : 'paste-wrapper.py')
+        await fs.writeFile(promptFile, sanitizePastePrompt(prompt), 'utf8')
+        await fs.writeFile(wrapperFile, windows ? PASTE_WRAPPER_CS : PASTE_WRAPPER_PY, 'utf8')
+        const bareCommand = bareAgentCommand(windows ? agent.command : launchCommand, platform)
+        script = windows
+          ? buildWindowsPasteLauncherScript({ cwd: clonePath, title: windowTitle, bareCommand, wrapperFile, promptFile })
+          : buildPasteLauncherScript({
+              cwd: clonePath,
+              title: windowTitle,
+              bareCommand,
+              python,
+              wrapperFile,
+              promptFile,
+              binDir,
+              platform,
+            })
+      } else if (windows && mode === 'draft') {
         const promptFile = path.join(tempDir, 'prompt.txt')
         await fs.writeFile(promptFile, prompt, 'utf8')
         script = buildWindowsDraftLauncherScript({
@@ -278,12 +317,11 @@ export function createLaunch({
       }
       await writeLauncherScript(launcherFile, script)
       if (signal !== undefined && signal.aborted === true) throw new LaunchError('aborted', 'the launch was cancelled')
-      const opened = await openTerminal(launcherFile, windowTitle, signal)
-      // iTerm2 plans (tab or focus) run `activate` in their own AppleScript, so
+      opened = await openTerminal(launcherFile, windowTitle, signal, launcherSettings.terminal)
+      // iTerm2 and Ghostty plans run `activate` in their own AppleScript, so
       // only nudge Terminal.app forward when the launcher actually used it;
       // `open -a Terminal` with no file would otherwise pop an empty window.
-      const usedIterm = opened !== undefined && Array.isArray(opened.argv) && opened.argv[0] === '/usr/bin/osascript'
-      if (platform === 'darwin' && !usedIterm) {
+      if (platform === 'darwin' && opened?.terminal?.id === 'terminal') {
         // Terminal can start without being brought to the current Space;
         // activate the already-running app (no new window is created).
         await runProcess(['/usr/bin/open', '-a', 'Terminal'], { cwd: tempDir, timeoutMs: 5000, signal }).catch(
@@ -307,6 +345,10 @@ export function createLaunch({
       cwdMode,
       count,
       trimmed,
+      // Which terminal opened (`fallback` when the chosen one is not installed)
+      // and, for clipboard mode, why the prompt was not typed in.
+      terminal: opened?.terminal || null,
+      delivery: { mode, pasteBlocked, platform },
       launchedAt: new Date().toISOString(),
     }
   }
@@ -321,8 +363,8 @@ export function createLaunch({
         ? buildWindowsLoginLauncherScript({ cwd, ghCommand: gh })
         : buildLoginLauncherScript({ cwd, ghCommand: gh, platform })
       await writeLauncherScript(launcherFile, script)
-      await openTerminal(launcherFile, 'Triage Desk: GitHub login')
-      if (platform === 'darwin') {
+      const opened = await openTerminal(launcherFile, 'Triage Desk: GitHub login', undefined, launcherSettings.terminal)
+      if (platform === 'darwin' && opened?.terminal?.id === 'terminal') {
         await runProcess(['/usr/bin/open', '-a', 'Terminal'], { cwd: tempDir, timeoutMs: 5000 }).catch(
           () => undefined,
         )

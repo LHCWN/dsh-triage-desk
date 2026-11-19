@@ -1,7 +1,7 @@
 /**
  * Triage Desk launcher — normalization of the launcher part of the plugin
  * config: agents, default agent, clone directories, manual repo paths,
- * scenarios, and the default scenario.
+ * scenarios, the default scenario, the terminal app, and prompt delivery.
  */
 
 import path from 'node:path'
@@ -9,9 +9,18 @@ import { asObject, expandHome } from './common.js'
 import { REPO_PATTERN } from './repo-urls.js'
 import { normalizeAgentConfig } from './agents.js'
 import { DEFAULT_SCENARIO_ID, normalizeScenarios } from './scenarios.js'
+import { normalizeTerminalChoice } from './terminals.js'
 
 export const MAX_CLONE_DIRS = 8
 export const MAX_REPO_PATHS = 50
+
+/**
+ * How an agent without a native draft flag gets its prompt: `paste` types it
+ * into the agent's input box (unsent) through the paste wrapper, `clipboard`
+ * opens the agent empty with the prompt on the clipboard.
+ */
+export const PROMPT_DELIVERY_MODES = ['paste', 'clipboard']
+export const DEFAULT_PROMPT_DELIVERY = 'paste'
 
 /** A `~`-expanded absolute single-line path, normalized and capped, or ''. */
 function normalizeAbsolutePath(value) {
@@ -68,5 +77,7 @@ export function normalizeLauncherConfig(config) {
     repoPaths: normalizeRepoPaths(input.repoPaths),
     scenarios,
     defaultScenario,
+    terminal: normalizeTerminalChoice(input.terminal),
+    promptDelivery: PROMPT_DELIVERY_MODES.includes(input.promptDelivery) ? input.promptDelivery : DEFAULT_PROMPT_DELIVERY,
   }
 }

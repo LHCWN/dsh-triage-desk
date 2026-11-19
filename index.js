@@ -88,8 +88,16 @@ export function apply(ctx, config = {}) {
 
   /* ------------------------------------------------------------------ wiring */
 
-  const { runProcess, findExecutable, copyToClipboard, isExecutableFile, locateExecutables, openTerminal } =
-    createProcesses({ ctx, settings, platform })
+  const {
+    runProcess,
+    findExecutable,
+    copyToClipboard,
+    isExecutableFile,
+    locateExecutables,
+    openTerminal,
+    detectTerminals,
+    detectPasteSupport,
+  } = createProcesses({ ctx, settings, platform })
   const { detectAgents, discoverAgents } = createAgents({
     launcherSettings,
     platform,
@@ -112,6 +120,7 @@ export function apply(ctx, config = {}) {
     runProcess,
     copyToClipboard,
     openTerminal,
+    detectPasteSupport,
     detectAgents,
     resolveClone,
     workspaceDirectory,
@@ -249,15 +258,25 @@ export function apply(ctx, config = {}) {
 
   route(CONFIG_PATH, ['GET', 'POST'], 'triage-desk: GET/POST /triage-desk/config', async (req, res) => {
     if (req.method === 'GET') {
-      let detected = {}
-      try {
-        detected = await detectAgents()
-      } catch (error) {
-        safeLog('warn', 'agent detection failed: %s', errorMessage(error))
-      }
+      // Agents, terminals and paste support are independent probes of this
+      // machine; each failure only leaves its part of the response empty.
+      const [detected, terminals, promptPaste] = await Promise.all([
+        detectAgents().catch((error) => {
+          safeLog('warn', 'agent detection failed: %s', errorMessage(error))
+          return {}
+        }),
+        detectTerminals().catch((error) => {
+          safeLog('warn', 'terminal detection failed: %s', errorMessage(error))
+          return null
+        }),
+        detectPasteSupport().catch((error) => {
+          safeLog('warn', 'paste support check failed: %s', errorMessage(error))
+          return null
+        }),
+      ])
       sendJson(res, 200, {
         ok: true,
-        config: publicConfig(settings, runtime, launcherSettings, detected),
+        config: publicConfig(settings, runtime, launcherSettings, detected, { terminals, promptPaste, platform }),
         saveError: lastSaveError,
         limits: {
           refreshSeconds: REFRESH_SECONDS,
@@ -565,10 +584,13 @@ export function apply(ctx, config = {}) {
         try {
           // launchForItem reads the row context from the cached snapshot itself.
           const result = await launchForItem({ url: input.url, agent: input.agent }, signal)
+          const where = `Opened ${result.agent.label}${result.terminal ? ' in ' + result.terminal.label : ''} at ${result.cwd} for ${result.repo}`
           const prefix =
             result.mode === 'draft'
-              ? `Opened ${result.agent.label} in ${result.cwd} for ${result.repo}; the prompt is pre-filled in the agent and has not been sent.`
-              : `Opened ${result.agent.label} in ${result.cwd} for ${result.repo}; the prompt is on the clipboard and has not been sent.`
+              ? `${where}; the prompt is pre-filled in the agent and has not been sent.`
+              : result.mode === 'paste'
+                ? `${where}; the prompt is typed into the agent's input box and has not been sent.`
+                : `${where}; the prompt is on the clipboard and has not been sent.`
           return {
             text:
               prefix +

@@ -266,8 +266,32 @@ window.__ModuleLoader__.load({
       'settings.scanEmpty': 'No clones found',
       'settings.scanFailed': 'Could not scan the directories',
       'settings.terminalNote': 'Launches share one Triage Desk window and open as tabs. macOS: an iTerm2 tab when installed, otherwise a new Terminal.app window; Windows: Windows Terminal (new tab) or PowerShell; Linux: the terminal from $TERMINAL (a tab where supported). Re-launching the same agent on the same item focuses its tab where the terminal supports it. After the agent exits, the window stays open with a shell.',
-      'launch.draft': 'Agent opened in {cwd}: the prompt is in its input box and on the clipboard, not sent — review and press Enter',
-      'launch.clipboard': 'Agent opened in {cwd}: the prompt is on your clipboard — paste with Cmd+V and send',
+      'launch.draft': '{agent} opened in {terminal} ({cwd}): the prompt is in its input box, not sent — review it and press Enter',
+      'launch.paste': '{agent} opened in {terminal} ({cwd}): the prompt will appear in its input box, not sent — review it and press Enter',
+      'launch.clipboard': '{agent} opened in {terminal} ({cwd}): the prompt is on your clipboard — paste it with {keys}, then send',
+      'launch.pasteBlocked.python-missing': ' · install Python 3 to have prompts typed in',
+      'launch.pasteBlocked.python-clt': ' · run xcode-select --install to have prompts typed in',
+      'launch.pasteBlocked.windows-old': ' · typing prompts in needs Windows 10 1809 or later',
+      'launch.terminalFallback': ' · the chosen terminal is not installed',
+      'launch.via.draft': 'Opens in {terminal} · prompt in the input box, unsent',
+      'launch.via.paste': 'Opens in {terminal} · prompt typed into the input box, unsent',
+      'launch.via.clipboard': 'Opens in {terminal} · prompt copied to the clipboard ({keys})',
+      'settings.terminalApp': 'Open agents in',
+      'settings.terminalAuto': 'Automatic — {app}',
+      'settings.terminalAutoNone': 'Automatic',
+      'settings.terminalMissing': '{app} (not installed)',
+      'settings.terminalTabs': 'Each launch opens a tab in the current {app} window; launching the same agent on the same item again switches to its tab.',
+      'settings.terminalWindows': 'Each launch opens a new {app} window.',
+      'settings.promptDelivery': 'Prompt delivery',
+      'settings.promptDeliveryHint': 'For agents without a native draft. Claude Code always opens with the prompt as its own draft.',
+      'settings.deliveryPaste': 'Type into the agent',
+      'settings.deliveryPasteHint': 'The prompt appears in the agent\'s input box, unsent. Review it, then press Enter.',
+      'settings.deliveryRecommended': 'Recommended',
+      'settings.deliveryClipboard': 'Copy to clipboard',
+      'settings.deliveryClipboardHint': 'The agent opens empty; paste the prompt yourself with {keys}.',
+      'settings.pasteUnavailable.python-missing': 'Needs Python 3 on this computer; until then prompts go to the clipboard.',
+      'settings.pasteUnavailable.python-clt': 'Needs Python 3 from the Command Line Tools: run xcode-select --install. Until then prompts go to the clipboard.',
+      'settings.pasteUnavailable.windows-old': 'Needs Windows 10 version 1809 or later; prompts go to the clipboard.',
       'launch.workspaceFallback': ' · no clone found, opened the workspace',
       'launch.scenarios': 'Scenarios',
       'launch.agent': 'Agent',
@@ -527,8 +551,32 @@ window.__ModuleLoader__.load({
       'settings.scanEmpty': '未找到克隆',
       'settings.scanFailed': '无法扫描目录',
       'settings.terminalNote': '启动会共用一个 Triage Desk 窗口并以标签页打开。macOS：已安装 iTerm2 时使用其标签页，否则打开新的 Terminal.app 窗口；Windows：Windows Terminal（新标签页）或 PowerShell；Linux：$TERMINAL 指定的终端（支持时使用新标签页）。对同一条目重新启动同一智能体会在终端支持时聚焦其标签页。智能体退出后窗口保留，并停在 shell。',
-      'launch.draft': '已打开智能体（{cwd}）：提示已填入输入框并复制到剪贴板，未发送——检查后按 Enter',
-      'launch.clipboard': '已打开智能体（{cwd}）：提示已复制到剪贴板——按 Cmd+V 粘贴后发送',
+      'launch.draft': '已在 {terminal} 中打开 {agent}（{cwd}）：提示已填入输入框，尚未发送——检查后按 Enter',
+      'launch.paste': '已在 {terminal} 中打开 {agent}（{cwd}）：提示将出现在输入框中，尚未发送——检查后按 Enter',
+      'launch.clipboard': '已在 {terminal} 中打开 {agent}（{cwd}）：提示已复制到剪贴板——按 {keys} 粘贴后发送',
+      'launch.pasteBlocked.python-missing': ' · 安装 Python 3 后即可自动填入提示',
+      'launch.pasteBlocked.python-clt': ' · 运行 xcode-select --install 后即可自动填入提示',
+      'launch.pasteBlocked.windows-old': ' · 自动填入提示需要 Windows 10 1809 或更高版本',
+      'launch.terminalFallback': ' · 所选终端未安装',
+      'launch.via.draft': '在 {terminal} 中打开 · 提示在输入框中，尚未发送',
+      'launch.via.paste': '在 {terminal} 中打开 · 提示自动填入输入框，尚未发送',
+      'launch.via.clipboard': '在 {terminal} 中打开 · 提示复制到剪贴板（{keys}）',
+      'settings.terminalApp': '智能体打开位置',
+      'settings.terminalAuto': '自动——{app}',
+      'settings.terminalAutoNone': '自动',
+      'settings.terminalMissing': '{app}（未安装）',
+      'settings.terminalTabs': '每次启动都会在当前 {app} 窗口中打开一个标签页；在同一条目上再次启动同一智能体会切换到它的标签页。',
+      'settings.terminalWindows': '每次启动都会打开一个新的 {app} 窗口。',
+      'settings.promptDelivery': '提示传递方式',
+      'settings.promptDeliveryHint': '适用于没有原生草稿功能的智能体。Claude Code 始终以自己的草稿方式打开提示。',
+      'settings.deliveryPaste': '填入智能体',
+      'settings.deliveryPasteHint': '提示会出现在智能体的输入框中，尚未发送。检查后按 Enter。',
+      'settings.deliveryRecommended': '推荐',
+      'settings.deliveryClipboard': '复制到剪贴板',
+      'settings.deliveryClipboardHint': '智能体以空白状态打开；请自行按 {keys} 粘贴提示。',
+      'settings.pasteUnavailable.python-missing': '需要本机安装 Python 3；在此之前提示会复制到剪贴板。',
+      'settings.pasteUnavailable.python-clt': '需要命令行工具中的 Python 3：请运行 xcode-select --install。在此之前提示会复制到剪贴板。',
+      'settings.pasteUnavailable.windows-old': '需要 Windows 10 1809 或更高版本；提示会复制到剪贴板。',
       'launch.workspaceFallback': ' · 未找到克隆，已在工作区打开',
       'launch.scenarios': '场景',
       'launch.agent': '智能体',
@@ -937,6 +985,23 @@ window.__ModuleLoader__.load({
       .adx-field-hint { font-size: 12px; line-height: 18px; color: var(--adx-ink-3); }
       .adx-field-row { flex-direction: row; align-items: flex-start; justify-content: space-between; gap: 16px; }
       .adx-field-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+      .adx-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+      .adx-choice { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; text-align: left;
+                    border: 1px solid var(--adx-hairline); border-radius: 10px; background: transparent;
+                    color: inherit; font: inherit; cursor: pointer; transition: border-color 110ms ease, background 110ms ease; }
+      .adx-choice:hover { background: var(--adx-hover); }
+      .adx-choice[aria-checked='true'] { border-color: var(--adx-info); background: var(--adx-hover); }
+      .adx-choice:focus-visible { outline: var(--adx-ring-w) solid var(--adx-ring); outline-offset: 2px; }
+      .adx-choice-dot { flex: none; width: 16px; height: 16px; margin-top: 2px; border-radius: 50%;
+                        border: 1.5px solid var(--adx-ink-4); box-sizing: border-box; }
+      .adx-choice[aria-checked='true'] .adx-choice-dot { border: 5px solid var(--adx-info); }
+      .adx-choice-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+      .adx-choice-title { display: flex; align-items: center; gap: 6px; font-size: 13px; line-height: 20px; font-weight: 500; }
+      .adx-choice-badge { font-size: 11px; line-height: 16px; font-weight: 500; padding: 0 6px; border-radius: 999px;
+                          color: var(--adx-info); background: var(--adx-module); }
+      .adx-choice-hint { font-size: 12px; line-height: 18px; color: var(--adx-ink-3); }
+      .adx-choice-warning { font-size: 12px; line-height: 18px; color: var(--adx-warn); }
+      .adx-launch-via { margin: 0; padding: 0 12px 6px; font-size: 11.5px; line-height: 16px; color: var(--adx-ink-3); }
       .adx-input, .adx-select {
         box-sizing: border-box; width: 100%; height: 36px; padding: 0 10px;
         border: 1px solid var(--adx-hairline-soft); border-radius: 10px;
@@ -2460,9 +2525,41 @@ window.__ModuleLoader__.load({
     }
 
     /** Toast for a terminal launch; an item launch reports count 1 and no trimming. */
+    /** The paste shortcut a user presses in a terminal on this platform. */
+    function pasteKeys(platform) {
+      if (platform === 'darwin') return '⌘V'
+      if (platform === 'linux') return 'Ctrl+Shift+V'
+      return 'Ctrl+V'
+    }
+
+    /** How a launch hands `agent` its prompt: `draft`, `paste` or `clipboard` (mirrors the host). */
+    function promptDeliveryFor(config, agent) {
+      if (agent && typeof agent.draftFlag === 'string' && agent.draftFlag !== '') return 'draft'
+      const paste = configValue(config, 'promptPaste')
+      if (configValue(config, 'promptDelivery') !== 'clipboard' && paste && paste.available === true) return 'paste'
+      return 'clipboard'
+    }
+
+    /** The terminal app a launch opens: the saved choice when installed, else the automatic one. */
+    function launchTerminalLabel(config) {
+      const scan = configValue(config, 'terminals')
+      if (scan === null || scan === undefined) return ''
+      const choice = configValue(config, 'terminal') || 'auto'
+      const chosen = (scan.options || []).find((entry) => entry.id === choice && entry.available)
+      return chosen ? chosen.label : scan.autoLabel || ''
+    }
+
     function launchToastText(t, payload) {
-      let text =
-        payload.mode === 'draft' ? t('launch.draft', { cwd: payload.cwd || '' }) : t('launch.clipboard', { cwd: payload.cwd || '' })
+      const delivery = payload.delivery || {}
+      const mode = payload.mode === 'draft' || payload.mode === 'paste' ? payload.mode : 'clipboard'
+      let text = t('launch.' + mode, {
+        agent: (payload.agent && payload.agent.label) || t('launch.agent'),
+        terminal: (payload.terminal && payload.terminal.label) || t('settings.terminalAutoNone'),
+        cwd: payload.cwd || '',
+        keys: pasteKeys(delivery.platform),
+      })
+      if (mode === 'clipboard' && delivery.pasteBlocked) text += t('launch.pasteBlocked.' + delivery.pasteBlocked)
+      if (payload.terminal && payload.terminal.fallback) text += t('launch.terminalFallback')
       if (payload.cloneMissing) text += t('launch.workspaceFallback')
       if (typeof payload.count === 'number' && payload.count > 1) text += t('launch.countSuffix', { n: payload.count })
       return text + trimmedSuffix(t, payload)
@@ -2499,6 +2596,19 @@ window.__ModuleLoader__.load({
               ? 'dsh'
               : fallback
       return { agents, detected, dsh, ordered, selected }
+    }
+
+    /** One line under the agent picker: where the agent opens and how it gets the prompt. */
+    function launchVia(t, config, targets) {
+      if (targets.selected === 'dsh') return null
+      const agent = targets.agents.find((entry) => entry.id === targets.selected)
+      const terminal = launchTerminalLabel(config)
+      if (agent === undefined || terminal === '') return null
+      const text = t('launch.via.' + promptDeliveryFor(config, agent), {
+        terminal,
+        keys: pasteKeys(configValue(config, 'platform')),
+      })
+      return h('p', { key: 'via', className: 'adx-launch-via' }, text)
     }
 
     function launchTargetPicker(t, targets, busy, onPick) {
@@ -2840,6 +2950,7 @@ window.__ModuleLoader__.load({
                 )
               : [
                   launchTargetPicker(t, targets, busy, setMenuAgent),
+                  launchVia(t, config, targets),
                   h('div', { key: 'scenarios-head', className: 'adx-launch-group' }, t('launch.scenarios')),
                   ...itemScenarios.map((entry) =>
                     launchScenarioItem(t, entry, targets, {
@@ -3147,6 +3258,7 @@ window.__ModuleLoader__.load({
                 )
               : [
                   launchTargetPicker(t, targets, busy, setMenuAgent),
+                  launchVia(t, config, targets),
                   ...menuScenarios.map((entry) => {
                     const union = unionItems(entry)
                     return launchScenarioItem(t, entry, targets, {
@@ -3452,6 +3564,8 @@ window.__ModuleLoader__.load({
         includeBotReviews: config.includeBotReviews === true,
         agents: settingsFormAgents(config),
         defaultAgent: typeof config.defaultAgent === 'string' ? config.defaultAgent : '',
+        terminal: typeof config.terminal === 'string' ? config.terminal : 'auto',
+        promptDelivery: config.promptDelivery === 'clipboard' ? 'clipboard' : 'paste',
         cloneDirs: Array.isArray(config.cloneDirs) ? config.cloneDirs.join('\n') : '',
         repoPaths:
           config.repoPaths !== null && typeof config.repoPaths === 'object' && !Array.isArray(config.repoPaths)
@@ -3899,6 +4013,8 @@ window.__ModuleLoader__.load({
               command: String(agent.command || '').trim(),
             })),
             defaultAgent: String(form.defaultAgent || '').trim(),
+            terminal: form.terminal || 'auto',
+            promptDelivery: form.promptDelivery === 'clipboard' ? 'clipboard' : 'paste',
             cloneDirs: form.cloneDirs
               .split('\n')
               .map((entry) => entry.trim())
@@ -4347,6 +4463,107 @@ window.__ModuleLoader__.load({
         )
       }
 
+      /** Terminal app picker: Automatic plus this platform's apps, uninstalled ones disabled. */
+      function renderTerminalChoice() {
+        const scan = configValue(config, 'terminals')
+        if (scan === null || scan === undefined || !Array.isArray(scan.options) || scan.options.length === 0) return null
+        const selected = scan.options.find((entry) => entry.id === form.terminal && entry.available)
+        const effective = selected || scan.options.find((entry) => entry.id === scan.auto) || null
+        const label = effective ? effective.label : scan.autoLabel
+        const hint = label === ''
+          ? null
+          : t(effective && effective.tabs ? 'settings.terminalTabs' : 'settings.terminalWindows', { app: label })
+        return h(
+          Field,
+          { label: t('settings.terminalApp'), htmlFor: 'adx-terminal', hint },
+          h(
+            'select',
+            {
+              id: 'adx-terminal',
+              className: 'adx-select',
+              value: form.terminal === 'auto' || scan.options.some((entry) => entry.id === form.terminal) ? form.terminal : 'auto',
+              onChange: (event) => update({ terminal: event.target.value }),
+            },
+            h(
+              'option',
+              { value: 'auto' },
+              scan.autoLabel ? t('settings.terminalAuto', { app: scan.autoLabel }) : t('settings.terminalAutoNone'),
+            ),
+            scan.options.map((entry) =>
+              h(
+                'option',
+                { key: entry.id, value: entry.id, disabled: !entry.available && entry.id !== form.terminal },
+                entry.available ? entry.label : t('settings.terminalMissing', { app: entry.label }),
+              ),
+            ),
+          ),
+        )
+      }
+
+      /** Two radio cards: type the prompt into the agent (default) or copy it to the clipboard. */
+      function renderPromptDelivery() {
+        const paste = configValue(config, 'promptPaste')
+        const blocked = paste && paste.available === false ? paste.reason : null
+        const keys = pasteKeys(configValue(config, 'platform'))
+        const choices = [
+          {
+            value: 'paste',
+            title: t('settings.deliveryPaste'),
+            hint: t('settings.deliveryPasteHint'),
+            badge: t('settings.deliveryRecommended'),
+            warning: blocked ? t('settings.pasteUnavailable.' + blocked) : null,
+          },
+          { value: 'clipboard', title: t('settings.deliveryClipboard'), hint: t('settings.deliveryClipboardHint', { keys }) },
+        ]
+        const current = form.promptDelivery === 'clipboard' ? 'clipboard' : 'paste'
+        const move = (event) => {
+          if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return
+          event.preventDefault()
+          const next = current === 'paste' ? 'clipboard' : 'paste'
+          update({ promptDelivery: next })
+          const target = event.currentTarget.querySelector('[data-value="' + next + '"]')
+          if (target && typeof target.focus === 'function') target.focus()
+        }
+        return h(
+          'div',
+          { className: 'adx-field' },
+          h('span', { className: 'adx-field-label', id: 'adx-delivery-label' }, t('settings.promptDelivery')),
+          h(
+            'div',
+            { className: 'adx-choices', role: 'radiogroup', 'aria-labelledby': 'adx-delivery-label', onKeyDown: move },
+            choices.map((choice) =>
+              h(
+                'button',
+                {
+                  key: choice.value,
+                  type: 'button',
+                  role: 'radio',
+                  className: 'adx-choice',
+                  'data-value': choice.value,
+                  'aria-checked': current === choice.value ? 'true' : 'false',
+                  tabIndex: current === choice.value ? 0 : -1,
+                  onClick: () => update({ promptDelivery: choice.value }),
+                },
+                h('span', { className: 'adx-choice-dot', 'aria-hidden': 'true' }),
+                h(
+                  'span',
+                  { className: 'adx-choice-body' },
+                  h(
+                    'span',
+                    { className: 'adx-choice-title' },
+                    choice.title,
+                    choice.badge ? h('span', { className: 'adx-choice-badge' }, choice.badge) : null,
+                  ),
+                  h('span', { className: 'adx-choice-hint' }, choice.hint),
+                  choice.warning ? h('span', { className: 'adx-choice-warning', role: 'note' }, choice.warning) : null,
+                ),
+              ),
+            ),
+          ),
+          h('span', { className: 'adx-field-hint' }, t('settings.promptDeliveryHint')),
+        )
+      }
+
       return h(
         'div',
         { className: 'adx-form' },
@@ -4464,6 +4681,8 @@ window.__ModuleLoader__.load({
           { className: 'adx-advanced' },
           h('summary', { className: 'adx-advanced-summary' }, t('settings.terminal')),
           h('p', { className: 'adx-form-note' }, t('settings.terminalHint')),
+          renderTerminalChoice(),
+          renderPromptDelivery(),
         h(
           Field,
           { label: t('settings.defaultAgent'), htmlFor: 'adx-default-agent' },
