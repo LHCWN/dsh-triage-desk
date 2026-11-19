@@ -104,8 +104,10 @@ is not installed falls back to Automatic, and the launch toast says so.
 **Prompt delivery.** Claude Code opens with the prompt as its native
 `--prefill` draft. On Windows that needs Claude Code as an `.exe`: an npm
 install (a `.cmd` shim) is handled like the other agents, because `cmd.exe`
-would not pass the prompt intact. For every other agent, Settings → **Prompt
-delivery** offers:
+would not pass the prompt intact. So is an `.exe` shim from Scoop, bun,
+Chocolatey, Volta, mise or proto, which can start a `.cmd`
+([prompt delivery](docs/REFERENCE.md#prompt-delivery)). For every other agent,
+Settings → **Prompt delivery** offers:
 
 - **Type into the agent** (default, recommended): a small paste wrapper waits
   until the agent's input box is ready, then pastes the prompt into it without

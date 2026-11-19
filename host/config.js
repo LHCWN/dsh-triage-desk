@@ -23,7 +23,7 @@ import {
   TERMINAL_AUTO,
   TERMINAL_IDS,
   defaultScenarios,
-  draftCommandFor,
+  draftCommandForStatus,
   expandHome,
   hasSafePromptPlaceholder,
   validateDefaultScenario,
@@ -50,16 +50,16 @@ export const EDITABLE_FIELDS = [
 
 /**
  * The agent detection map as the client sees it: each detected agent also
- * carries `draft`, whether a launch uses its native draft (draftCommandFor,
- * with the path the launch would run).
+ * carries `draft`, whether a launch uses its native draft (draftCommandForStatus,
+ * as the launch decides it). The Windows `shim` verdict stays on the host.
  */
 function detectedAgentsView(detected, agents, platform) {
   const view = { ...detected }
   for (const agent of agents) {
     const status = view[agent.id]
     if (status === undefined || status === null) continue
-    const detectedPath = status.available === true && typeof status.path === 'string' ? status.path : ''
-    view[agent.id] = { ...status, draft: draftCommandFor(agent, detectedPath, platform) !== null }
+    const { shim, ...shown } = status
+    view[agent.id] = { ...shown, draft: draftCommandForStatus(agent, status, platform) !== null }
   }
   return view
 }

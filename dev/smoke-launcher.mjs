@@ -56,7 +56,8 @@ import {
   parseSshConfigHosts,
   remoteToRepo,
   withAgentExecutable,
-  draftCommandFor,
+  draftCommandForStatus,
+  isWindowsShim,
   PASTE_TRUST_PATTERN,
   TERMINAL_CATALOG,
   buildGhosttyTabAppleScript,
@@ -927,16 +928,45 @@ function probeOutput(names, locate, commandV = locate) {
   return names.map((name) => ['__td__', name, locate(name), commandV(name)].join('\t')).join('\n') + '\n'
 }
 
+/**
+ * A fake Windows disk: `stat` finds the listed paths (case-insensitively, as
+ * Windows does) and fails with ENOENT for every other one; `env` stands in for
+ * the environment. `realpath` follows `links` (link path → target path, or an
+ * error code the lookup fails with) and returns every other path unchanged.
+ */
+function windowsDisk(paths = [], env = {}, links = {}) {
+  const present = new Set(paths.map((file) => file.toLowerCase()))
+  const targets = new Map(Object.entries(links).map(([link, target]) => [link.toLowerCase(), target]))
+  return {
+    env,
+    stat: async (file) => {
+      if (!present.has(file.toLowerCase())) throw Object.assign(new Error('ENOENT: ' + file), { code: 'ENOENT' })
+      return { isDirectory: () => false, isFile: () => true, mtimeMs: Date.now() }
+    },
+    realpath: async (file) => {
+      const target = targets.get(file.toLowerCase())
+      if (target === undefined) return file
+      if (/^E[A-Z]+$/.test(target)) throw Object.assign(new Error(target + ': ' + file), { code: target })
+      return target
+    },
+  }
+}
+
 // Exercise real registered routes, replacing only OS boundaries. In particular,
 // startup cleanup cannot remove real temp directories and no opener can run.
-async function withPlatformHost(platform, spawn, callback, config = {}) {
+// Windows paths are looked up on windowsDisk(`disk`); every other path is a
+// present directory.
+async function withPlatformHost(platform, spawn, callback, config = {}, { disk = [] } = {}) {
   const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')
   const savedFs = {}
   const files = new Map()
   const routes = new Map()
+  const windows = windowsDisk(disk)
   const fakeFs = {
     readdir: async () => [],
-    stat: async () => ({ isDirectory: () => true, isFile: () => false, mtimeMs: Date.now() }),
+    stat: async (file) => /^(?:[A-Za-z]:\\|\\\\)/.test(file)
+      ? windows.stat(file)
+      : { isDirectory: () => true, isFile: () => false, mtimeMs: Date.now() },
     access: async () => {},
     mkdtemp: async (prefix) => prefix + 'offline-fixture',
     realpath: async (file) => file,
@@ -1151,9 +1181,11 @@ await checkAsync('Windows keeps the native draft for an .exe agent only and runs
     { name: 'a UNC .exe agent without a draft flag', agent: 'codex', path: '\\\\srv\\tools\\codex.exe', mode: 'paste' },
     { name: 'a detected path with a backtick', agent: 'codex', path: 'C:\\a`b\\codex.exe', mode: 'paste' },
     { name: 'a detected path with $(', agent: 'codex', path: 'C:\\a$(b)\\codex.exe', mode: 'clipboard', config: { promptDelivery: 'clipboard' } },
+    // Issue #12: an .exe shim may start a .cmd, which hands the prompt to cmd.exe.
+    { name: 'a Scoop .exe shim', path: 'C:\\scoop\\shims\\claude.exe', disk: ['C:\\scoop\\shims\\claude.shim'], mode: 'paste' },
   ]
   try {
-    for (const { name, agent = 'claude', path: detected, runs = detected, build = '10.0.22631', mode, blocked = null, config } of cases) {
+    for (const { name, agent = 'claude', path: detected, runs = detected, build = '10.0.22631', mode, blocked = null, config, disk } of cases) {
       os.release = () => build
       await withPlatformHost('win32', (spec, handle) => {
         // An empty path fails the probe, so detection cannot resolve the agent.
@@ -1163,6 +1195,7 @@ await checkAsync('Windows keeps the native draft for an .exe agent only and runs
       }, async ({ request, files }) => {
         const settings = await request('/triage-desk/config')
         assert.equal(settings.body.config.detectedAgents[agent].draft, mode === 'draft', name + ': the client is told the same')
+        assert.equal(Object.hasOwn(settings.body.config.detectedAgents[agent], 'shim'), false, name + ': the shim verdict stays on the host')
         const result = await request('/triage-desk/launch', 'POST', { url: PR_URL, agent })
         assert.equal(result.status, 200, name + ': ' + JSON.stringify(result.body))
         assert.equal(result.body.mode, mode, name)
@@ -1183,7 +1216,7 @@ await checkAsync('Windows keeps the native draft for an .exe agent only and runs
           assert.ok(script.includes('(clipboard mode;'), name)
           assert.ok(script.split('\n').includes(invocation), name + ': the agent runs as ' + runs)
         }
-      }, config)
+      }, config, { disk })
     }
   } finally {
     os.release = release
@@ -1326,6 +1359,41 @@ await checkAsync('a launch detects again once when the cached agent path is gone
   } finally {
     if (oldTerminal === undefined) delete process.env.TERMINAL
     else process.env.TERMINAL = oldTerminal
+  }
+})
+
+await checkAsync('a Windows re-detection decides the draft with the fresh shim verdict', async () => {
+  // The cached plain .exe is gone and detection now finds a Scoop shim, which
+  // may start a .cmd (issue #12): the launch must not draft through it.
+  const release = os.release
+  os.release = () => '10.0.22631'
+  const [oldPath, newPath] = ['C:\\old\\claude.exe', 'C:\\scoop\\shims\\claude.exe']
+  let probes = 0
+  try {
+    await withPlatformHost('win32', (spec, handle) => {
+      if (spec.argv[0] === 'powershell.exe') {
+        probes += 1
+        return handle(0, probeOutput(['claude'], () => (probes === 1 ? oldPath : newPath)))
+      }
+      if (spec.argv[0] === 'clip.exe' || spec.argv[0] === 'wt') return handle()
+      throw new Error('unexpected subprocess: ' + spec.argv.join(' '))
+    }, async ({ request, files }) => {
+      assert.equal((await request('/triage-desk/config')).body.config.detectedAgents.claude.draft, true, 'the cached .exe drafts')
+      const access = fs.access
+      fs.access = async (file, mode) => {
+        if (file === oldPath) throw Object.assign(new Error('ENOENT: ' + file), { code: 'ENOENT' })
+        return access(file, mode)
+      }
+      const result = await request('/triage-desk/launch', 'POST', { url: PR_URL, agent: 'claude' })
+      assert.equal(result.status, 200, JSON.stringify(result.body))
+      assert.equal(probes, 2, 'one forced re-detection')
+      assert.equal(result.body.mode, 'paste', 'the fresh shim verdict blocks the draft')
+      const script = [...files.entries()].find(([file]) => file.endsWith('launch.ps1'))?.[1].toString('utf8') || ''
+      assert.ok(!script.includes('--prefill'), 'no prompt argument')
+      assert.equal(encodedCommand(script), '& ' + windowsQuote(newPath), 'the fresh path runs')
+    }, {}, { disk: ['C:\\scoop\\shims\\claude.shim'] })
+  } finally {
+    os.release = release
   }
 })
 
@@ -1521,7 +1589,7 @@ check('Windows pins the detected executable as a double-quoted absolute path, or
 })
 
 check('a Windows draft checks and pins one normalized executable path', () => {
-  const draft = (command, detected) => draftCommandFor({ command, draftFlag: '--prefill' }, detected, 'win32')
+  const draft = (command, detected) => draftCommandForStatus({ command, draftFlag: '--prefill' }, { available: true, path: detected, shim: false }, 'win32')
   assert.equal(draft('"C:/tools/claude.exe" {prompt}', 'C:/tools/claude.exe'), '"C:\\tools\\claude.exe" {prompt}', 'forward slashes become the backslash path')
   assert.equal(draft('claude {prompt}', '//srv/share/claude.exe'), '"\\\\srv\\share\\claude.exe" {prompt}', 'a forward-slash UNC path')
   assert.equal(draft('"C:\\bin\\claude.exe " {prompt}', 'C:\\bin\\claude.exe '), '"C:\\bin\\claude.exe" {prompt}', 'a trailing space is trimmed for the check and the pin')
@@ -1531,6 +1599,53 @@ check('a Windows draft checks and pins one normalized executable path', () => {
   assert.equal(draft('claude {prompt}', '/bin/claude.exe'), null, 'a forward-slash path rooted only on the current drive')
   assert.equal(draft('claude {prompt}', 'C:claude.exe'), null, 'a drive-relative path')
   assert.equal(draft('claude {prompt}', '   '), null, 'no path')
+})
+
+await checkAsync('a Windows .exe in a known shim layout loses the native draft', async () => {
+  // `files` are on the fake disk: a bare name sits beside `exe`, a full path where it says.
+  const at = (exe, files = [], env = {}, links = {}) => [
+    exe,
+    windowsDisk(files.map((name) => (path.win32.isAbsolute(name) ? name : path.win32.join(path.win32.dirname(exe), name))), env, links),
+  ]
+  const scoop = 'C:\\Users\\me\\scoop\\shims\\'
+  const winget = 'C:\\Users\\me\\AppData\\Local\\Microsoft\\WinGet\\'
+  const cases = [
+    ['a plain .exe', false, ...at('C:\\bin\\claude.exe')],
+    ['a Scoop shim', true, ...at(scoop + 'claude.exe', ['claude.shim'])],
+    ['a bun shim', true, ...at('C:\\Users\\me\\.bun\\bin\\claude.exe', ['claude.bunx'])],
+    ['a Volta shim', true, ...at('C:\\Program Files\\Volta\\npx.exe', ['volta-shim.exe'])],
+    ['a mise shim', true, ...at('C:\\Users\\me\\AppData\\Local\\mise\\shims\\claude.exe', ['.mode'])],
+    ['a proto shim', true, ...at('C:\\Users\\me\\.proto\\shims\\claude.exe', ['registry.json'])],
+    ['a Chocolatey shim', true, ...at('D:\\choco\\bin\\claude.exe', [], { ChocolateyInstall: 'D:\\choco\\' })],
+    ['a Chocolatey shim in another case, found through ProgramData', true, ...at('c:\\programdata\\Chocolatey\\BIN\\claude.exe', [], { ProgramData: 'C:\\ProgramData' })],
+    // Issue #12 review: the host env may lack ChocolateyInstall.
+    ['a Chocolatey shim found by choco.exe beside it', true, ...at('E:\\tools\\chocolatey\\bin\\claude.exe', ['choco.exe'])],
+    ['a Chocolatey shim in the legacy C:\\Chocolatey\\bin', true, ...at('C:\\Chocolatey\\bin\\claude.exe')],
+    ['a Chocolatey shim in the legacy folder on the system drive', true, ...at('D:\\Chocolatey\\bin\\claude.exe', [], { SystemDrive: 'D:' })],
+    // Links: the markers beside the link and beside its target both count.
+    ['a symlink to a Scoop shim', true, ...at('C:\\bin\\claude.exe', [scoop + 'claude.shim'], {}, { 'C:\\bin\\claude.exe': scoop + 'claude.exe' })],
+    ['a symlink to a shim of another name', true, ...at('C:\\bin\\claude.exe', [scoop + 'claude-code.shim'], {}, { 'C:\\bin\\claude.exe': scoop + 'claude-code.exe' })],
+    ['a symlink to a Chocolatey shim', true, ...at('C:\\bin\\claude.exe', [], { ProgramData: 'C:\\ProgramData' }, { 'C:\\bin\\claude.exe': 'C:\\ProgramData\\chocolatey\\bin\\claude.exe' })],
+    ['a mise symlink shim (the target is mise.exe)', true, ...at('C:\\mise\\shims\\claude.exe', ['.mode'], {}, { 'C:\\mise\\shims\\claude.exe': 'C:\\mise\\bin\\mise.exe' })],
+    ['a winget Links symlink to the program', false, ...at(winget + 'Links\\claude.exe', [], {}, { [winget + 'Links\\claude.exe']: winget + 'Packages\\Anthropic.ClaudeCode_Microsoft.Winget.Source_8wekyb3d8bbwe\\claude.exe' })],
+    ['a link to something other than an .exe', true, ...at('C:\\bin\\claude.exe', [], {}, { 'C:\\bin\\claude.exe': 'C:\\bin\\claude.cmd' })],
+    ['a path realpath cannot find', false, ...at('C:\\bin\\claude.exe', [], {}, { 'C:\\bin\\claude.exe': 'ENOENT' })],
+    ['a link realpath cannot read', true, ...at('C:\\bin\\claude.exe', [], {}, { 'C:\\bin\\claude.exe': 'EPERM' })],
+  ]
+  for (const [name, expected, executable, io] of cases) {
+    assert.equal(await isWindowsShim(executable, io), expected, name)
+  }
+  // A marker that cannot be checked (not missing) counts as a shim.
+  const denied = { ...windowsDisk(), stat: async () => { throw Object.assign(new Error('EACCES'), { code: 'EACCES' }) } }
+  assert.equal(await isWindowsShim('C:\\bin\\claude.exe', denied), true, 'an unreadable folder')
+
+  const agent = { command: 'claude {prompt}', draftFlag: '--prefill' }
+  const found = (file, shim) => ({ available: true, path: file, executable: 'claude', shim })
+  assert.equal(draftCommandForStatus(agent, found('C:\\bin\\claude.exe', true), 'win32'), null, 'a shim gets no draft')
+  assert.equal(draftCommandForStatus(agent, found('C:\\bin\\claude.exe', false), 'win32'), '"C:\\bin\\claude.exe" {prompt}', 'a plain .exe keeps it')
+  assert.equal(draftCommandForStatus(agent, found('/usr/bin/claude', true), 'linux'), '/usr/bin/claude {prompt}', 'POSIX ignores Windows shims')
+  assert.equal(draftCommandForStatus(agent, { available: false, path: null, reason: 'missing' }, 'win32'), null, 'no executable')
+  assert.equal(draftCommandForStatus(agent, { available: true, path: 'C:\\bin\\claude.exe', executable: 'claude' }, 'win32'), null, 'no shim verdict: no draft (fails closed)')
 })
 
 check('POSIX launchers add the agent directory to PATH only when missing', () => {

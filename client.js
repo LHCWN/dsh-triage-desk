@@ -286,7 +286,7 @@ window.__ModuleLoader__.load({
       'settings.terminalTabs': 'Each launch opens a tab in the current {app} window; launching the same agent on the same item again switches to its tab.',
       'settings.terminalWindows': 'Each launch opens a new {app} window.',
       'settings.promptDelivery': 'Prompt delivery',
-      'settings.promptDeliveryHint': 'For agents without a native draft. Claude Code opens with the prompt as its own draft (on Windows only as an .exe; an npm .cmd install gets the prompt this way).',
+      'settings.promptDeliveryHint': 'For agents without a native draft. Claude Code opens with the prompt as its own draft (on Windows only as an .exe that is not a package-manager shim; an npm .cmd install or a Scoop or bun shim gets the prompt this way).',
       'settings.deliveryPaste': 'Type into the agent',
       'settings.deliveryPasteHint': 'The prompt appears in the agent\'s input box, unsent. Review it, then press Enter.',
       'settings.deliveryRecommended': 'Recommended',
@@ -571,7 +571,7 @@ window.__ModuleLoader__.load({
       'settings.terminalTabs': '每次启动都会在当前 {app} 窗口中打开一个标签页；在同一条目上再次启动同一智能体会切换到它的标签页。',
       'settings.terminalWindows': '每次启动都会打开一个新的 {app} 窗口。',
       'settings.promptDelivery': '提示传递方式',
-      'settings.promptDeliveryHint': '适用于没有原生草稿功能的智能体。Claude Code 以自己的草稿方式打开提示（在 Windows 上仅限 .exe；通过 npm 安装的 .cmd 也按此方式接收提示）。',
+      'settings.promptDeliveryHint': '适用于没有原生草稿功能的智能体。Claude Code 以自己的草稿方式打开提示（在 Windows 上仅限不是包管理器包装程序的 .exe；通过 npm 安装的 .cmd 或 Scoop、bun 的包装程序也按此方式接收提示）。',
       'settings.deliveryPaste': '填入智能体',
       'settings.deliveryPasteHint': '提示会出现在智能体的输入框中，尚未发送。检查后按 Enter。',
       'settings.deliveryRecommended': '推荐',
@@ -2568,9 +2568,10 @@ window.__ModuleLoader__.load({
 
     /**
      * How a launch hands `agent` its prompt: `draft`, `paste` or `clipboard`.
-     * The host reports `detectedAgents[id].draft` (its draftCommandFor); when
-     * that field is absent, an agent with a draft flag drafts except on
-     * Windows, where the host drafts only a detected `.exe`.
+     * The host reports `detectedAgents[id].draft` (its draftCommandForStatus);
+     * when that field is absent, an agent with a draft flag drafts except on
+     * Windows, where the host drafts only a detected `.exe` that is not a known
+     * package-manager shim.
      */
     function promptDeliveryFor(config, agent) {
       const detected = (agent && (configValue(config, 'detectedAgents') || {})[agent.id]) || {}
