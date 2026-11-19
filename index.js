@@ -59,15 +59,14 @@ export const inject = ['webServer', 'connection', 'subprocess', 'tools', 'system
 /* -------------------------------------------------------------------------- */
 
 export function apply(ctx, config = {}) {
-  const settings = normalizeSettings(config)
-  const launcherSettings = normalizeLauncherConfig(config)
   const platform = process.platform
   const log = ctx.logger('triage-desk')
   /**
    * Logging that never throws. A request that awaited a host service (e.g.
-   * configEditor.edit, which settles only after this plugin was restarted)
-   * finishes in a disposed context, where ctx-bound services may throw; a log
-   * line must never turn a completed operation into a reported failure.
+   * configEditor.edit, which settles only after the loader applied the saved
+   * config, or restarted this plugin when it could not) may finish in a
+   * disposed context, where ctx-bound services throw; a log line must never
+   * turn a completed operation into a reported failure.
    */
   const safeLog = (level, ...args) => {
     try {
@@ -76,54 +75,111 @@ export function apply(ctx, config = {}) {
       // the context that owned this logger is gone
     }
   }
-  if (launcherSettings.invalidAgents.length > 0) {
-    safeLog(
-      'warn',
-      'ignoring %d saved agent(s) whose command breaks the prompt rule: %s',
-      launcherSettings.invalidAgents.length,
-      launcherSettings.invalidAgents.map((agent) => agent.id).join(', '),
-    )
-  }
   let lastSaveError = null
 
   /* ------------------------------------------------------------------ wiring */
 
-  const {
-    runProcess,
-    findExecutable,
-    copyToClipboard,
-    isExecutableFile,
-    locateExecutables,
-    openTerminal,
-    detectTerminals,
-    detectPasteSupport,
-  } = createProcesses({ ctx, settings, platform })
-  const { detectAgents, discoverAgents } = createAgents({
-    launcherSettings,
-    platform,
-    locateExecutables,
-    isExecutableFile,
-  })
-  const { pickDirectoryPath, isDirectory, workspaceDirectory, scanLocalClones, resolveClone } = createClones({
-    ctx,
-    settings,
-    launcherSettings,
-  })
-  const { resolveGit, resolveGh, readGhAuth } = createGh({ settings, platform, findExecutable, runProcess })
-  const snapshots = createSnapshotStore({ ctx, settings, resolveGh, log: safeLog })
-  const { cache, findSnapshotEntry } = snapshots
-  const { cleanupStaleTempDirs, renderScenarioPrompt, launchForItem, openLoginTerminal } = createLaunch({
-    launcherSettings,
-    platform,
-    log: safeLog,
-    findSnapshotEntry,
-    runProcess,
-    copyToClipboard,
-    openTerminal,
-    detectPasteSupport,
-    detectAgents,
-    resolveClone,
-    workspaceDirectory,
+  /**
+   * Everything that depends on the saved config: normalized settings and the
+   * `host/` factories over them, with their caches (snapshot, detection,
+   * clone scans). Built at start and rebuilt for every saved config; routes
+   * and the tool read the current wiring when a request starts, so a request
+   * in flight finishes on the wiring it started with.
+   */
+  const wire = (raw) => {
+    const settings = normalizeSettings(raw)
+    const launcherSettings = normalizeLauncherConfig(raw)
+    if (launcherSettings.invalidAgents.length > 0) {
+      safeLog(
+        'warn',
+        'ignoring %d saved agent(s) whose command breaks the prompt rule: %s',
+        launcherSettings.invalidAgents.length,
+        launcherSettings.invalidAgents.map((agent) => agent.id).join(', '),
+      )
+    }
+    const {
+      runProcess,
+      findExecutable,
+      copyToClipboard,
+      isExecutableFile,
+      locateExecutables,
+      openTerminal,
+      detectTerminals,
+      detectPasteSupport,
+    } = createProcesses({ ctx, settings, platform })
+    const { detectAgents, discoverAgents } = createAgents({
+      launcherSettings,
+      platform,
+      locateExecutables,
+      isExecutableFile,
+    })
+    const { pickDirectoryPath, isDirectory, workspaceDirectory, scanLocalClones, resolveClone } = createClones({
+      ctx,
+      settings,
+      launcherSettings,
+    })
+    const { resolveGit, resolveGh, readGhAuth } = createGh({ settings, platform, findExecutable, runProcess })
+    const snapshots = createSnapshotStore({ ctx, settings, resolveGh, log: safeLog })
+    const { cleanupStaleTempDirs, renderScenarioPrompt, launchForItem, openLoginTerminal } = createLaunch({
+      launcherSettings,
+      platform,
+      log: safeLog,
+      findSnapshotEntry: snapshots.findSnapshotEntry,
+      runProcess,
+      copyToClipboard,
+      openTerminal,
+      detectPasteSupport,
+      detectAgents,
+      resolveClone,
+      workspaceDirectory,
+    })
+    return {
+      settings,
+      launcherSettings,
+      snapshots,
+      cache: snapshots.cache,
+      runProcess,
+      detectTerminals,
+      detectPasteSupport,
+      detectAgents,
+      discoverAgents,
+      pickDirectoryPath,
+      isDirectory,
+      scanLocalClones,
+      resolveGit,
+      readGhAuth,
+      cleanupStaleTempDirs,
+      renderScenarioPrompt,
+      launchForItem,
+      openLoginTerminal,
+    }
+  }
+  let host = wire(config)
+  let restarting = false
+
+  /**
+   * Saved settings are applied to this running instance. Restarting it would
+   * unregister the `triage_desk` tool and the routes until the plugin is back,
+   * and an agent calling the tool meanwhile gets `unknown tool "triage_desk"`.
+   * configEditor.edit ends in the loader's `fiber.update(config)`, which runs
+   * this fiber's `internal/update` listeners around the restart; a listener
+   * that returns without calling `next()` keeps the instance (cordis
+   * `src/fiber.ts` update() and `src/events.ts`; the loader's Group plugin
+   * applies its config the same way). A config that cannot be wired falls
+   * back to the restart, which reports the failure through the fiber.
+   */
+  ctx.on('internal/update', (nextConfig, next) => {
+    let rewired
+    try {
+      rewired = wire(nextConfig !== null && typeof nextConfig === 'object' ? nextConfig : {})
+    } catch (error) {
+      safeLog('warn', 'saved settings could not be applied live, restarting: %s', errorMessage(error))
+      restarting = true
+      return next()
+    }
+    host = rewired
+    safeLog('info', 'settings applied without a restart')
+    return undefined
   })
 
   /* ------------------------------------------------------------------ routes */
@@ -158,7 +214,7 @@ export function apply(ctx, config = {}) {
 
   const runtime = {
     get sources() {
-      const lastSnapshot = snapshots.lastSnapshot()
+      const lastSnapshot = host.snapshots.lastSnapshot()
       return lastSnapshot !== null && Array.isArray(lastSnapshot.sources) ? lastSnapshot.sources : []
     },
     get editable() {
@@ -224,7 +280,7 @@ export function apply(ctx, config = {}) {
             force = false
           }
           try {
-            return jsonResponse(200, await cache.read(force))
+            return jsonResponse(200, await host.cache.read(force))
           } catch (error) {
             safeLog('warn', 'snapshot route failed: %s', errorMessage(error))
             return jsonResponse(200, {
@@ -232,7 +288,7 @@ export function apply(ctx, config = {}) {
               status: 'error',
               generatedAt: new Date().toISOString(),
               sources: [],
-              orgs: settings.orgs,
+              orgs: host.settings.orgs,
               org: '',
               user: null,
               counts: { total: 0 },
@@ -257,6 +313,7 @@ export function apply(ctx, config = {}) {
   }
 
   route(CONFIG_PATH, ['GET', 'POST'], 'triage-desk: GET/POST /triage-desk/config', async (req, res) => {
+    const { settings, launcherSettings, detectAgents, detectTerminals, detectPasteSupport } = host
     if (req.method === 'GET') {
       // Agents, terminals and paste support are independent probes of this
       // machine; each failure only leaves its part of the response empty.
@@ -307,12 +364,13 @@ export function apply(ctx, config = {}) {
       })
       return
     }
-    // The editor owns the write/restart. An accepted request is not a
-    // saved configuration: keep this response pending until it commits.
-    // edit() fulfils only after the loader reconciled, i.e. after this
-    // plugin instance was disposed and restarted; past the await only
-    // plain values and the raw `res` are touched (safeLog never
-    // throws), so a committed write is never reported as a failure.
+    // The editor owns the write. An accepted request is not a saved
+    // configuration: keep this response pending until it commits. edit()
+    // fulfils only after the loader reconciled, i.e. after the
+    // `internal/update` listener above rewired this instance (or, when that
+    // failed, after the restart); past the await only plain values and the
+    // raw `res` are touched (safeLog never throws), so a committed write is
+    // never reported as a failure.
     let failure = null
     try {
       await saveConfig(patch)
@@ -320,7 +378,7 @@ export function apply(ctx, config = {}) {
       failure = errorMessage(error)
     }
     if (failure === null) {
-      sendJson(res, 200, { ok: true, saved: patch, restarting: true })
+      sendJson(res, 200, { ok: true, saved: patch, restarting })
       return
     }
     lastSaveError = { message: failure, at: new Date().toISOString() }
@@ -337,7 +395,7 @@ export function apply(ctx, config = {}) {
       return
     }
     try {
-      const result = await launchForItem(body)
+      const result = await host.launchForItem(body)
       sendJson(res, 200, result)
     } catch (error) {
       if (error instanceof LaunchError) {
@@ -358,7 +416,7 @@ export function apply(ctx, config = {}) {
       return
     }
     try {
-      const rendered = renderScenarioPrompt(body)
+      const rendered = host.renderScenarioPrompt(body)
       sendJson(res, 200, {
         ok: true,
         prompt: rendered.prompt,
@@ -388,7 +446,7 @@ export function apply(ctx, config = {}) {
       return
     }
     try {
-      const result = await discoverAgents(commands)
+      const result = await host.discoverAgents(commands)
       sendJson(res, 200, { ok: true, found: result.found, checked: result.checked })
     } catch (error) {
       if (error instanceof LaunchError) {
@@ -408,6 +466,7 @@ export function apply(ctx, config = {}) {
       force = false
     }
     try {
+      const { launcherSettings, scanLocalClones } = host
       const scan = await scanLocalClones(force)
       const roots = Array.isArray(scan.roots) ? scan.roots : []
       const dirs = roots.map((dir) => {
@@ -432,7 +491,7 @@ export function apply(ctx, config = {}) {
 
   route('/triage-desk/pick-directory', ['POST'], 'triage-desk: POST /triage-desk/pick-directory', async (req, res) => {
     try {
-      const selected = await pickDirectoryPath()
+      const selected = await host.pickDirectoryPath()
       sendJson(res, 200, { ok: true, path: selected })
     } catch (error) {
       sendPickError(res, error)
@@ -440,6 +499,7 @@ export function apply(ctx, config = {}) {
   })
 
   route('/triage-desk/pick-clone', ['POST'], 'triage-desk: POST /triage-desk/pick-clone', async (req, res) => {
+    const { pickDirectoryPath, isDirectory, resolveGit, runProcess } = host
     try {
       const selected = await pickDirectoryPath()
       if (selected === null) {
@@ -478,7 +538,7 @@ export function apply(ctx, config = {}) {
 
   route('/triage-desk/auth', ['GET'], 'triage-desk: GET /triage-desk/auth', async (req, res) => {
     try {
-      sendJson(res, 200, { ok: true, auth: await readGhAuth() })
+      sendJson(res, 200, { ok: true, auth: await host.readGhAuth() })
     } catch (error) {
       sendJson(res, 500, {
         ok: false,
@@ -489,6 +549,7 @@ export function apply(ctx, config = {}) {
 
   route('/triage-desk/auth/login', ['POST'], 'triage-desk: POST /triage-desk/auth/login', async (req, res) => {
     try {
+      const { readGhAuth, openLoginTerminal } = host
       const auth = await readGhAuth()
       if (auth.available === false) {
         sendJson(res, 400, {
@@ -583,7 +644,7 @@ export function apply(ctx, config = {}) {
         }
         try {
           // launchForItem reads the row context from the cached snapshot itself.
-          const result = await launchForItem({ url: input.url, agent: input.agent }, signal)
+          const result = await host.launchForItem({ url: input.url, agent: input.agent }, signal)
           const where = `Opened ${result.agent.label}${result.terminal ? ' in ' + result.terminal.label : ''} at ${result.cwd} for ${result.repo}`
           const prefix =
             result.mode === 'draft'
@@ -610,7 +671,7 @@ export function apply(ctx, config = {}) {
       if (input.sections !== undefined && !Array.isArray(input.sections)) {
         throw new Error('sections must be an array of section ids')
       }
-      const snapshot = await cache.read(input.refresh === true, exec && exec.signal)
+      const snapshot = await host.cache.read(input.refresh === true, exec && exec.signal)
       const wanted = Array.isArray(input.sections) ? new Set(input.sections) : null
       return {
         text: formatToolText(snapshot, wanted),
@@ -633,8 +694,9 @@ export function apply(ctx, config = {}) {
   })
 
   // Clean launcher scratch directories left by previous launches.
-  void cleanupStaleTempDirs()
+  void host.cleanupStaleTempDirs()
 
+  const { settings } = host
   safeLog(
     'info',
     'ready (organizations: %s; personal: %s)',

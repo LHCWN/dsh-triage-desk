@@ -967,6 +967,7 @@ async function withPlatformHost(platform, spawn, callback, config = {}) {
     },
     tools: { register() {} },
     systemPrompt: { section() {} },
+    on: () => () => {},
     get: () => undefined,
   }
   try {
@@ -1653,6 +1654,7 @@ await checkAsync('auto clone roots keep existing defaults beside discovered root
       subprocess: { spawn: () => { throw new Error('no subprocess expected') }, resolveExecutable: async (name) => name },
       tools: { register() {} },
       systemPrompt: { section() {} },
+      on: () => () => {},
       get: () => undefined,
     }, { cwd: home })
     const req = Readable.from([])

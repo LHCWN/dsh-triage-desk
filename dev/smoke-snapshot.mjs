@@ -885,6 +885,7 @@ function hostCtx(fake) {
       },
     },
     systemPrompt: { section: () => () => {} },
+    on: () => () => {},
     fiber: { entry },
     get: (name) => (name === 'configEditor' ? { entries: () => [entry], edit: async () => {} } : undefined),
   }

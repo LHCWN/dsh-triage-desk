@@ -59,6 +59,8 @@ const ctx = {
     const disposer = callback()
     return typeof disposer === 'function' ? disposer : () => {}
   },
+  // Event listeners; the host only listens to its own fiber's `internal/update`.
+  on: () => () => {},
   webServer: {
     register: (route) => {
       captured.routes.set(route.path, route)

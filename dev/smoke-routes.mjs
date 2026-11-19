@@ -183,6 +183,8 @@ const ctx = {
     const disposer = callback()
     return typeof disposer === 'function' ? disposer : () => {}
   },
+  // Event listeners; the host only listens to its own fiber's `internal/update`.
+  on: () => () => {},
   webServer: {
     register: (route) => {
       captured.routes.set(route.path, route)
@@ -820,6 +822,122 @@ await recordAsync('a saved invalid agent is reported, then repaired by saving th
   const after = await startHost(before.edits[0]).call('GET')
   assert.deepEqual(after.body.config.invalidAgents, [])
   assert.deepEqual(after.body.config.agents.map((agent) => agent.id), ['claude', 'legacy'])
+})
+
+/**
+ * A plugin fiber as DSH runs it. configEditor.edit writes the profile and the
+ * loader calls fiber.update(config), which runs the fiber's own
+ * `internal/update` listeners as a waterfall around a restart: a listener
+ * that returns without calling next() keeps the running instance (cordis
+ * src/events.ts and src/fiber.ts `update`; the loader's Group plugin applies
+ * its config this way). The restart disposes every effect of the fiber,
+ * tools and routes included, and applies the plugin again.
+ */
+function startFiber(initialConfig) {
+  const tools = new Map()
+  const routes = new Map()
+  let effects = new Set()
+  let updateHooks = []
+  let config = initialConfig
+  const stats = { restarts: 0, toolUnregistrations: 0, registeredDuringSave: [] }
+  const own = (dispose) => {
+    effects.add(dispose)
+    return dispose
+  }
+  const editor = {
+    entries: () => [entry],
+    edit: async (_entry, change) => {
+      const next = change(config, {})
+      const updating = Promise.resolve(update(next))
+      // A triage_desk call arriving while the loader applies the save.
+      stats.registeredDuringSave.push(tools.has('triage_desk'))
+      await updating
+      stats.registeredDuringSave.push(tools.has('triage_desk'))
+    },
+  }
+  const fiberCtx = () => ({
+    ...ctx,
+    effect: (callback) => {
+      const disposer = callback()
+      return own(typeof disposer === 'function' ? disposer : () => {})
+    },
+    on: (name, listener) => {
+      if (name !== 'internal/update') throw new Error('unexpected listener ' + name)
+      updateHooks.push(listener)
+      return own(() => {
+        updateHooks = updateHooks.filter((hook) => hook !== listener)
+      })
+    },
+    webServer: {
+      register: (route) => {
+        routes.set(route.path, route)
+        return () => routes.delete(route.path)
+      },
+    },
+    tools: {
+      register: (definition) => {
+        tools.set(definition.name, definition)
+        return own(() => {
+          tools.delete(definition.name)
+          stats.toolUnregistrations += 1
+        })
+      },
+    },
+    systemPrompt: { section: () => own(() => {}) },
+    get: (name) => (name === 'configEditor' ? editor : ctx.get(name)),
+  })
+  const restart = async () => {
+    stats.restarts += 1
+    const disposing = [...effects]
+    effects = new Set()
+    for (const dispose of disposing) dispose()
+    await new Promise((resolve) => setImmediate(resolve))
+    apply(fiberCtx(), config)
+  }
+  const update = (next) => {
+    config = next
+    const hooks = [...updateHooks]
+    const dispatch = () => {
+      const hook = hooks.shift()
+      return hook === undefined ? restart() : hook(next, dispatch)
+    }
+    return dispatch()
+  }
+  apply(fiberCtx(), config)
+  const call = async (method, body) => {
+    const req = Readable.from(body === undefined ? [] : [Buffer.from(JSON.stringify(body))])
+    Object.assign(req, { method, url: '/triage-desk/config', headers: {} })
+    const res = fakeResponse()
+    await routes.get('/triage-desk/config').handler(req, res)
+    return { status: res.statusCode, body: JSON.parse(res.body) }
+  }
+  return { call, tools, stats }
+}
+
+await recordAsync('a settings save keeps triage_desk registered and applies the settings live', async () => {
+  const claude = { id: 'claude', label: 'Claude Code', command: 'claude {prompt}' }
+  const codex = { id: 'codex', label: 'Codex', command: 'codex {prompt}' }
+  const host = startFiber({ agents: [claude, codex], defaultAgent: 'claude', refreshSeconds: 600 })
+  const tool = host.tools.get('triage_desk')
+  assert.ok(tool, 'the tool is registered at start')
+
+  const saved = await host.call('POST', { defaultAgent: 'codex', refreshSeconds: 900, terminal: 'iterm' })
+  assert.equal(saved.status, 200, JSON.stringify(saved.body))
+  assert.equal(saved.body.restarting, false, 'the save was applied without a restart')
+  assert.deepEqual(host.stats.registeredDuringSave, [true, true], 'triage_desk stays callable during the save')
+  assert.equal(host.stats.restarts, 0)
+  assert.equal(host.stats.toolUnregistrations, 0)
+  assert.equal(host.tools.get('triage_desk'), tool, 'the same tool registration serves calls after the save')
+
+  const config = await host.call('GET')
+  assert.equal(config.body.config.defaultAgent, 'codex', 'the running host serves the saved settings')
+  assert.equal(config.body.config.refreshSeconds, 900)
+  assert.equal(config.body.config.terminal, 'iterm')
+
+  const again = await host.call('POST', { defaultAgent: 'claude' })
+  assert.equal(again.status, 200, JSON.stringify(again.body))
+  assert.equal((await host.call('GET')).body.config.defaultAgent, 'claude', 'a second save applies on top of the first')
+  assert.equal(host.stats.restarts, 0)
 })
 
 await recordAsync('config POST rejects unsafe prompt placeholder contexts before persistence', async () => {
