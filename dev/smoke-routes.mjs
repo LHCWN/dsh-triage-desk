@@ -839,7 +839,8 @@ function startFiber(initialConfig) {
   let effects = new Set()
   let updateHooks = []
   let config = initialConfig
-  const stats = { restarts: 0, toolUnregistrations: 0, registeredDuringSave: [] }
+  const stats = { restarts: 0, toolUnregistrations: 0, registeredDuringSave: [], warnings: [] }
+  let failNextWire = false
   const own = (dispose) => {
     effects.add(dispose)
     return dispose
@@ -848,6 +849,24 @@ function startFiber(initialConfig) {
     entries: () => [entry],
     edit: async (_entry, change) => {
       const next = change(config, {})
+      if (failNextWire) {
+        // Test switch: the next read of `orgs` throws, so the live rewire of
+        // this save fails inside normalizeSettings. Only the first read
+        // throws, so the fallback restart applies the plugin with the same
+        // config and comes back up.
+        failNextWire = false
+        const orgs = next.orgs
+        let thrown = false
+        Object.defineProperty(next, 'orgs', {
+          configurable: true,
+          enumerable: true,
+          get() {
+            if (thrown) return orgs
+            thrown = true
+            throw new Error('settings cannot be wired')
+          },
+        })
+      }
       const updating = Promise.resolve(update(next))
       // A triage_desk call arriving while the loader applies the save.
       stats.registeredDuringSave.push(tools.has('triage_desk'))
@@ -857,6 +876,7 @@ function startFiber(initialConfig) {
   }
   const fiberCtx = () => ({
     ...ctx,
+    logger: () => ({ ...logger, warn: (...args) => stats.warnings.push(args) }),
     effect: (callback) => {
       const disposer = callback()
       return own(typeof disposer === 'function' ? disposer : () => {})
@@ -911,7 +931,14 @@ function startFiber(initialConfig) {
     await routes.get('/triage-desk/config').handler(req, res)
     return { status: res.statusCode, body: JSON.parse(res.body) }
   }
-  return { call, tools, stats }
+  return {
+    call,
+    tools,
+    stats,
+    failNextWire: () => {
+      failNextWire = true
+    },
+  }
 }
 
 await recordAsync('a settings save keeps triage_desk registered and applies the settings live', async () => {
@@ -938,6 +965,38 @@ await recordAsync('a settings save keeps triage_desk registered and applies the 
   assert.equal(again.status, 200, JSON.stringify(again.body))
   assert.equal((await host.call('GET')).body.config.defaultAgent, 'claude', 'a second save applies on top of the first')
   assert.equal(host.stats.restarts, 0)
+})
+
+await recordAsync('a settings save that cannot be applied live falls back to a restart', async () => {
+  const claude = { id: 'claude', label: 'Claude Code', command: 'claude {prompt}' }
+  const codex = { id: 'codex', label: 'Codex', command: 'codex {prompt}' }
+  const host = startFiber({ agents: [claude, codex], defaultAgent: 'claude', orgs: ['acme'] })
+  const tool = host.tools.get('triage_desk')
+  assert.ok(tool, 'the tool is registered at start')
+
+  host.failNextWire()
+  const saved = await host.call('POST', { defaultAgent: 'codex' })
+  assert.equal(saved.status, 200, JSON.stringify(saved.body))
+  assert.equal(saved.body.restarting, true, 'the response reports the restart')
+  assert.equal(host.stats.restarts, 1, 'the failed rewire called next() into the restart')
+  assert.equal(host.stats.toolUnregistrations, 1, 'the restart disposed the old tool registration')
+  assert.deepEqual(host.stats.registeredDuringSave, [false, true], 'the tool is back once the restart finished')
+  assert.ok(
+    host.stats.warnings.some((args) => /could not be applied live/.test(args[0]) && /cannot be wired/.test(args[1])),
+    'the failed rewire is logged: ' + JSON.stringify(host.stats.warnings),
+  )
+  const restartedTool = host.tools.get('triage_desk')
+  assert.ok(restartedTool, 'the tool is registered again after the restart')
+  assert.notEqual(restartedTool, tool, 'the restarted instance registered its own tool')
+
+  const config = await host.call('GET')
+  assert.equal(config.body.config.defaultAgent, 'codex', 'the restarted host serves the saved settings')
+
+  const again = await host.call('POST', { defaultAgent: 'claude' })
+  assert.equal(again.status, 200, JSON.stringify(again.body))
+  assert.equal(again.body.restarting, false, 'the restarted instance applies the next save live')
+  assert.equal(host.stats.restarts, 1)
+  assert.equal((await host.call('GET')).body.config.defaultAgent, 'claude')
 })
 
 await recordAsync('config POST rejects unsafe prompt placeholder contexts before persistence', async () => {
