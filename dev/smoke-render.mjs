@@ -1076,6 +1076,27 @@ for (const host of ['current', 'older']) {
   harness.dispose()
 }
 
+for (const platform of ['win32', 'darwin']) {
+  // The program word follows the host's agentExecutable: Windows runs a
+  // leading VAR=value word as the program (PowerShell has no such prefix), so
+  // `FOO=1 codex` does not configure codex there and discovery may add it.
+  const harness = settingsHarness({
+    agents: [{ id: 'mine', label: 'Prefixed Codex', command: 'FOO=1 codex {prompt}' }],
+    configExtra: { platform },
+  })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('settings.agentFind')))
+  harness.pendingDiscoveries.shift().resolve({ status: 200, ok: true, json: async () => ({ ok: true, found: [
+    { id: 'codex', label: 'Codex', command: 'codex {prompt}' },
+  ] }) })
+  await harness.flush()
+  assert.deepEqual(harness.nodes().filter((node) => node.props?.['aria-label'] === 'settings.agentName').map((node) => node.props.value),
+    platform === 'win32' ? ['Prefixed Codex', 'Codex'] : ['Prefixed Codex'], platform + ': the program word of a VAR=value command')
+  harness.dispose()
+}
+
 for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-review after changes' }, reasons: { 'review-requested': 'my review requested' } }, undefined]) {
   // The preview uses the host's prompt labels (`config.labels`); an older host
   // has none and the preview shows the codes.

@@ -19,8 +19,20 @@
   re-reads the command line: quotes, `& | < > ^`, `%NAME%` and line breaks in a
   prompt would not pass intact, and an item title could run a command. Such an
   agent gets the prompt typed in (or on the clipboard), and the launch menu says
-  so. The draft runs the detected `.exe` by its absolute path, so a
-  `$PROFILE` alias or a different PATH in the terminal cannot swap in a shim.
+  so.
+- **Windows: launches run the detected agent.** Draft, paste and clipboard
+  launches start the agent by the absolute path that detection reported, as on
+  macOS and Linux. A `$PROFILE` alias or function, or a different PATH order in
+  the terminal, cannot start another install or shim than the one Settings
+  shows. Only when detection could not run does the command run as written. A
+  command that names a path rooted on the current drive (`\tools\claude.exe`)
+  is reported with its drive letter, and a leading `VAR=value` word, which
+  PowerShell cannot run as a prefix, makes Settings show the agent as not
+  installed (**Find agents** reads such a command the same way).
+- **A moved agent is detected again.** Detection results are reused for two
+  minutes; when the path a launch would run is gone (the agent was moved or
+  reinstalled meanwhile), the launch detects once more and runs the new path,
+  on every platform.
 - **Prompt delivery setting.** *Type into the agent* (default) or *Copy to
   clipboard* (`promptDelivery`: `paste` | `clipboard`). When Python 3 or ConPTY
   is missing, Settings says what to install and launches use the clipboard.
@@ -64,8 +76,11 @@
   runs it on `windows-latest`; checks that need a POSIX shell, macOS, or symlink
   rights skip with a comment where those are missing.
 - **Windows launchers are exercised for real.** `smoke:windows` runs the
-  PowerShell 5.1 draft and clipboard launchers with a non-ASCII drive-letter
-  clone path, a prompt ending in a backslash, and an npm-style `.cmd` shim.
+  PowerShell 5.1 draft, paste and clipboard launchers with a non-ASCII
+  drive-letter clone path, a prompt ending in a backslash, an npm-style `.cmd`
+  shim, and `.exe`, `.cmd` and `.ps1` agents started by their detected paths;
+  the `.ps1` is marked as downloaded and must run under the launch window's
+  inherited `Bypass`.
 
 ### Package
 

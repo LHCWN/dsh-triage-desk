@@ -239,10 +239,13 @@ creates) runs through `cmd.exe`, which reads the command line a second time and
 does not treat `\"` as an escaped quote: `&`, `|`, `<`, `>` and `^` in a prompt
 can act as operators, `%NAME%` is expanded, and a line break ends the command.
 Such an agent, a `.ps1` shim, or one whose path detection could not resolve gets
-the prompt like the agents below: typed in, or on the clipboard. The draft runs
-the detected `.exe` by its absolute path, so a `$PROFILE` alias or function of
-the same name, or another PATH order in the terminal, cannot start a `.cmd` shim
-instead.
+the prompt like the agents below: typed in, or on the clipboard.
+
+Every launch, in every delivery mode, runs the program that detection reported
+by its absolute path (see [Agents](#agents)). On Windows this means a
+`$PROFILE` alias or function of the same name, or another PATH order in the
+terminal, cannot start a `.cmd` shim instead of the detected `.exe`, or the
+reverse.
 
 For every other agent, Settings → **Prompt delivery** (config key
 `promptDelivery`) chooses how the prompt arrives:
@@ -347,9 +350,43 @@ Only absolute paths count. An alias whose value is one absolute executable
 resolves to that executable; any other alias or a shell function is reported as
 unavailable (the menu says *shell alias or function — use a path*), because the
 launch shell does not have your aliases. Configured binaries that are not found
-are shown as *not installed* and cannot be launched. On macOS and Linux a launch
-runs the detected absolute path and adds its directory to `PATH` when it is
-missing, so `#!/usr/bin/env node` shims (nvm) find their runtime.
+are shown as *not installed* and cannot be launched.
+
+A launch runs the detected absolute path, so the terminal starts the same
+program Settings reports even when its own aliases, functions or `PATH` differ:
+
+- **macOS and Linux**: the command's executable is replaced by the detected
+  path, unless the command already names a path. The launcher also adds the
+  path's directory to `PATH` when it is missing, so `#!/usr/bin/env node` shims
+  (nvm) find their runtime.
+- **Windows**: the command's first word is replaced by the detected path, with a
+  drive letter or a UNC root. This also applies when the command names a path:
+  detection checks and reports it resolved, so `\tools\claude.exe` becomes
+  `C:\tools\claude.exe` on the current drive. The first word is the program
+  even when it looks like `VAR=value`, because PowerShell has no such prefix:
+  detection looks for a program of that name and reports the agent as not
+  installed. `PATH` is not changed. Every Windows launcher runs the path as a
+  PowerShell literal, so a backtick or `$(` in it is not expanded. A
+  `.cmd`/`.bat` agent runs through `cmd.exe` (a batch file needs `cmd.exe /c`),
+  as it would when found by name, so static arguments in its configured command
+  are parsed by `cmd.exe`. They are your own configuration, and prompts never go
+  on that command line. A `.ps1` agent runs under the same execution policy as
+  when found by name. Launch windows start PowerShell with
+  `-ExecutionPolicy Bypass`, which sets the Process scope for that session and
+  its child sessions (the paste host's nested `powershell.exe` inherits it
+  through `$Env:PSExecutionPolicyPreference`), and only a Group Policy setting
+  overrides that, for the bare name as well.
+
+When detection could not run (the probe failed), the launch runs the command as
+written and the terminal resolves it; the config response reports this as
+`detectedAgents[id]` with `available: null` and `reason: 'probe-failed'`. On
+Windows that is the only launch that does not run a detected path: any other
+agent either runs by its detected path or is refused with the detection reason
+(*not installed*, *not executable*).
+
+Detection results are reused for two minutes. Before a launch runs a detected
+path it checks that the file is still there; when it is gone (the agent was moved
+or reinstalled), the launch detects again once and uses the fresh answer.
 
 **Command rules.** An agent command must contain `{prompt}` exactly once,
 unquoted and unescaped, after the executable word: either as its own argument
@@ -579,11 +616,14 @@ This section was checked against DSH 0.2.2-rc.5; the plugin supports
   runs the draft, paste and clipboard launchers for real on Windows in CI: a
   drive-letter clone path with non-ASCII characters and `;`, draft prompts with
   quotes and a trailing backslash or with `"`, `&`, `|`, `<`, `>`, `^`,
-  `%PATH%` and a line break (one intact argument to an `.exe` agent), and the
-  latter typed into an npm-style `.cmd` shim. A `.cmd`/`.bat` agent never gets
-  the prompt as an argument ([Prompt delivery](#prompt-delivery)); static
-  arguments in its configured command still go through `cmd.exe` and are
-  trusted configuration.
+  `%PATH%` and a line break (one intact argument to an `.exe` agent), the latter
+  typed into an npm-style `.cmd` shim, and paste launches of an `.exe`, `.cmd`
+  and `.ps1` agent started by their detected paths (the `.ps1` marked as
+  downloaded, and run under the launch window's inherited `Bypass`). A
+  `.cmd`/`.bat` agent never gets the prompt as an argument
+  ([Prompt delivery](#prompt-delivery)); static arguments in its configured
+  command still go through `cmd.exe` and are trusted configuration
+  ([Agents](#agents)).
 - **Linux launch errors**: launches observe immediate startup errors for 500 ms
   and then report success; the emulator keeps running without a lifetime
   timeout. Failures after that window are not reported.

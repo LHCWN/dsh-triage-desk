@@ -115,7 +115,7 @@ function windowsBareInvocation(bareCommand) {
  * before a final newline.
  */
 function windowsDraftInvocationLines(agentCommand, draftFlag) {
-  assertSafeAgentCommand(agentCommand)
+  assertSafeAgentCommand(agentCommand, 'win32')
   assertDraftFlag(draftFlag)
   const { words, index, prefix } = promptWord(agentCommand, 'win32')
   const executable = '& ' + windowsQuote(words[0].value)

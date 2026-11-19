@@ -41,6 +41,7 @@ export function createLaunch({
   openTerminal,
   detectPasteSupport,
   detectAgents,
+  isExecutableFile,
   resolveClone,
   workspaceDirectory,
 }) {
@@ -182,8 +183,13 @@ export function createLaunch({
     const rendered = renderScenarioPrompt(body)
     const scenario = rendered.scenario
     const agent = resolveLauncherAgent(body, scenario)
-    const detection = await detectAgents()
-    const status = detection[agent.id]
+    let status = (await detectAgents())[agent.id]
+    // Detection is cached and the launch runs the path it found: when that
+    // path is gone (the agent was moved or reinstalled), detect once more.
+    if (status !== undefined && status.available === true && typeof status.path === 'string'
+      && !(await isExecutableFile(status.path))) {
+      status = (await detectAgents(true))[agent.id]
+    }
     if (status !== undefined && status.available === false) {
       const why = {
         alias: 'is only a shell alias, which the launch shell does not have; point the command at the executable',
@@ -196,14 +202,15 @@ export function createLaunch({
         ...(status.reason ? { reason: status.reason } : {}),
       })
     }
-    // Run exactly the binary detection found, and make its directory
-    // reachable for `#!/usr/bin/env node` shims (see agentPathLines). Windows
-    // keeps PowerShell's own command resolution, except for a native draft
-    // (draftCommandFor).
+    // Run exactly the program detection found (withAgentExecutable); on
+    // macOS/Linux also put its directory on PATH for `#!/usr/bin/env node` shims.
     const detectedPath = status !== undefined && status.available === true && typeof status.path === 'string'
       ? status.path
       : ''
-    const launchCommand = platform === 'win32' ? agent.command : withAgentExecutable(agent.command, detectedPath, platform)
+    const launchCommand = withAgentExecutable(agent.command, detectedPath, platform)
+    // Only paste and clipboard launches run the agent bare; called inside the
+    // try below, so a command without a bare form fails as open-failed.
+    const bareCommand = () => bareAgentCommand(launchCommand, platform)
     const binDir = platform !== 'win32' && detectedPath !== '' ? path.dirname(detectedPath) : undefined
     const { count, trimmed, prompt } = rendered
     let repo = ''
@@ -278,13 +285,12 @@ export function createLaunch({
         const wrapperFile = path.join(tempDir, windows ? 'paste-host.cs' : 'paste-wrapper.py')
         await fs.writeFile(promptFile, sanitizePastePrompt(prompt), 'utf8')
         await fs.writeFile(wrapperFile, windows ? PASTE_WRAPPER_CS : PASTE_WRAPPER_PY, 'utf8')
-        const bareCommand = bareAgentCommand(windows ? agent.command : launchCommand, platform)
         script = windows
-          ? buildWindowsPasteLauncherScript({ cwd: clonePath, title: windowTitle, bareCommand, wrapperFile, promptFile })
+          ? buildWindowsPasteLauncherScript({ cwd: clonePath, title: windowTitle, bareCommand: bareCommand(), wrapperFile, promptFile })
           : buildPasteLauncherScript({
               cwd: clonePath,
               title: windowTitle,
-              bareCommand,
+              bareCommand: bareCommand(),
               python,
               wrapperFile,
               promptFile,
@@ -302,11 +308,7 @@ export function createLaunch({
           draftFlag: agent.draftFlag,
         })
       } else if (windows) {
-        script = buildWindowsClipboardLauncherScript({
-          cwd: clonePath,
-          title: windowTitle,
-          bareCommand: bareAgentCommand(agent.command, platform),
-        })
+        script = buildWindowsClipboardLauncherScript({ cwd: clonePath, title: windowTitle, bareCommand: bareCommand() })
       } else if (mode === 'draft') {
         const command = buildDraftCommand(draftCommand, prompt, agent.draftFlag)
         script = buildDraftLauncherScript({ cwd: clonePath, title: windowTitle, command, binDir, platform })
@@ -314,7 +316,7 @@ export function createLaunch({
         script = buildClipboardLauncherScript({
           cwd: clonePath,
           title: windowTitle,
-          bareCommand: bareAgentCommand(launchCommand, platform),
+          bareCommand: bareCommand(),
           binDir,
           platform,
         })

@@ -139,6 +139,7 @@ export function apply(ctx, config = {}) {
       openTerminal: github.openTerminal,
       detectPasteSupport: github.detectPasteSupport,
       detectAgents: agents.detectAgents,
+      isExecutableFile: github.isExecutableFile,
       resolveClone: clones.resolveClone,
       workspaceDirectory: clones.workspaceDirectory,
     })

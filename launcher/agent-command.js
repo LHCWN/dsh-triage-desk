@@ -77,25 +77,43 @@ export function commandWords(command, platform = process.platform) {
   return words
 }
 
-/** First executable word, ignoring complete (possibly quoted) VAR=... values. */
+const ASSIGNMENT_WORD = /^[A-Za-z_][A-Za-z0-9_]*=/
+
+/**
+ * First executable word, ignoring complete (possibly quoted) VAR=... values.
+ * On Windows it is the first word: PowerShell has no `VAR=value cmd` form, so
+ * a leading assignment is the program it would run (and detection looks it up).
+ */
 export function agentExecutable(command, platform = process.platform) {
   const words = commandWords(command, platform)
   if (words === null) return ''
-  return words.find((word) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word.raw))?.value || ''
+  const executable = platform === 'win32' ? words[0] : words.find((word) => !ASSIGNMENT_WORD.test(word.raw))
+  return executable?.value || ''
 }
 
 const PROMPT_TOKEN = '{prompt}'
 /** `--message=` style prefix allowed directly before `{prompt}` in one unquoted word. */
 const PROMPT_FLAG_PREFIX = /^-{1,2}[A-Za-z0-9][A-Za-z0-9_-]*=$/
-const ASSIGNMENT_WORD = /^[A-Za-z_][A-Za-z0-9_]*=/
 
 /** The single user-facing statement of the agent command rule (config POST and builders). */
 export const AGENT_COMMAND_RULE =
   'command must contain exactly one {prompt} as its own unquoted argument or as --flag={prompt}, after the executable, '
   + 'without shell operators, comments, or $( ) ${ } backtick expansions'
 
-export function assertSafeAgentCommand(command) {
-  if (!hasSafePromptPlaceholder(command)) throw new Error('agent ' + AGENT_COMMAND_RULE)
+/**
+ * Throws unless `command` follows the agent command rule. On Windows a first
+ * word that is not `VAR=value` is checked as a plain program name: it may be a
+ * detected path pinned by withAgentExecutable, and every Windows builder runs
+ * it as a PowerShell literal (`& '<path>'`), where a backtick or `$(` is
+ * literal too. Only those checks are skipped: a `{prompt}` in that word
+ * still breaks the rule.
+ */
+export function assertSafeAgentCommand(command, platform) {
+  const first = platform === 'win32' ? commandWords(command, 'win32')?.[0] : undefined
+  const plainProgram = first !== undefined && !ASSIGNMENT_WORD.test(first.raw)
+  if (plainProgram && first.raw.includes(PROMPT_TOKEN)) throw new Error('agent ' + AGENT_COMMAND_RULE)
+  const checked = plainProgram ? 'agent' + command.slice(first.end) : command
+  if (!hasSafePromptPlaceholder(checked)) throw new Error('agent ' + AGENT_COMMAND_RULE)
 }
 
 /**
@@ -192,7 +210,7 @@ export function assertDraftFlag(draftFlag) {
  * the agent starts bare and the prompt is pasted by the user.
  */
 export function bareAgentCommand(agentCommand, platform = process.platform) {
-  assertSafeAgentCommand(agentCommand)
+  assertSafeAgentCommand(agentCommand, platform)
   const { words, index, word, prefix } = promptWord(agentCommand, platform)
   // `--message={prompt}` carries its own flag: drop that one word. A whole
   // `{prompt}` word also drops a directly preceding value-less flag such as
@@ -223,12 +241,16 @@ export function buildDraftCommand(agentCommand, prompt, draftFlag) {
 }
 
 /**
- * Pins the command's executable to the absolute path agent detection found:
- * the first non-assignment word is replaced (shell-quoted when needed). An
- * already path-qualified executable is kept. Detection and launch then run the
- * same binary even when the launch shell lacks the user's aliases or rc PATH.
+ * Pins the command's executable to the absolute path agent detection found, so
+ * detection and launch run the same program even when the launch shell has
+ * other aliases, functions or PATH order (docs/REFERENCE.md#agents). Returns
+ * the command unchanged when there is no usable path.
+ *
+ * POSIX: the first non-assignment word is replaced (shell-quoted when needed);
+ * an already path-qualified executable is kept. Windows: windowsPin.
  */
 export function withAgentExecutable(agentCommand, executablePath, platform = process.platform) {
+  if (platform === 'win32') return windowsPin(agentCommand, executablePath)?.command ?? agentCommand
   if (typeof executablePath !== 'string' || !path.isAbsolute(executablePath)) return agentCommand
   if (/[\r\n\u0000]/.test(executablePath)) return agentCommand
   const words = commandWords(agentCommand, platform)
@@ -243,27 +265,22 @@ export function withAgentExecutable(agentCommand, executablePath, platform = pro
 }
 
 /**
- * The Windows form of withAgentExecutable, used for a native draft: the first
- * word becomes the absolute path detection resolved, double-quoted (a Windows
- * path cannot contain `"`). A bare `& 'claude'` would be resolved again by the
- * launch PowerShell, which loads the user's $PROFILE (aliases and functions win
- * over applications: about_Command_Precedence) and may see another PATH, so it
- * could start a `.cmd` shim instead of the `.exe` that windowsDraftArgumentSafe
- * approved. Returns null when the command cannot be pinned exactly; the caller
- * must then not use the draft argument.
+ * The Windows pin: `{ command, path }` with the first word replaced by the
+ * detected path (trimmed, normalized, drive or UNC root, double-quoted), or
+ * null when there is no such path. See docs/REFERENCE.md#agents.
  */
-export function withWindowsAgentExecutable(agentCommand, executablePath) {
-  // A drive letter or UNC prefix: `\x` is rooted only on the current drive,
-  // which can differ between detection and the launch's cwd.
-  if (typeof executablePath !== 'string' || !/^(?:[A-Za-z]:\\|\\\\)/.test(executablePath)) return null
-  const words = commandWords(agentCommand, 'win32')
-  if (words === null || words.length === 0) return null
-  const executable = words[0]
-  if (ASSIGNMENT_WORD.test(executable.raw)) return null
-  const pinned = agentCommand.slice(0, executable.start) + '"' + executablePath + '"' + agentCommand.slice(executable.end)
-  if (!hasSafePromptPlaceholder(pinned)) return null
-  const check = commandWords(pinned, 'win32')
-  return check !== null && check[0].value === executablePath ? pinned : null
+function windowsPin(agentCommand, detectedPath) {
+  const trimmed = typeof detectedPath === 'string' ? detectedPath.trim() : ''
+  // A Windows path cannot contain `"`, so the quoted word stays one word; a
+  // `{prompt}` in it would break the command rule (assertSafeAgentCommand).
+  if (trimmed === '' || /[\r\n\u0000"]/.test(trimmed) || trimmed.includes(PROMPT_TOKEN)) return null
+  const normalized = path.win32.normalize(trimmed)
+  if (!/^(?:[A-Za-z]:\\|\\\\)/.test(normalized)) return null
+  const first = commandWords(agentCommand, 'win32')?.[0]
+  if (first === undefined) return null
+  // Trailing backslashes are doubled so the closing quote stays a quote (CommandLineToArgvW).
+  const word = '"' + normalized.replace(/(\\+)$/, '$1$1') + '"'
+  return { command: agentCommand.slice(0, first.start) + word + agentCommand.slice(first.end), path: normalized }
 }
 
 /**
@@ -287,20 +304,12 @@ function windowsDraftArgumentSafe(executablePath) {
  * The one decision whether a launch may use the agent's native draft flag:
  * the command to run with it, or null when the prompt must be typed in or
  * copied instead. `detectedPath` is the path agent detection resolved ('' when
- * none). POSIX pins the executable as withAgentExecutable does; Windows needs
- * an `.exe` (windowsDraftArgumentSafe) run by its absolute path
- * (withWindowsAgentExecutable).
+ * none). The executable is pinned as withAgentExecutable does; on Windows the
+ * pinned path must also be an `.exe` (windowsDraftArgumentSafe).
  */
 export function draftCommandFor(agent, detectedPath, platform = process.platform) {
   if (typeof agent.draftFlag !== 'string') return null
   if (platform !== 'win32') return withAgentExecutable(agent.command, detectedPath, platform)
-  // One spelling for the .exe check and the pin: an absolute path written in
-  // the agent command skips the probe's trimming and may use `/`
-  // (`C:/tools/claude.exe`). path.win32.normalize turns `/` into `\` and keeps
-  // a drive-relative path (`\x`, `C:x`) drive-relative, so the pin still
-  // rejects it.
-  const trimmed = typeof detectedPath === 'string' ? detectedPath.trim() : ''
-  if (trimmed === '') return null
-  const executablePath = path.win32.normalize(trimmed)
-  return windowsDraftArgumentSafe(executablePath) ? withWindowsAgentExecutable(agent.command, executablePath) : null
+  const pin = windowsPin(agent.command, detectedPath)
+  return pin !== null && windowsDraftArgumentSafe(pin.path) ? pin.command : null
 }
