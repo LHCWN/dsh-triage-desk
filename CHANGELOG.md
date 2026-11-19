@@ -12,6 +12,13 @@
   module, Windows uses ConPTY (Windows 10 1809+) through PowerShell 5.1. Claude
   Code keeps its native `--prefill` draft. Verified with Codex, opencode and
   Antigravity; the clipboard still gets a copy.
+- **Windows: no prompt arguments for `.cmd` agents.** A native draft
+  (`claude --prefill`) is used on Windows only when the agent resolves to an
+  `.exe`. An npm install (a `.cmd`/`.bat` shim) runs through `cmd.exe`, which
+  re-reads the command line: quotes, `& | < > ^`, `%NAME%` and line breaks in a
+  prompt were not passed intact, and an item title could run a command. Such an
+  agent now gets the prompt typed in (or on the clipboard), and the launch menu
+  says so.
 - **Prompt delivery setting.** *Type into the agent* (default) or *Copy to
   clipboard* (`promptDelivery`: `paste` | `clipboard`). When Python 3 or ConPTY
   is missing, Settings says what to install and launches use the clipboard.

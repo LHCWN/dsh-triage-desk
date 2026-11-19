@@ -45,7 +45,9 @@ import the launcher layer only through `launcher.js` and the data layer through
   - `launch.js` — `createLaunch`: scenario/agent resolution,
     `renderScenarioPrompt`, `launchForItem` (runs the detected path and passes
     its directory as `binDir`; picks the delivery mode — `draft` for agents with
-    a native draft flag, `paste` when `promptDelivery` is `paste` and
+    a native draft flag (on Windows only when `windowsDraftArgumentSafe` accepts
+    the detected path: an `.exe`, never a `.cmd`/`.bat` that `cmd.exe` would
+    re-parse), `paste` when `promptDelivery` is `paste` and
     `detectPasteSupport` allows it, else `clipboard` with `delivery.pasteBlocked`
     naming the reason; the clipboard always gets a copy), temp directories,
     `openLoginTerminal`;
@@ -116,9 +118,10 @@ import the launcher layer only through `launcher.js` and the data layer through
     `lookupRepoPath` (case-insensitive `repoPaths`);
   - `posix-scripts.js`, `windows-scripts.js`, `terminal-plan.js` — POSIX and
     PowerShell 5.1 launcher/login scripts (draft, paste, clipboard and login
-    variants), `openTerminalPlan(platform, capabilities)` (macOS `app`: iTerm2
-    or Ghostty tab, Terminal.app window; shared-window tabs on Windows/Linux;
-    `wt: ''` asks for a plain PowerShell window), `focusTerminalPlan(platform,
+    variants; `windowsDraftArgumentSafe`, which the client's
+    `promptDeliveryFor` mirrors), `openTerminalPlan(platform, capabilities)`
+    (macOS `app`: iTerm2 or Ghostty tab, Terminal.app window; shared-window
+    tabs on Windows/Linux; `wt: ''` asks for a plain PowerShell window), `focusTerminalPlan(platform,
     capabilities)` (best-effort raise-by-title for focus-or-reuse in iTerm2,
     Ghostty, wmctrl/xdotool; `null` when unsupported), and
     `buildItermTabAppleScript` / `buildGhosttyTabAppleScript` (Ghostty 1.4

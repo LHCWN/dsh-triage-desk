@@ -230,9 +230,14 @@ focus-or-reuse is best-effort and falls back to a fresh tab or window.
 
 ### Prompt delivery
 
-**Claude Code** always opens with its native draft flag,
+**Claude Code** opens with its native draft flag,
 `claude --prefill '<prompt>'`: the TUI starts with the prompt in its composer and
-nothing submitted.
+nothing submitted. On Windows the draft is used only when the agent's executable
+resolves to an `.exe`. A `.cmd`/`.bat` shim (what an npm install of `claude`
+creates) runs through `cmd.exe`, which reads the command line a second time and
+cannot be given a prompt argument safely, so such an agent, a `.ps1` shim, or one
+whose path detection could not resolve gets the prompt like the agents below:
+typed in, or on the clipboard.
 
 For every other agent, Settings → **Prompt delivery** (config key
 `promptDelivery`) chooses how the prompt arrives:
@@ -520,15 +525,15 @@ the settings endpoint and read with defaults in code, so the bundle needs no
   prompt files are read explicitly as UTF-8; a `;` in the tab title or script
   path is escaped as `\;` for Windows Terminal; double quotes in the prompt are
   escaped for PowerShell 5.1's native argument passing. `npm run smoke:windows`
-  runs the draft and clipboard launchers for real on Windows in CI: a
+  runs the draft, paste and clipboard launchers for real on Windows in CI: a
   drive-letter clone path with non-ASCII characters and `;`, a prompt with
-  quotes and a trailing backslash, an `.exe` agent and an npm-style `.cmd` shim.
-  A `.cmd` shim runs through `cmd.exe`, which reads the command line again and
-  does not treat `\"` as an escaped quote: in a prompt with double quotes, `&`,
-  `|`, `<`, `>` and `^` can fall outside cmd.exe's quoting and act as
-  operators, `%NAME%` is expanded, and a line break ends the command. Such
-  prompts are not passed intact to a `.cmd` agent; an `.exe` agent is not
-  affected.
+  quotes and a trailing backslash, an `.exe` agent and an npm-style `.cmd` shim,
+  and a prompt with `"`, `&`, `|`, `<`, `>`, `^`, `%PATH%` and a line break,
+  which reaches an `.exe` agent as one intact argument and is typed into a
+  `.cmd` agent. `cmd.exe` does not treat `\"` as an escaped quote, so a native
+  draft is never passed to a `.cmd`/`.bat` agent (see [Prompt
+  delivery](#prompt-delivery)); static arguments in a `.cmd` agent's configured
+  command still go through `cmd.exe` and are trusted configuration.
 - **Linux launch errors**: launches observe immediate startup errors for 500 ms
   and then report success; the emulator keeps running without a lifetime
   timeout. Failures after that window are not reported.
