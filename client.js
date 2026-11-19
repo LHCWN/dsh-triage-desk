@@ -275,9 +275,6 @@ window.__ModuleLoader__.load({
       'launch.pasteBlocked.python-missing': ' · install Python 3 to have prompts typed in',
       'launch.pasteBlocked.python-clt': ' · run xcode-select --install to have prompts typed in',
       'launch.pasteBlocked.windows-old': ' · typing prompts in needs Windows 10 1809 or later',
-      'launch.pinBlocked.not-rooted': ' · the detected path has no drive letter, so the command ran as written',
-      'launch.pinBlocked.unsafe-path': ' · the detected path has a character agent commands cannot carry, so the command ran as written',
-      'launch.pinBlocked.command-form': ' · the command starts with VAR=value, so it ran as written instead of the detected path',
       'launch.terminalFallback': ' · the chosen terminal is not installed',
       'launch.via.draft': 'Opens in {terminal} · prompt in the input box, unsent',
       'launch.via.paste': 'Opens in {terminal} · prompt typed into the input box, unsent',
@@ -563,9 +560,6 @@ window.__ModuleLoader__.load({
       'launch.pasteBlocked.python-missing': ' · 安装 Python 3 后即可自动填入提示',
       'launch.pasteBlocked.python-clt': ' · 运行 xcode-select --install 后即可自动填入提示',
       'launch.pasteBlocked.windows-old': ' · 自动填入提示需要 Windows 10 1809 或更高版本',
-      'launch.pinBlocked.not-rooted': ' · 检测到的路径没有盘符，已按原命令运行',
-      'launch.pinBlocked.unsafe-path': ' · 检测到的路径含有代理命令不允许的字符，已按原命令运行',
-      'launch.pinBlocked.command-form': ' · 命令以 VAR=value 开头，已按原命令运行，未使用检测到的路径',
       'launch.terminalFallback': ' · 所选终端未安装',
       'launch.via.draft': '在 {terminal} 中打开 · 提示在输入框中，尚未发送',
       'launch.via.paste': '在 {terminal} 中打开 · 提示自动填入输入框，尚未发送',
@@ -2609,8 +2603,6 @@ window.__ModuleLoader__.load({
         keys: pasteKeys(delivery.platform),
       })
       if (mode === 'clipboard' && delivery.pasteBlocked) text += t('launch.pasteBlocked.' + delivery.pasteBlocked)
-      // Windows: detection reported a path the launch could not run by.
-      if (typeof delivery.pinBlocked === 'string' && delivery.pinBlocked !== '') text += t('launch.pinBlocked.' + delivery.pinBlocked)
       if (payload.terminal && payload.terminal.fallback) text += t('launch.terminalFallback')
       if (payload.cloneMissing) text += t('launch.workspaceFallback')
       if (typeof payload.count === 'number' && payload.count > 1) text += t('launch.countSuffix', { n: payload.count })

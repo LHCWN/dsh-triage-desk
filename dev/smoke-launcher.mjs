@@ -515,9 +515,11 @@ check('shell quoting survives single quotes', () => {
   assert.equal(quoted, "'it'\\''s a '\\''test'\\'''")
 })
 
-check('agent executable ignores env assignments', () => {
+check('agent executable ignores env assignments, except on Windows', () => {
   assert.equal(agentExecutable('claude {prompt}'), 'claude')
-  assert.equal(agentExecutable('FOO=1 opencode --prompt {prompt}'), 'opencode')
+  assert.equal(agentExecutable('FOO=1 opencode --prompt {prompt}', 'linux'), 'opencode')
+  // PowerShell has no `VAR=value cmd` form: the first word is what it runs.
+  assert.equal(agentExecutable('FOO=1 opencode --prompt {prompt}', 'win32'), 'FOO=1')
   assert.equal(agentExecutable('/opt/homebrew/bin/codex {prompt}'), '/opt/homebrew/bin/codex')
 })
 
@@ -1133,6 +1135,9 @@ await checkAsync('Windows keeps the native draft for an .exe agent only and runs
     { name: 'an .exe agent', path: 'C:\\bin\\claude.exe', mode: 'draft' },
     { name: 'an .exe agent under a path with spaces and a quote', path: "C:\\Program Files (x86)\\O'Neil\\claude.EXE", mode: 'draft' },
     { name: 'an .exe agent spelled with forward slashes', path: 'C:/tools/claude.exe', runs: 'C:\\tools\\claude.exe', mode: 'draft' },
+    // Every Windows builder runs the path as `& '<path>'`, where a backtick or
+    // `$(` is literal, so such a path is pinned too.
+    { name: 'an .exe agent under a path with a backtick and $(', path: 'C:\\a`b$(c)\\claude.exe', mode: 'draft' },
     { name: 'an npm .cmd shim', path: 'C:\\npm\\claude.cmd', mode: 'paste' },
     { name: 'a .BAT file', path: 'C:\\tools\\CLAUDE.BAT', mode: 'paste' },
     { name: 'a .ps1 shim', path: 'C:\\npm\\claude.ps1', mode: 'paste' },
@@ -1144,15 +1149,11 @@ await checkAsync('Windows keeps the native draft for an .exe agent only and runs
     { name: 'an .exe agent without a draft flag', agent: 'codex', path: 'C:\\bin\\codex.exe', mode: 'paste' },
     { name: 'an .exe agent without a draft flag, clipboard delivery', agent: 'codex', path: 'C:\\bin\\codex.exe', mode: 'clipboard', config: { promptDelivery: 'clipboard' } },
     { name: 'a UNC .exe agent without a draft flag', agent: 'codex', path: '\\\\srv\\tools\\codex.exe', mode: 'paste' },
-    // Detection reported a path the pin cannot use: the command runs as
-    // written, and the response and the launcher say why.
-    { name: 'an agent detection found only rooted on the current drive', agent: 'codex', path: '\\bin\\codex.exe', runs: 'codex', mode: 'paste', pin: 'not-rooted' },
-    { name: 'a path rooted on the current drive, clipboard delivery', agent: 'codex', path: '\\bin\\codex.exe', runs: 'codex', mode: 'clipboard', pin: 'not-rooted', config: { promptDelivery: 'clipboard' } },
-    { name: 'a detected path with a backtick', agent: 'codex', path: 'C:\\a`b\\codex.exe', runs: 'codex', mode: 'paste', pin: 'unsafe-path' },
-    { name: "a detected path with $(", agent: 'codex', path: 'C:\\a$(b)\\codex.exe', runs: 'codex', mode: 'clipboard', pin: 'unsafe-path', config: { promptDelivery: 'clipboard' } },
+    { name: 'a detected path with a backtick', agent: 'codex', path: 'C:\\a`b\\codex.exe', mode: 'paste' },
+    { name: 'a detected path with $(', agent: 'codex', path: 'C:\\a$(b)\\codex.exe', mode: 'clipboard', config: { promptDelivery: 'clipboard' } },
   ]
   try {
-    for (const { name, agent = 'claude', path: detected, runs = detected, build = '10.0.22631', mode, blocked = null, pin = null, config } of cases) {
+    for (const { name, agent = 'claude', path: detected, runs = detected, build = '10.0.22631', mode, blocked = null, config } of cases) {
       os.release = () => build
       await withPlatformHost('win32', (spec, handle) => {
         // An empty path fails the probe, so detection cannot resolve the agent.
@@ -1165,16 +1166,8 @@ await checkAsync('Windows keeps the native draft for an .exe agent only and runs
         const result = await request('/triage-desk/launch', 'POST', { url: PR_URL, agent })
         assert.equal(result.status, 200, name + ': ' + JSON.stringify(result.body))
         assert.equal(result.body.mode, mode, name)
-        assert.deepEqual(result.body.delivery, { mode, pasteBlocked: blocked, platform: 'win32', pinBlocked: pin }, name)
+        assert.deepEqual(result.body.delivery, { mode, pasteBlocked: blocked, platform: 'win32' }, name)
         const script = [...files.entries()].find(([file]) => file.endsWith('launch.ps1'))?.[1].toString('utf8') || ''
-        // Before the agent starts, the window says the detected path was not used.
-        const notice = script.split('\n').find((line) => line.includes('Triage Desk: detection found'))
-        if (pin === null) assert.equal(notice, undefined, name + ': no pin notice when the detected path runs')
-        else {
-          assert.ok(notice !== undefined && notice.trimStart().startsWith("Write-Host '"), name + ': the launcher prints a pin notice')
-          assert.ok(notice.includes(windowsQuote(detected).slice(1, -1)), name + ': the notice names the detected path')
-          assert.ok(script.indexOf(notice) < script.indexOf('& ' + windowsQuote(runs)), name + ': before the agent starts')
-        }
         assert.equal(script.includes('--prefill'), mode === 'draft', name + ': the prompt argument is used only for a native draft')
         const invocation = '& ' + windowsQuote(runs)
         if (mode === 'draft') {
@@ -1194,6 +1187,42 @@ await checkAsync('Windows keeps the native draft for an .exe agent only and runs
     }
   } finally {
     os.release = release
+  }
+})
+
+await checkAsync('Windows detection reports the drive-rooted path it checked; a leading VAR=value word is not a program', async () => {
+  // `\\tools\\codex.exe` is rooted only on the current drive. fs.access
+  // resolves it against the cwd's drive (path.toNamespacedPath), so detection
+  // reports that resolved path and the launch pins a drive-letter path.
+  const cwd = process.cwd
+  process.cwd = () => 'D:\\work'
+  try {
+    await withPlatformHost('win32', (spec, handle) => {
+      if (spec.argv[0] === 'powershell.exe') return handle(0, probeOutput(['FOO=1'], () => ''))
+      if (spec.argv[0] === 'clip.exe' || spec.argv[0] === 'wt') return handle()
+      throw new Error('unexpected subprocess: ' + spec.argv.join(' '))
+    }, async ({ request, files }) => {
+      const detected = (await request('/triage-desk/config')).body.config.detectedAgents
+      assert.deepEqual(detected.rooted, { available: true, path: 'D:\\tools\\codex.exe', executable: '\\tools\\codex.exe', draft: false })
+      // PowerShell would run `FOO=1` as the program, so detection looks that up.
+      assert.deepEqual(detected.prefixed, { available: false, path: null, reason: 'missing', executable: 'FOO=1', draft: false })
+      const launched = await request('/triage-desk/launch', 'POST', { url: PR_URL, agent: 'rooted' })
+      assert.equal(launched.status, 200, JSON.stringify(launched.body))
+      const script = [...files.entries()].find(([file]) => file.endsWith('launch.ps1'))[1].toString('utf8')
+      assert.ok(script.split('\n').includes("& 'D:\\tools\\codex.exe'"), script)
+      const blocked = await request('/triage-desk/launch', 'POST', { url: PR_URL, agent: 'prefixed' })
+      assert.equal(blocked.status, 400)
+      assert.equal(blocked.body.error.code, 'agent-missing')
+    }, {
+      agents: [
+        { id: 'rooted', label: 'Rooted', command: '\\tools\\codex.exe {prompt}' },
+        { id: 'prefixed', label: 'Prefixed', command: 'FOO=1 codex {prompt}' },
+      ],
+      defaultAgent: 'rooted',
+      promptDelivery: 'clipboard',
+    })
+  } finally {
+    process.cwd = cwd
   }
 })
 
@@ -1365,9 +1394,17 @@ check('Windows pins the detected executable as a double-quoted absolute path, or
   assert.equal(pin('claude {prompt}', 'C:claude.exe'), 'claude {prompt}', 'a drive-relative path')
   assert.equal(pin('claude {prompt}', '/opt/claude.exe'), 'claude {prompt}', 'not a Windows absolute path')
   assert.equal(pin('claude {prompt}', ''), 'claude {prompt}', 'no path')
-  assert.equal(pin('FOO=1 claude {prompt}', 'C:\\bin\\claude.exe'), 'FOO=1 claude {prompt}', 'a leading assignment word')
-  assert.equal(pin('claude {prompt}', "C:\\a$'b\\claude.exe"), 'claude {prompt}', 'a path the placeholder rule rejects')
   assert.equal(pin('claude {prompt}', 'C:\\bin\n\\claude.exe'), 'claude {prompt}', 'a path with a line break')
+  // The builders run the first word as a PowerShell literal, so the command
+  // rule's expansion checks do not apply to the pinned path.
+  for (const detected of ["C:\\a$'b\\claude.exe", 'C:\\a`b\\claude.exe', 'C:\\a$(b)\\claude.exe']) {
+    const pinned = pin('claude {prompt} --x', detected)
+    assert.equal(pinned, '"' + detected + '" {prompt} --x', detected)
+    assert.equal(bareAgentCommand(pinned, 'win32'), '"' + detected + '" --x', detected)
+  }
+  // A path ending in `\\` keeps it: the backslash is doubled before the quote.
+  const trailing = bareAgentCommand(pin('claude {prompt}', 'C:\\tools\\'), 'win32')
+  assert.ok(buildWindowsClipboardLauncherScript({ cwd: 'C:\\w', title: 't', bareCommand: trailing }).includes("\n& 'C:\\tools\\'\n"))
 })
 
 check('a Windows draft checks and pins one normalized executable path', () => {

@@ -279,7 +279,7 @@ function shallowEqualProps(previous, next) {
 // simulated; the real-React SSR checks above cover rendering compatibility.
 function settingsHarness({
   agents = state.config.agents, invalidAgents, scenarios, snapshotPayload = null, clock = null, layout = {}, configExtra = {},
-  storage, withPanel = false, launchResult = {},
+  storage, withPanel = false,
 } = {}) {
   const instances = new Map()
   let current
@@ -482,7 +482,6 @@ function settingsHarness({
               agent: { id: 'claude', label: 'Claude Code' },
               terminal: { id: 'iterm', label: 'iTerm2', fallback: false },
               delivery: { mode: 'draft', pasteBlocked: null, platform: 'darwin' },
-              ...launchResult,
             }
           : { ok: true, prompt: 'rendered', trimmed: null }))
       }
@@ -1138,25 +1137,6 @@ for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-
   }, 'a section launch sends the union of its sections')
   assert.equal(harness.store.get().toast.text, 'launch.draft:Claude Code,iTerm2,/work,⌘V' + 'launch.countSuffix:2')
   harness.dispose()
-}
-
-{
-  // A Windows launch that could not run the detected path says why in its
-  // toast, in every delivery mode.
-  for (const mode of ['paste', 'clipboard']) {
-    const harness = settingsHarness({
-      snapshotPayload: snapshot,
-      launchResult: { mode, delivery: { mode, pasteBlocked: null, platform: 'win32', pinBlocked: 'not-rooted' } },
-    })
-    await harness.flush()
-    harness.click(harness.nodes().filter((node) => node.type === 'button' && node.props['aria-label'] === 'launch.title')[1])
-    harness.click(harness.nodes().find((node) => node.props?.role === 'menuitem'
-      && flattenTree(node.props.children).some((child) => typeof child === 'string' && child.startsWith('link'))))
-    await harness.flush()
-    assert.equal(harness.store.get().toast.text, 'launch.' + mode + ':Claude Code,iTerm2,/work,Ctrl+V' + 'launch.pinBlocked.not-rooted',
-      mode + ': the toast says the detected path did not run')
-    harness.dispose()
-  }
 }
 
 {

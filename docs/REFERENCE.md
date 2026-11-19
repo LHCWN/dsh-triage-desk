@@ -360,25 +360,29 @@ program Settings reports even when its own aliases, functions or `PATH` differ:
   path's directory to `PATH` when it is missing, so `#!/usr/bin/env node` shims
   (nvm) find their runtime.
 - **Windows**: the command's first word is replaced by the detected path, with a
-  drive letter or a UNC root. This also applies when the command names a path,
-  which detection reports normalized. `PATH` is not changed. A `.cmd`/`.bat`
-  agent runs through `cmd.exe`, as it would when found by name, so static
-  arguments in its configured command are parsed by `cmd.exe`. They are your
-  own configuration, and prompts never go on that command line. A `.ps1` agent
-  runs under the same execution policy as when found by name. Launch windows
-  start PowerShell with `-ExecutionPolicy Bypass` for that session and its child
-  sessions, and only a Group Policy setting overrides that.
+  drive letter or a UNC root. This also applies when the command names a path:
+  detection checks and reports it resolved, so `\tools\claude.exe` becomes
+  `C:\tools\claude.exe` on the current drive. The first word is the program
+  even when it looks like `VAR=value`, because PowerShell has no such prefix:
+  detection looks for a program of that name and reports the agent as not
+  installed. `PATH` is not changed. Every Windows launcher runs the path as a
+  PowerShell literal, so a backtick or `$(` in it is not expanded. A
+  `.cmd`/`.bat` agent runs through `cmd.exe` (a batch file needs `cmd.exe /c`),
+  as it would when found by name, so static arguments in its configured command
+  are parsed by `cmd.exe`. They are your own configuration, and prompts never go
+  on that command line. A `.ps1` agent runs under the same execution policy as
+  when found by name. Launch windows start PowerShell with
+  `-ExecutionPolicy Bypass`, which sets the Process scope for that session and
+  its child sessions (the paste host's nested `powershell.exe` inherits it
+  through `$Env:PSExecutionPolicyPreference`), and only a Group Policy setting
+  overrides that, for the bare name as well.
 
-When detection could not run (the probe failed) or found no usable absolute
-path, the launch runs the command as written and the terminal resolves it. On
-Windows, when detection reported a path that the launch cannot run by (it has no
-drive letter or UNC root, it contains a character the command rules below
-reject, such as a backtick or `$(`, or the command starts with a
-`VAR=value` word), the command also runs as written, and the launch says so: the
-terminal window prints the detected path and the reason before the agent
-starts, the launch toast adds the reason, and the launch result's
-`delivery.pinBlocked` names it (`not-rooted`, `unsafe-path` or
-`command-form`; null when the detected path runs).
+When detection could not run (the probe failed), the launch runs the command as
+written and the terminal resolves it; the config response reports this as
+`detectedAgents[id]` with `available: null` and `reason: 'probe-failed'`. On
+Windows that is the only launch that does not run a detected path: any other
+agent either runs by its detected path or is refused with the detection reason
+(*not installed*, *not executable*).
 
 **Command rules.** An agent command must contain `{prompt}` exactly once,
 unquoted and unescaped, after the executable word: either as its own argument
@@ -611,10 +615,11 @@ This section was checked against DSH 0.2.2-rc.5; the plugin supports
   `%PATH%` and a line break (one intact argument to an `.exe` agent), the latter
   typed into an npm-style `.cmd` shim, and paste launches of an `.exe`, `.cmd`
   and `.ps1` agent started by their detected paths (the `.ps1` marked as
-  downloaded, and run under the launch window's inherited `Bypass`). A `.cmd`/`.bat` agent never
-  gets the prompt as an argument ([Prompt delivery](#prompt-delivery)); static
-  arguments in its configured command still go through `cmd.exe` and are
-  trusted configuration ([Agents](#agents)).
+  downloaded, and run under the launch window's inherited `Bypass`). A
+  `.cmd`/`.bat` agent never gets the prompt as an argument
+  ([Prompt delivery](#prompt-delivery)); static arguments in its configured
+  command still go through `cmd.exe` and are trusted configuration
+  ([Agents](#agents)).
 - **Linux launch errors**: launches observe immediate startup errors for 500 ms
   and then report success; the emulator keeps running without a lifetime
   timeout. Failures after that window are not reported.

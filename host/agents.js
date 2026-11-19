@@ -18,6 +18,8 @@ export function createAgents({ launcherSettings, platform, locateExecutables, is
    * command path without X_OK), `alias` (only an alias that is not one plain
    * absolute executable path), `function` (a shell function or builtin), or
    * `probe-failed` with `available: null` when the login shell itself failed.
+   * On Windows a command path is reported resolved (`\x` gets the current
+   * drive), which is the path fs.access checks (path.toNamespacedPath).
    */
   const detectionCache = { at: 0, value: null }
   const detectAgents = async (force = false) => {
@@ -32,9 +34,10 @@ export function createAgents({ launcherSettings, platform, locateExecutables, is
         results.set(agent.id, { available: false, path: null, reason: 'missing', executable })
         continue
       }
-      if (path.isAbsolute(executable)) {
-        results.set(agent.id, (await isExecutableFile(executable))
-          ? { available: true, path: executable, executable }
+      if ((platform === 'win32' ? path.win32 : path.posix).isAbsolute(executable)) {
+        const checked = platform === 'win32' ? path.win32.resolve(executable) : executable
+        results.set(agent.id, (await isExecutableFile(checked))
+          ? { available: true, path: checked, executable }
           : { available: false, path: null, reason: 'not-executable', executable })
         continue
       }

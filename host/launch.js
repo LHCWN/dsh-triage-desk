@@ -28,27 +28,8 @@ import {
   sanitizePastePrompt,
   scenarioTitle,
   withAgentExecutable,
-  windowsPinBlocked,
 } from '../launcher.js'
 import { LaunchError } from './errors.js'
-
-const PIN_BLOCKED_WHY = {
-  'not-rooted': 'it has no drive letter or UNC root',
-  'unsafe-path': 'it contains a character agent commands cannot carry',
-  'command-form': 'the agent command starts with a VAR=value word',
-}
-
-/**
- * The launcher line for a Windows `pinBlocked` reason (windowsPinBlocked), or
- * '' when the detected path runs. Control characters in the path are dropped
- * so the notice stays one line.
- */
-function windowsPinNotice(pinBlocked, detectedPath, bareCommand) {
-  if (pinBlocked === null) return ''
-  const shown = detectedPath.trim().replace(/[\u0000-\u001f]/g, '')
-  const why = PIN_BLOCKED_WHY[pinBlocked] || 'it cannot be pinned'
-  return `Triage Desk: detection found ${shown}, but the launch cannot run that path (${why}); running ${bareCommand} as written.`
-}
 
 export function createLaunch({
   launcherSettings,
@@ -215,18 +196,13 @@ export function createLaunch({
         ...(status.reason ? { reason: status.reason } : {}),
       })
     }
-    // Run exactly the program detection found (withAgentExecutable; when it
-    // cannot be pinned the command runs as written), and on macOS/Linux make
-    // its directory reachable for `#!/usr/bin/env node` shims (see
-    // agentPathLines). Windows does not touch PATH.
+    // Run exactly the program detection found (withAgentExecutable); on
+    // macOS/Linux also put its directory on PATH for `#!/usr/bin/env node` shims.
     const detectedPath = status !== undefined && status.available === true && typeof status.path === 'string'
       ? status.path
       : ''
     const launchCommand = withAgentExecutable(agent.command, detectedPath, platform)
-    // Windows says when detection reported a path the pin cannot use: the
-    // launch response carries `delivery.pinBlocked` and the window prints why
-    // before the command runs as written (windowsPinNotice).
-    const pinBlocked = platform === 'win32' ? windowsPinBlocked(agent.command, detectedPath) : null
+    const bareCommand = bareAgentCommand(launchCommand, platform)
     const binDir = platform !== 'win32' && detectedPath !== '' ? path.dirname(detectedPath) : undefined
     const { count, trimmed, prompt } = rendered
     let repo = ''
@@ -301,16 +277,8 @@ export function createLaunch({
         const wrapperFile = path.join(tempDir, windows ? 'paste-host.cs' : 'paste-wrapper.py')
         await fs.writeFile(promptFile, sanitizePastePrompt(prompt), 'utf8')
         await fs.writeFile(wrapperFile, windows ? PASTE_WRAPPER_CS : PASTE_WRAPPER_PY, 'utf8')
-        const bareCommand = bareAgentCommand(launchCommand, platform)
         script = windows
-          ? buildWindowsPasteLauncherScript({
-              cwd: clonePath,
-              title: windowTitle,
-              bareCommand,
-              wrapperFile,
-              promptFile,
-              notice: windowsPinNotice(pinBlocked, detectedPath, bareCommand),
-            })
+          ? buildWindowsPasteLauncherScript({ cwd: clonePath, title: windowTitle, bareCommand, wrapperFile, promptFile })
           : buildPasteLauncherScript({
               cwd: clonePath,
               title: windowTitle,
@@ -332,13 +300,7 @@ export function createLaunch({
           draftFlag: agent.draftFlag,
         })
       } else if (windows) {
-        const bareCommand = bareAgentCommand(launchCommand, platform)
-        script = buildWindowsClipboardLauncherScript({
-          cwd: clonePath,
-          title: windowTitle,
-          bareCommand,
-          notice: windowsPinNotice(pinBlocked, detectedPath, bareCommand),
-        })
+        script = buildWindowsClipboardLauncherScript({ cwd: clonePath, title: windowTitle, bareCommand })
       } else if (mode === 'draft') {
         const command = buildDraftCommand(draftCommand, prompt, agent.draftFlag)
         script = buildDraftLauncherScript({ cwd: clonePath, title: windowTitle, command, binDir, platform })
@@ -346,7 +308,7 @@ export function createLaunch({
         script = buildClipboardLauncherScript({
           cwd: clonePath,
           title: windowTitle,
-          bareCommand: bareAgentCommand(launchCommand, platform),
+          bareCommand,
           binDir,
           platform,
         })
@@ -382,12 +344,10 @@ export function createLaunch({
       cwdMode,
       count,
       trimmed,
-      // Which terminal opened (`fallback` when the chosen one is not installed),
-      // for clipboard mode why the prompt was not typed in, and on Windows why
-      // the detected path did not run (`pinBlocked`, null when it did or
-      // detection reported none).
+      // Which terminal opened (`fallback` when the chosen one is not installed)
+      // and, for clipboard mode, why the prompt was not typed in.
       terminal: opened?.terminal || null,
-      delivery: { mode, pasteBlocked, platform, ...(windows ? { pinBlocked } : {}) },
+      delivery: { mode, pasteBlocked, platform },
       launchedAt: new Date().toISOString(),
     }
   }

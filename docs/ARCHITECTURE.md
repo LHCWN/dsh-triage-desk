@@ -46,19 +46,18 @@ import the launcher layer only through `launcher.js` and the data layer through
     on Windows), and `wmctrl`·`xdotool` detection. Terminal emulators and
     `python3` share one cached login-shell lookup (`locateTools`);
   - `agents.js` — `createAgents`: `detectAgents` (one login-shell probe for all
-    agents, absolute paths only) and `discoverAgents`;
+    agents, absolute paths only; a Windows command path is reported resolved)
+    and `discoverAgents`;
   - `clones.js` — `createClones`: clone directories and scans, workspace
     fallback, native directory picker, `resolveClone`;
   - `launch.js` — `createLaunch`: scenario/agent resolution,
     `renderScenarioPrompt`, `launchForItem` (runs the detected path through
-    `withAgentExecutable` on every platform and in every mode, and on
-    macOS/Linux passes its directory as `binDir`; picks the delivery mode — `draft` when
-    `draftCommandFor` returns a command, `paste` when `promptDelivery` is
-    `paste` and `detectPasteSupport` allows it, else `clipboard` with
+    `withAgentExecutable`, and on macOS/Linux passes its directory as
+    `binDir`; picks the delivery mode — `draft` when `draftCommandFor` returns
+    a command, `paste` when `promptDelivery` is `paste` and
+    `detectPasteSupport` allows it, else `clipboard` with
     `delivery.pasteBlocked` naming the reason; the clipboard always gets a
-    copy; on Windows `delivery.pinBlocked` (windowsPinBlocked) and a line in
-    the launcher say why a detected path could not be pinned), temp
-    directories, `openLoginTerminal`;
+    copy), temp directories, `openLoginTerminal`;
   - `gh.js` — `createGh`: `gh`/`git` resolution and auth status;
   - `http.js`, `errors.js`, `tool-text.js` — JSON body/response helpers,
     `BadRequest`/`LaunchError`, and the tool's text rendering.
@@ -88,12 +87,11 @@ import the launcher layer only through `launcher.js` and the data layer through
     `agentExecutable`, `hasSafePromptPlaceholder` and its one user-facing
     wording `AGENT_COMMAND_RULE`, `shellQuote`, and the command variants
     (`bareAgentCommand`, `buildDraftCommand`, and `withAgentExecutable`, the
-    one pin of the detected executable: POSIX replaces the first
-    non-assignment word unless it is path-qualified; Windows replaces the first
-    word with the normalized, double-quoted drive or UNC path; an unpinnable
-    path keeps the command), and `draftCommandFor`, the one decision whether a
-    launch uses the native draft (on Windows only for an `.exe` that the same
-    pin replaced exactly, never a `.cmd`/`.bat` that `cmd.exe` would re-parse). `{prompt}` appears once, unquoted, after an executable word, either
+    one pin of the detected executable; Windows uses `windowsPin`, see
+    [REFERENCE.md](REFERENCE.md#agents)), and `draftCommandFor`, the one
+    decision whether a launch uses the native draft (on Windows only for a
+    pinned `.exe`, never a `.cmd`/`.bat` that `cmd.exe` would re-parse).
+    `{prompt}` appears once, unquoted, after an executable word, either
     as a whole word or directly after `-x=`/`--flag=`; backticks, `$(`, `${`,
     unquoted `; & | < > ( )` and word-initial `#` are rejected. The host is the
     only implementation of this rule;
@@ -257,8 +255,7 @@ fields the client reads with a fallback for an older host: `invalidAgents`,
 `terminal`, `promptDelivery`, `terminals` (detectTerminals; null hides the
 terminal picker), `promptPaste` (detectPasteSupport; null means unknown and the
 launch menu assumes the clipboard), `platform` (paste keys in hints and toasts),
-the launch result's `terminal` and `delivery: { mode, pasteBlocked, platform }`
-(plus `pinBlocked` on `win32`; absent → no notice),
+the launch result's `terminal` and `delivery: { mode, pasteBlocked, platform }`,
 `detectedAgents[id].executable`, `detectedAgents[id].draft` (whether the
 launch uses the native draft; absent → the agent's draft flag decides, except
 on `win32`, where absent means no draft), review
