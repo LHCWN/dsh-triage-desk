@@ -66,6 +66,17 @@ function windowsDraftInvocation(agentCommand, draftFlag) {
  */
 const WINDOWS_PROMPT_QUOTE_ESCAPE = "$prompt = $prompt -replace '(\\\\*)\"', '$1$1\\\"'"
 
+/**
+ * The script removes itself, then its per-launch directory if nothing else is
+ * left in it. Directory.Delete without recursion throws on a non-empty
+ * directory (Remove-Item would ask for confirmation in an interactive host),
+ * so leftover files are never removed by this line.
+ */
+const WINDOWS_SELF_CLEANUP_LINES = [
+  'Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue',
+  'try { [System.IO.Directory]::Delete((Split-Path -Parent $PSCommandPath)) } catch { }',
+]
+
 /** An exit-status report that keeps the PowerShell window open on failure. */
 function windowsExitStatusLines(prefix) {
   return [
@@ -97,7 +108,7 @@ export function buildWindowsDraftLauncherScript({ cwd, title, agentCommand, prom
     WINDOWS_PROMPT_QUOTE_ESCAPE,
     invocation,
     ...windowsExitStatusLines('Triage Desk: the agent exited with status '),
-    'Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue',
+    ...WINDOWS_SELF_CLEANUP_LINES,
     '',
   ]
   return lines.join('\n')
@@ -118,7 +129,7 @@ export function buildWindowsClipboardLauncherScript({ cwd, title, bareCommand })
     "Write-Host ''",
     invocation,
     ...windowsExitStatusLines('Triage Desk: the agent exited with status '),
-    'Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue',
+    ...WINDOWS_SELF_CLEANUP_LINES,
     '',
   ]
   return lines.join('\n')
@@ -175,7 +186,7 @@ export function buildWindowsPasteLauncherScript({ cwd, title, bareCommand, wrapp
     '  ' + invocation,
     '}',
     ...windowsExitStatusLines('Triage Desk: the agent exited with status '),
-    'Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue',
+    ...WINDOWS_SELF_CLEANUP_LINES,
     '',
   ]
   return lines.join('\n')
@@ -205,7 +216,7 @@ export function buildWindowsLoginLauncherScript({ cwd, ghCommand }) {
     "  Write-Host ''",
     "  Write-Host 'Triage Desk: login finished. Return to the panel and press Check connection.'",
     '}',
-    'Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue',
+    ...WINDOWS_SELF_CLEANUP_LINES,
     '',
   ]
   return lines.join('\n')

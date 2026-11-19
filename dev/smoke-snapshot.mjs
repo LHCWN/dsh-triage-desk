@@ -10,6 +10,7 @@
 import assert from 'node:assert/strict'
 import { apply } from '../index.js'
 import { buildSnapshot, NEW_ISSUE_WINDOW_DAYS, normalizeSettings } from '../github.js'
+import { formatToolText, snapshotAge } from '../host/tool-text.js'
 
 const checks = []
 async function check(name, callback) {
@@ -939,6 +940,49 @@ await check('a cancelled tool call does not cancel the shared build', async () =
   const result = await other
   assert.equal(result.status, 'ok')
   assert.equal(result.counts.review, 1)
+})
+
+/* ------------------------------------------------------ triage_desk tool text */
+
+const toolSnapshot = (extra = {}) => ({
+  status: 'ok',
+  generatedAt: '2026-11-19T12:00:00.000Z',
+  sources: [{ kind: 'user', login: 'me', label: 'me' }],
+  counts: { total: 1, review: 0, rereview: 0, merge: 1, respond: 0, ci: 0, issues: 0 },
+  sections: [
+    { id: 'review', items: [] },
+    { id: 'merge', items: [{ kind: 'pull', repo: 'acme/app', number: 5, title: 'Ready', reason: 'approved', url: 'https://github.com/acme/app/pull/5' }] },
+  ],
+  warnings: [],
+  ...extra,
+})
+const toolNow = Date.parse('2026-11-19T12:12:00.000Z')
+
+await check('the tool text separates an empty filter from an empty inbox', async () => {
+  const filtered = formatToolText(toolSnapshot(), new Set(['review']), toolNow)
+  assert.ok(filtered.includes('Nothing in the requested sections; 1 item(s) are in other sections.'), filtered)
+  assert.ok(!filtered.includes('Nothing needs your attention'), filtered)
+  const empty = formatToolText(toolSnapshot({ counts: { total: 0 }, sections: [{ id: 'merge', items: [] }] }), null, toolNow)
+  assert.ok(empty.includes('Nothing needs your attention right now.'), empty)
+  const all = formatToolText(toolSnapshot(), null, toolNow)
+  assert.ok(all.includes('## merge (1)') && !all.includes('Nothing'), all)
+})
+
+await check('the tool text reports stale and partial snapshots with their reason', async () => {
+  const stale = formatToolText(toolSnapshot({ status: 'stale', meta: { lastError: { code: 'rate-limited', message: 'GitHub rate limit exceeded' } } }), null, toolNow)
+  assert.ok(stale.includes('Status: stale — GitHub rate limit exceeded (snapshot from 2026-11-19T12:00:00.000Z)'), stale)
+  const partial = formatToolText(toolSnapshot({ status: 'partial' }), null, toolNow)
+  assert.ok(partial.includes('Status: partial — some sources could not be read'), partial)
+  assert.ok(!formatToolText(toolSnapshot(), null, toolNow).includes('Status:'), 'a fresh snapshot has no status line')
+})
+
+await check('the tool header says how old the snapshot is', async () => {
+  const text = formatToolText(toolSnapshot(), null, toolNow)
+  assert.ok(text.startsWith('Triage Desk — personal — 1 item(s) at 2026-11-19T12:00:00.000Z (12 min ago)'), text)
+  assert.equal(snapshotAge('2026-11-19T12:00:00.000Z', Date.parse('2026-11-19T12:00:20.000Z')), 'just now')
+  assert.equal(snapshotAge('2026-11-19T12:00:00.000Z', Date.parse('2026-11-19T15:30:00.000Z')), '3 h ago')
+  assert.equal(snapshotAge('2026-11-17T12:00:00.000Z', Date.parse('2026-11-19T12:00:00.000Z')), '2 d ago')
+  assert.equal(snapshotAge('not a date', toolNow), '')
 })
 
 const failed = checks.filter((entry) => entry.ok === false)

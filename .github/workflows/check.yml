@@ -12,8 +12,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The full offline gate on Linux and Windows. The Linux leg keeps the plain
+  # `check` name (the required status of `main`); the Windows leg reports as
+  # `check (windows-latest)`. smoke:windows runs real PowerShell 5.1 launchers
+  # there and skips elsewhere.
   check:
-    runs-on: ubuntu-latest
+    name: ${{ matrix.os == 'ubuntu-latest' && 'check' || format('check ({0})', matrix.os) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

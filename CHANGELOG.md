@@ -21,10 +21,35 @@
   Linux; Windows Terminal or a PowerShell window on Windows. Ghostty on macOS
   opens tabs and re-launching the same agent on an item switches to its tab. A
   chosen terminal that is not installed falls back to Automatic.
+- **Launch directories are removed.** Each launcher deletes its own
+  `triage-desk-*` temporary directory once nothing else is left in it, instead
+  of leaving it until the 24-hour sweep.
 - **Clearer launch feedback.** The toast names the agent and terminal and says
   where the prompt is; the clipboard hint shows the right keys per platform
   (⌘V, Ctrl+Shift+V, Ctrl+V) instead of always Cmd+V; each launch menu shows
   where the selected agent opens and how it gets the prompt.
+
+### Agent tool
+
+- **Stale and partial snapshots are reported.** The `triage_desk` report adds a
+  `Status: stale|partial — reason` line, and its header says how old the
+  snapshot is.
+- **An empty filter is not an empty inbox.** When the requested sections are
+  empty but others are not, the report says how many items are elsewhere
+  instead of "Nothing needs your attention right now."
+
+### Windows
+
+- **The offline gate runs on Windows.** `npm run check` passes on Windows and CI
+  runs it on `windows-latest`; checks that need a POSIX shell, macOS, or symlink
+  rights skip with a comment where those are missing.
+- **Windows launchers are exercised for real.** `smoke:windows` runs the
+  PowerShell 5.1 draft and clipboard launchers with a non-ASCII drive-letter
+  clone path, a prompt ending in a backslash, and an npm-style `.cmd` shim.
+
+### Package
+
+- **Shorter plugin description** in both locales.
 
 ## 0.1.0 — 2026-11-15
 

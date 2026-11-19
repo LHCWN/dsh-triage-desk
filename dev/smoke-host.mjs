@@ -8,10 +8,10 @@
  */
 import { spawn } from 'node:child_process'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const { apply } = await import(path.join(here, '..', 'index.js'))
+const { apply } = await import(pathToFileURL(path.join(here, '..', 'index.js')).href)
 
 function fakeSpawn(spec) {
   const child = spawn(spec.argv[0], spec.argv.slice(1), {

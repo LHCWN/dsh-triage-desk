@@ -53,6 +53,9 @@ export function buildDraftLauncherScript({ cwd, title, command, binDir, platform
     shell.shebang,
     '# Triage Desk launcher (native draft mode; generated for this launch).',
     'rm -f -- "$0"',
+    // The per-launch directory now holds nothing else: remove it (rmdir never
+    // removes a directory that still has files).
+    'rmdir -- "${0%/*}" 2>/dev/null',
     'cd -- ' + shellQuote(cwd) + ' || {',
     "  printf 'Triage Desk: the clone directory is gone: %s\\n' " + shellQuote(cwd),
     '  exec ' + shell.interactive,
@@ -82,6 +85,9 @@ export function buildLoginLauncherScript({ cwd, ghCommand, platform = 'darwin' }
     shell.shebang,
     '# Triage Desk GitHub login (generated for this launch).',
     'rm -f -- "$0"',
+    // The per-launch directory now holds nothing else: remove it (rmdir never
+    // removes a directory that still has files).
+    'rmdir -- "${0%/*}" 2>/dev/null',
     'cd -- ' + shellQuote(cwd) + ' || exec ' + shell.interactive,
     "printf '\\nTriage Desk: follow the prompts below, finish in the browser, then return to the panel.\\n\\n'",
     shellQuote(ghCommand) + ' auth login --hostname github.com --git-protocol https --web',
@@ -111,6 +117,9 @@ export function buildClipboardLauncherScript({ cwd, title, bareCommand, binDir, 
     shell.shebang,
     '# Triage Desk launcher (clipboard mode; generated for this launch).',
     'rm -f -- "$0"',
+    // The per-launch directory now holds nothing else: remove it (rmdir never
+    // removes a directory that still has files).
+    'rmdir -- "${0%/*}" 2>/dev/null',
     'cd -- ' + shellQuote(cwd) + ' || {',
     "  printf 'Triage Desk: the clone directory is gone: %s\\n' " + shellQuote(cwd),
     '  exec ' + shell.interactive,
@@ -159,6 +168,7 @@ export function buildPasteLauncherScript({ cwd, title, bareCommand, python, wrap
     [shellQuote(python), '-I', shellQuote(wrapperFile), shellQuote(promptFile), shellQuote(shellPath), '-c', shellQuote(bareCommand)].join(' '),
     'TD_STATUS=$?',
     'rm -f -- ' + shellQuote(wrapperFile),
+    'rmdir -- ' + shellQuote(path.dirname(wrapperFile)) + ' 2>/dev/null',
     'if [ "$TD_STATUS" -ne 0 ]; then',
     "  printf '\\nTriage Desk: the agent exited with status %s\\n' \"$TD_STATUS\"",
     'fi',
