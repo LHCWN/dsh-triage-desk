@@ -12,7 +12,7 @@
  */
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { promises as fs } from 'node:fs'
+import { promises as fs, rmSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -21,6 +21,19 @@ import { PASTE_WRAPPER_CS, PASTE_WRAPPER_PY, sanitizePastePrompt } from '../laun
 const here = path.dirname(fileURLToPath(import.meta.url))
 const fakeAgent = path.join(here, 'fixtures', 'fake-agent.mjs')
 const work = await fs.mkdtemp(path.join(os.tmpdir(), 'triage-desk-paste-'))
+// Removed on every exit: success, a skip, a failed assertion, or an abort.
+// A signal's default action skips the `exit` event, so Ctrl+C and SIGTERM
+// leave through process.exit with the usual 128 + signal status instead.
+process.on('exit', () => {
+  try {
+    rmSync(work, { recursive: true, force: true })
+  } catch {
+    // best effort: a file still held open on Windows stays for the OS to clean
+  }
+})
+for (const [signal, status] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]]) {
+  process.once(signal, () => process.exit(status))
+}
 const windows = process.platform === 'win32'
 
 const PROMPT = sanitizePastePrompt(
@@ -154,5 +167,4 @@ assert.ok(fastAccepted !== -1 && fastPaste > fastAccepted, 'an early Enter still
 assert.equal(fast.recorded.events[fastPaste].text, PROMPT)
 console.log('ok   trust dialog accepted at once: the paste still arrives')
 
-await fs.rm(work, { recursive: true, force: true })
 console.log('paste smoke OK (' + (windows ? 'ConPTY host' : 'Python pty wrapper') + ', ' + process.platform + ')')
