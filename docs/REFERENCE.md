@@ -602,7 +602,8 @@ This section was checked against DSH 0.2.2-rc.5; the plugin supports
   quotes and a trailing backslash or with `"`, `&`, `|`, `<`, `>`, `^`,
   `%PATH%` and a line break (one intact argument to an `.exe` agent), the latter
   typed into an npm-style `.cmd` shim, and paste launches of an `.exe`, `.cmd`
-  and `.ps1` agent started by their detected paths. A `.cmd`/`.bat` agent never
+  and `.ps1` agent started by their detected paths (the `.ps1` marked as
+  downloaded, and run under the launch window's inherited `Bypass`). A `.cmd`/`.bat` agent never
   gets the prompt as an argument ([Prompt delivery](#prompt-delivery)); static
   arguments in its configured command still go through `cmd.exe` and are
   trusted configuration ([Agents](#agents)).

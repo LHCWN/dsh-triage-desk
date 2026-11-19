@@ -14,7 +14,9 @@
  *     intact; the command it smuggles in never runs;
  *   - paste launches run an `.exe`, `.cmd` and `.ps1` agent by the path
  *     detection reported, pinned as the host pins it; the command's own name
- *     is not on PATH, so the bare name could not start it;
+ *     is not on PATH, so the bare name could not start it. The `.ps1` is
+ *     marked as downloaded and runs under the launcher's Process-scope Bypass,
+ *     inherited by the paste host's nested `powershell.exe`;
  *   - every launcher removes itself and its per-launch directory.
  *
  * Run with `npm run smoke:windows`. Not shipped in the npm package.
@@ -62,8 +64,20 @@ const fakeAgent = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtu
 const agentShim = path.join(tools, 'fake-agent.cmd')
 await fs.writeFile(agentShim, '@"' + process.execPath + '" "' + fakeAgent + '" %*\r\n')
 // And behind an npm-style PowerShell shim; it exits with the agent's status.
+// It first records the execution policy it runs under into TD_RECORD (UTF-8
+// without a BOM), and it is marked as downloaded (Zone.Identifier ZoneId=3),
+// which RemoteSigned and Restricted refuse and Unrestricted prompts for.
 const agentPs1 = path.join(tools, 'fake-agent.ps1')
-await fs.writeFile(agentPs1, '& ' + windowsQuote(process.execPath) + ' ' + windowsQuote(fakeAgent) + ' @args\r\nexit $LASTEXITCODE\r\n')
+await fs.writeFile(agentPs1, [
+  'if ($env:TD_RECORD) {',
+  '  $tdPolicy = @{ process = [string](Get-ExecutionPolicy -Scope Process); effective = [string](Get-ExecutionPolicy) }',
+  '  [System.IO.File]::WriteAllText($env:TD_RECORD, ($tdPolicy | ConvertTo-Json -Compress))',
+  '}',
+  '& ' + windowsQuote(process.execPath) + ' ' + windowsQuote(fakeAgent) + ' @args',
+  'exit $LASTEXITCODE',
+  '',
+].join('\r\n'))
+await fs.writeFile(agentPs1 + ':Zone.Identifier', '[ZoneTransfer]\r\nZoneId=3\r\n')
 
 // The clone directory: drive letter, non-ASCII characters, a space and `;`.
 const clone = path.join(root, '工作 repo; ü')
@@ -245,6 +259,14 @@ for (const [kind, detected, args] of [
     assert.ok(existsSync(result), 'the agent ran: ' + output)
     assertUnsentPaste(JSON.parse(await fs.readFile(result, 'utf8')), PROMPT, output)
     assert.doesNotMatch(output, /could not type the prompt/, 'the ConPTY host ran')
+    if (kind === 'a .ps1') {
+      // The paste host's nested powershell.exe gets no -ExecutionPolicy of its
+      // own: a Process-scope Bypass there is the launcher's, inherited through
+      // $Env:PSExecutionPolicyPreference (about_Execution_Policies, 5.1), so
+      // the downloaded-marked shim runs whatever the machine policy is.
+      assert.deepEqual(run.recorded, { process: 'Bypass', effective: 'Bypass' },
+        'the .ps1 agent runs under the launch window\'s Bypass: ' + output)
+    }
     assert.equal(run.dirLeft, false)
   })
 }

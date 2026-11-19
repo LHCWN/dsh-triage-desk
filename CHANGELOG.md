@@ -70,7 +70,9 @@
 - **Windows launchers are exercised for real.** `smoke:windows` runs the
   PowerShell 5.1 draft, paste and clipboard launchers with a non-ASCII
   drive-letter clone path, a prompt ending in a backslash, an npm-style `.cmd`
-  shim, and `.exe`, `.cmd` and `.ps1` agents started by their detected paths.
+  shim, and `.exe`, `.cmd` and `.ps1` agents started by their detected paths;
+  the `.ps1` is marked as downloaded and must run under the launch window's
+  inherited `Bypass`.
 
 ### Package
 
