@@ -56,7 +56,9 @@ import the launcher layer only through `launcher.js` and the data layer through
     `draftCommandFor` returns a command, `paste` when `promptDelivery` is
     `paste` and `detectPasteSupport` allows it, else `clipboard` with
     `delivery.pasteBlocked` naming the reason; the clipboard always gets a
-    copy), temp directories, `openLoginTerminal`;
+    copy; on Windows `delivery.pinBlocked` (windowsPinBlocked) and a line in
+    the launcher say why a detected path could not be pinned), temp
+    directories, `openLoginTerminal`;
   - `gh.js` — `createGh`: `gh`/`git` resolution and auth status;
   - `http.js`, `errors.js`, `tool-text.js` — JSON body/response helpers,
     `BadRequest`/`LaunchError`, and the tool's text rendering.
@@ -255,7 +257,8 @@ fields the client reads with a fallback for an older host: `invalidAgents`,
 `terminal`, `promptDelivery`, `terminals` (detectTerminals; null hides the
 terminal picker), `promptPaste` (detectPasteSupport; null means unknown and the
 launch menu assumes the clipboard), `platform` (paste keys in hints and toasts),
-the launch result's `terminal` and `delivery: { mode, pasteBlocked, platform }`,
+the launch result's `terminal` and `delivery: { mode, pasteBlocked, platform }`
+(plus `pinBlocked` on `win32`; absent → no notice),
 `detectedAgents[id].executable`, `detectedAgents[id].draft` (whether the
 launch uses the native draft; absent → the agent's draft flag decides, except
 on `win32`, where absent means no draft), review

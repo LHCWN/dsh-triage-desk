@@ -31,6 +31,7 @@ export {
   hasSafePromptPlaceholder,
   shellQuote,
   withAgentExecutable,
+  windowsPinBlocked,
 } from './launcher/agent-command.js'
 
 export { buildExecutableProbe, classifyProbeAnswer, parseExecutableProbe } from './launcher/executable-probe.js'

@@ -285,21 +285,46 @@ function windowsExecutablePath(detectedPath) {
  *     path or found by name. Launch windows start `powershell.exe
  *     -ExecutionPolicy Bypass` (terminal-plan.js), which sets the Process
  *     scope, and that policy "affects only the current session and child
- *     sessions" (about_Execution_Policies, 5.1), so the paste host's nested
- *     `powershell.exe` runs it under Bypass too. Only a Group Policy setting
+ *     sessions" (about_Execution_Policies, 5.1; it is kept in
+ *     $Env:PSExecutionPolicyPreference), so the paste host's nested
+ *     `powershell.exe` runs it under Bypass too (smoke:windows checks this
+ *     with a downloaded-marked shim). Only a Group Policy setting
  *     overrides it, and it blocks the bare-name lookup the same way.
  */
 function windowsPinnedCommand(agentCommand, detectedPath) {
+  return windowsPin(agentCommand, detectedPath).command
+}
+
+/**
+ * The Windows pin and, when it fails, why (a WindowsPinBlocked code). The
+ * pinned command must still pass hasSafePromptPlaceholder, so a path with a
+ * backtick or `$(` `${` `$[` `$"` `$'` cannot be pinned.
+ */
+function windowsPin(agentCommand, detectedPath) {
+  const blocked = (reason) => ({ command: null, blocked: reason })
   const executablePath = windowsExecutablePath(detectedPath)
-  if (executablePath === '') return null
+  if (executablePath === '') {
+    return blocked(typeof detectedPath === 'string' && /[\r\n\u0000]/.test(detectedPath) ? 'unsafe-path' : 'not-rooted')
+  }
   const words = commandWords(agentCommand, 'win32')
-  if (words === null || words.length === 0) return null
+  if (words === null || words.length === 0 || ASSIGNMENT_WORD.test(words[0].raw)) return blocked('command-form')
   const executable = words[0]
-  if (ASSIGNMENT_WORD.test(executable.raw)) return null
   const pinned = agentCommand.slice(0, executable.start) + '"' + executablePath + '"' + agentCommand.slice(executable.end)
-  if (!hasSafePromptPlaceholder(pinned)) return null
+  if (!hasSafePromptPlaceholder(pinned)) return blocked('unsafe-path')
   const check = commandWords(pinned, 'win32')
-  return check !== null && check[0].value === executablePath ? pinned : null
+  return check !== null && check[0].value === executablePath ? { command: pinned, blocked: null } : blocked('unsafe-path')
+}
+
+/**
+ * Why a Windows launch cannot run the path detection reported, or null when it
+ * can or detection reported none (the command then runs as written either
+ * way). Codes: `not-rooted` (no drive letter or UNC root), `unsafe-path` (the
+ * path contains a character the command rules reject), `command-form` (the
+ * command starts with a `VAR=value` word).
+ */
+export function windowsPinBlocked(agentCommand, detectedPath) {
+  if (typeof detectedPath !== 'string' || detectedPath.trim() === '') return null
+  return windowsPin(agentCommand, detectedPath).blocked
 }
 
 /**

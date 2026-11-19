@@ -167,6 +167,17 @@ function windowsExitStatusLines(prefix) {
 }
 
 /**
+ * A one-line notice printed before the agent starts, e.g. why the detected
+ * path is not the one that runs; [] when there is none. Single-quoted, so `$`
+ * and backticks in it stay literal.
+ */
+function windowsNoticeLines(notice, indent = '') {
+  if (notice === undefined || notice === null || notice === '') return []
+  if (typeof notice !== 'string' || /[\r\n\u0000]/.test(notice)) throw new Error('notice must be a single line')
+  return [indent + 'Write-Host ' + windowsQuote(notice)]
+}
+
+/**
  * Builds the PowerShell 5.1 script for native draft mode on Windows: the
  * prompt is read from `promptFile` into `$prompt` and handed to the agent as a
  * single argument, so the TUI opens with an unsent draft and the prompt text
@@ -195,9 +206,10 @@ export function buildWindowsDraftLauncherScript({ cwd, title, agentCommand, prom
 
 /**
  * Builds the PowerShell 5.1 script for clipboard mode on Windows: prints the
- * clipboard hint, runs the bare agent command, and reports a non-zero exit.
+ * clipboard hint and the optional `notice`, runs the bare agent command, and
+ * reports a non-zero exit.
  */
-export function buildWindowsClipboardLauncherScript({ cwd, title, bareCommand }) {
+export function buildWindowsClipboardLauncherScript({ cwd, title, bareCommand, notice }) {
   const invocation = windowsBareInvocation(bareCommand)
   const lines = [
     '# Triage Desk launcher (clipboard mode; generated for this launch).',
@@ -205,6 +217,7 @@ export function buildWindowsClipboardLauncherScript({ cwd, title, bareCommand })
     '$Host.UI.RawUI.WindowTitle = ' + windowsQuote(terminalTitle(title)),
     "Write-Host ''",
     "Write-Host 'Triage Desk: the prompt is on your clipboard. Paste it with Ctrl+V, edit it, then send it.'",
+    ...windowsNoticeLines(notice),
     "Write-Host ''",
     invocation,
     ...windowsExitStatusLines('Triage Desk: the agent exited with status '),
@@ -229,9 +242,10 @@ function encodedCommand(script) {
  * nested `powershell.exe -EncodedCommand` (so `.cmd`/`.ps1` shims resolve as
  * usual) and types the prompt from `promptFile` into its input box, unsent.
  * When the host cannot start (no ConPTY before Windows 10 1809, or a compile
- * failure) the agent runs directly and the prompt stays on the clipboard.
+ * failure) the agent runs directly and the prompt stays on the clipboard. The
+ * optional `notice` is printed before either.
  */
-export function buildWindowsPasteLauncherScript({ cwd, title, bareCommand, wrapperFile, promptFile }) {
+export function buildWindowsPasteLauncherScript({ cwd, title, bareCommand, wrapperFile, promptFile, notice }) {
   for (const [name, value] of [['wrapper file', wrapperFile], ['prompt file', promptFile]]) {
     if (typeof value !== 'string' || value.trim() === '' || /[\r\n\u0000]/.test(value)) throw new Error(name + ' is required')
   }
@@ -243,6 +257,7 @@ export function buildWindowsPasteLauncherScript({ cwd, title, bareCommand, wrapp
     '$tdPrompt = ' + windowsQuote(promptFile),
     '$tdHost = ' + windowsQuote(wrapperFile),
     '$tdPasted = $false',
+    ...windowsNoticeLines(notice),
     'try {',
     '  Add-Type -TypeDefinition (Get-Content -Raw -LiteralPath $tdHost -Encoding UTF8) -Language CSharp',
     // CreateProcess command line: the quoted powershell.exe path, then the

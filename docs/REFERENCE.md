@@ -370,7 +370,15 @@ program Settings reports even when its own aliases, functions or `PATH` differ:
   sessions, and only a Group Policy setting overrides that.
 
 When detection could not run (the probe failed) or found no usable absolute
-path, the launch runs the command as written and the terminal resolves it.
+path, the launch runs the command as written and the terminal resolves it. On
+Windows, when detection reported a path that the launch cannot run by (it has no
+drive letter or UNC root, it contains a character the command rules below
+reject, such as a backtick or `$(`, or the command starts with a
+`VAR=value` word), the command also runs as written, and the launch says so: the
+terminal window prints the detected path and the reason before the agent
+starts, the launch toast adds the reason, and the launch result's
+`delivery.pinBlocked` names it (`not-rooted`, `unsafe-path` or
+`command-form`; null when the detected path runs).
 
 **Command rules.** An agent command must contain `{prompt}` exactly once,
 unquoted and unescaped, after the executable word: either as its own argument

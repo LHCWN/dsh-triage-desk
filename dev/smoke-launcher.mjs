@@ -1144,10 +1144,15 @@ await checkAsync('Windows keeps the native draft for an .exe agent only and runs
     { name: 'an .exe agent without a draft flag', agent: 'codex', path: 'C:\\bin\\codex.exe', mode: 'paste' },
     { name: 'an .exe agent without a draft flag, clipboard delivery', agent: 'codex', path: 'C:\\bin\\codex.exe', mode: 'clipboard', config: { promptDelivery: 'clipboard' } },
     { name: 'a UNC .exe agent without a draft flag', agent: 'codex', path: '\\\\srv\\tools\\codex.exe', mode: 'paste' },
-    { name: 'an agent detection found only rooted on the current drive', agent: 'codex', path: '\\bin\\codex.exe', runs: 'codex', mode: 'paste' },
+    // Detection reported a path the pin cannot use: the command runs as
+    // written, and the response and the launcher say why.
+    { name: 'an agent detection found only rooted on the current drive', agent: 'codex', path: '\\bin\\codex.exe', runs: 'codex', mode: 'paste', pin: 'not-rooted' },
+    { name: 'a path rooted on the current drive, clipboard delivery', agent: 'codex', path: '\\bin\\codex.exe', runs: 'codex', mode: 'clipboard', pin: 'not-rooted', config: { promptDelivery: 'clipboard' } },
+    { name: 'a detected path with a backtick', agent: 'codex', path: 'C:\\a`b\\codex.exe', runs: 'codex', mode: 'paste', pin: 'unsafe-path' },
+    { name: "a detected path with $(", agent: 'codex', path: 'C:\\a$(b)\\codex.exe', runs: 'codex', mode: 'clipboard', pin: 'unsafe-path', config: { promptDelivery: 'clipboard' } },
   ]
   try {
-    for (const { name, agent = 'claude', path: detected, runs = detected, build = '10.0.22631', mode, blocked = null, config } of cases) {
+    for (const { name, agent = 'claude', path: detected, runs = detected, build = '10.0.22631', mode, blocked = null, pin = null, config } of cases) {
       os.release = () => build
       await withPlatformHost('win32', (spec, handle) => {
         // An empty path fails the probe, so detection cannot resolve the agent.
@@ -1160,8 +1165,16 @@ await checkAsync('Windows keeps the native draft for an .exe agent only and runs
         const result = await request('/triage-desk/launch', 'POST', { url: PR_URL, agent })
         assert.equal(result.status, 200, name + ': ' + JSON.stringify(result.body))
         assert.equal(result.body.mode, mode, name)
-        assert.deepEqual(result.body.delivery, { mode, pasteBlocked: blocked, platform: 'win32' }, name)
+        assert.deepEqual(result.body.delivery, { mode, pasteBlocked: blocked, platform: 'win32', pinBlocked: pin }, name)
         const script = [...files.entries()].find(([file]) => file.endsWith('launch.ps1'))?.[1].toString('utf8') || ''
+        // Before the agent starts, the window says the detected path was not used.
+        const notice = script.split('\n').find((line) => line.includes('Triage Desk: detection found'))
+        if (pin === null) assert.equal(notice, undefined, name + ': no pin notice when the detected path runs')
+        else {
+          assert.ok(notice !== undefined && notice.trimStart().startsWith("Write-Host '"), name + ': the launcher prints a pin notice')
+          assert.ok(notice.includes(windowsQuote(detected).slice(1, -1)), name + ': the notice names the detected path')
+          assert.ok(script.indexOf(notice) < script.indexOf('& ' + windowsQuote(runs)), name + ': before the agent starts')
+        }
         assert.equal(script.includes('--prefill'), mode === 'draft', name + ': the prompt argument is used only for a native draft')
         const invocation = '& ' + windowsQuote(runs)
         if (mode === 'draft') {

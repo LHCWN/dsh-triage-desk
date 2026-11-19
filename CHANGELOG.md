@@ -24,7 +24,11 @@
   launches start the agent by the absolute path that detection reported, as on
   macOS and Linux. A `$PROFILE` alias or function, or a different PATH order in
   the terminal, cannot start another install or shim than the one Settings
-  shows. When detection found no path, the command runs as written.
+  shows. When detection found no path, the command runs as written. When
+  detection reported a path the launch cannot run by (no drive letter or UNC
+  root, a character the command rules reject, or a `VAR=value` prefix), the
+  command also runs as written, and the terminal window, the launch toast and
+  `delivery.pinBlocked` say why.
 - **Prompt delivery setting.** *Type into the agent* (default) or *Copy to
   clipboard* (`promptDelivery`: `paste` | `clipboard`). When Python 3 or ConPTY
   is missing, Settings says what to install and launches use the clipboard.
