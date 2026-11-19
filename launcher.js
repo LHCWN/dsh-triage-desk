@@ -101,6 +101,7 @@ export {
   buildWindowsDraftLauncherScript,
   buildWindowsLoginLauncherScript,
   buildWindowsPasteLauncherScript,
+  windowsDraftArgumentSafe,
   windowsQuote,
 } from './launcher/windows-scripts.js'
 

@@ -26,6 +26,7 @@ import {
   parseRepoUrl,
   sanitizePastePrompt,
   scenarioTitle,
+  windowsDraftArgumentSafe,
   withAgentExecutable,
 } from '../launcher.js'
 import { LaunchError } from './errors.js'
@@ -239,12 +240,15 @@ export function createLaunch({
     // Native draft support (Claude Code --prefill) opens the agent with the
     // prompt already in its composer. Other agents get it typed into their
     // input box by the paste wrapper when it can run here, else via the
-    // clipboard; `delivery.reason` says why paste was not used.
+    // clipboard; `delivery.pasteBlocked` says why paste was not used. On
+    // Windows the draft argument is safe only for a resolved .exe
+    // (windowsDraftArgumentSafe); a .cmd/.bat shim is treated like an agent
+    // without a draft flag, so the prompt never reaches cmd.exe.
     const windows = platform === 'win32'
     let mode = 'clipboard'
     let pasteBlocked = null
     let python = null
-    if (typeof agent.draftFlag === 'string') {
+    if (typeof agent.draftFlag === 'string' && (!windows || windowsDraftArgumentSafe(detectedPath))) {
       mode = 'draft'
     } else if (launcherSettings.promptDelivery === 'paste') {
       const support = await detectPasteSupport().catch(() => ({ available: false, reason: 'python-missing', python: null }))

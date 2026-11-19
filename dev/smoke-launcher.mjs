@@ -1114,6 +1114,45 @@ await checkAsync('Windows draft, clipboard and login routes write UTF-8 BOM scri
   })
 })
 
+await checkAsync('Windows keeps the native draft for an .exe agent only; .cmd/.bat shims get the prompt typed in', async () => {
+  // cmd.exe re-reads a .cmd/.bat command line, so a prompt argument is not
+  // safe there (issue #5). ConPTY support is read from os.release(): pin it.
+  const release = os.release
+  const cases = [
+    { name: 'an .exe agent', probe: [0, 'C:\\bin\\claude.exe'], build: '10.0.22631', mode: 'draft', blocked: null },
+    { name: 'an npm .cmd shim', probe: [0, 'C:\\npm\\claude.cmd'], build: '10.0.22631', mode: 'paste', blocked: null },
+    { name: 'a .BAT file', probe: [0, 'C:\\tools\\CLAUDE.BAT'], build: '10.0.22631', mode: 'paste', blocked: null },
+    { name: 'a .ps1 shim', probe: [0, 'C:\\npm\\claude.ps1'], build: '10.0.22631', mode: 'paste', blocked: null },
+    { name: 'an unresolved executable', probe: [1, ''], build: '10.0.22631', mode: 'paste', blocked: null },
+    { name: 'a .cmd shim without ConPTY', probe: [0, 'C:\\npm\\claude.cmd'], build: '10.0.17134', mode: 'clipboard', blocked: 'windows-old' },
+    { name: 'a .cmd shim with clipboard delivery', probe: [0, 'C:\\npm\\claude.cmd'], build: '10.0.22631', mode: 'clipboard', blocked: null, config: { promptDelivery: 'clipboard' } },
+  ]
+  try {
+    for (const entry of cases) {
+      os.release = () => entry.build
+      await withPlatformHost('win32', (spec, handle) => {
+        if (spec.argv[0] === 'powershell.exe') return handle(entry.probe[0], entry.probe[0] === 0 ? '__td__\tclaude\t' + entry.probe[1] + '\t\n' : '')
+        if (spec.argv[0] === 'clip.exe' || spec.argv[0] === 'wt') return handle()
+        throw new Error('unexpected subprocess: ' + spec.argv.join(' '))
+      }, async ({ request, files }) => {
+        const result = await request('/triage-desk/launch', 'POST', { url: PR_URL, agent: 'claude' })
+        assert.equal(result.status, 200, entry.name + ': ' + JSON.stringify(result.body))
+        assert.equal(result.body.mode, entry.mode, entry.name)
+        assert.deepEqual(result.body.delivery, { mode: entry.mode, pasteBlocked: entry.blocked, platform: 'win32' }, entry.name)
+        const script = [...files.entries()].find(([file]) => file.endsWith('launch.ps1'))?.[1].toString('utf8') || ''
+        assert.equal(script.includes('--prefill'), entry.mode === 'draft', entry.name + ': the prompt argument is used only for a native draft')
+        if (entry.mode === 'paste') {
+          assert.ok(script.includes('(paste mode;'), entry.name)
+          const payload = script.match(/-EncodedCommand ' \+ '([A-Za-z0-9+/=]+)'/)
+          assert.equal(Buffer.from(payload[1], 'base64').toString('utf16le'), "& 'claude'", entry.name + ': the agent runs bare')
+        }
+      }, entry.config)
+    }
+  } finally {
+    os.release = release
+  }
+})
+
 await checkAsync('macOS launch opens an iTerm2 tab and reuses it on re-launch', async () => {
   // The fixture fs.stat reports every directory as present, so detectIterm sees
   // iTerm2 installed and the launch takes the tab path. An absolute agent
