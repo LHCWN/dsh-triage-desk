@@ -451,8 +451,9 @@ Updating, removing and reinstalling the plugin never edit the profile's
 `cordis.patch.yml`. The [saved override](#configuration), including a
 `disabled: true` row, stays and applies again when the plugin is reinstalled.
 While the plugin is not installed, DSH logs
-`patch: entry triage-desk not found` each time it loads the profile; the
-warning is harmless.
+`patch: entry triage-desk not found` each time it loads the profile (its offline
+config dump quotes the id: `patch: entry "triage-desk" not found`); the warning
+is harmless.
 
 To start from the defaults, quit DSH and delete the whole `- id: triage-desk`
 override (the line and everything indented under it) from the profile's
@@ -614,10 +615,11 @@ The local install and reload rules are in [DEV_LOCAL.md](DEV_LOCAL.md).
 
 Checks:
 
-- `npm run check:docs`: verifies that relative links and images in every
-  shipped Markdown file (both READMEs, the changelog, and `docs/`) resolve from
-  the linking file's directory, and that `#section` anchors name a heading in
-  the target file.
+- `npm run check:docs`: verifies that relative links, images and `[ref]:`
+  definitions in every shipped Markdown file (both READMEs, the changelog, and
+  `docs/`) resolve from the linking file's directory with exact case, and that
+  `#section` anchors name a heading or `<a id>` anchor in the target file.
+  Links in fenced blocks and code spans are skipped.
 - `npm run smoke:client`: registers the client bundle against a fake module
   loader, checks the slot registrations, validates EN/ZH dictionary parity (key
   sets, placeholders, literal `t()` keys), and tests polling, retries, and
