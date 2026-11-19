@@ -128,3 +128,42 @@ export function buildClipboardLauncherScript({ cwd, title, bareCommand, binDir, 
   ]
   return lines.join('\n')
 }
+
+/**
+ * Builds the `.command` script for paste mode: runs the agent through the
+ * Python paste wrapper (`wrapperFile`, see paste-wrapper.js), which types the
+ * prompt from `promptFile` into the agent's input box without sending it. The
+ * host only chooses this mode when `python` is a working Python 3, so the
+ * script has no fallback of its own; the prompt is also on the clipboard.
+ */
+export function buildPasteLauncherScript({ cwd, title, bareCommand, python, wrapperFile, promptFile, binDir, platform = 'darwin' }) {
+  if (typeof bareCommand !== 'string' || bareCommand.trim() === '') throw new Error('bare agent command is required')
+  for (const [name, value] of [['python', python], ['wrapper file', wrapperFile], ['prompt file', promptFile]]) {
+    if (typeof value !== 'string' || !path.isAbsolute(value) || /[\r\n\u0000]/.test(value)) throw new Error(name + ' must be absolute')
+  }
+  assertAbsoluteCwd(cwd)
+  const displayTitle = terminalTitle(title)
+  const shell = posixLauncherShell(platform)
+  const shellPath = shell.shebang.slice(2)
+  const lines = [
+    shell.shebang,
+    '# Triage Desk launcher (paste mode; generated for this launch).',
+    'rm -f -- "$0"',
+    'cd -- ' + shellQuote(cwd) + ' || {',
+    "  printf 'Triage Desk: the clone directory is gone: %s\\n' " + shellQuote(cwd),
+    '  exec ' + shell.interactive,
+    '}',
+    "printf '\\033]0;%s\\007' " + shellQuote(displayTitle),
+    "printf '\\nTriage Desk: the prompt will appear in the agent'\\''s input box. Review it, then press Enter.\\n\\n'",
+    ...agentPathLines(binDir),
+    [shellQuote(python), '-I', shellQuote(wrapperFile), shellQuote(promptFile), shellQuote(shellPath), '-c', shellQuote(bareCommand)].join(' '),
+    'TD_STATUS=$?',
+    'rm -f -- ' + shellQuote(wrapperFile),
+    'if [ "$TD_STATUS" -ne 0 ]; then',
+    "  printf '\\nTriage Desk: the agent exited with status %s\\n' \"$TD_STATUS\"",
+    'fi',
+    'exec ' + shell.interactive,
+    '',
+  ]
+  return lines.join('\n')
+}

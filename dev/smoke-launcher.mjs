@@ -55,6 +55,13 @@ import {
   parseSshConfigHosts,
   remoteToRepo,
   withAgentExecutable,
+  PASTE_TRUST_PATTERN,
+  TERMINAL_CATALOG,
+  buildGhosttyTabAppleScript,
+  buildPasteLauncherScript,
+  buildWindowsPasteLauncherScript,
+  normalizeTerminalChoice,
+  sanitizePastePrompt,
 } from '../launcher.js'
 
 const checks = []
@@ -725,10 +732,12 @@ check('terminal opener plan opens a macOS Terminal window without iTerm2', () =>
   assert.deepEqual(openTerminalPlan('darwin', { scriptPath }), {
     argv: ['/usr/bin/open', '-a', 'Terminal', scriptPath],
     variant: 'window',
+    app: 'terminal',
   })
   assert.deepEqual(openTerminalPlan('darwin', { scriptPath: '/tmp/launch.command', tab: false }), {
     argv: ['/usr/bin/open', '-a', 'Terminal', '/tmp/launch.command'],
     variant: 'window',
+    app: 'terminal',
   })
 })
 
@@ -749,6 +758,7 @@ check('terminal opener plan opens an iTerm2 tab when iTerm2 is present', () => {
   assert.deepEqual(openTerminalPlan('darwin', { scriptPath, iterm: true, tab: false }), {
     argv: ['/usr/bin/open', '-a', 'Terminal', scriptPath],
     variant: 'window',
+    app: 'terminal',
   })
   assert.throws(() => buildItermTabAppleScript(''), /launcher script path/)
   assert.throws(() => buildItermTabAppleScript('/tmp/a\nb'), /launcher script path/)
@@ -1365,7 +1375,7 @@ await checkAsync('a bash login shell is probed interactively and its job-control
   try {
     await withPlatformHost('linux', (spec, handle) => {
       if (spec.argv[3] === 'triage-desk') {
-        probes.push(spec.argv.slice(0, 2))
+        probes.push({ shell: spec.argv.slice(0, 2), names: spec.argv.slice(4) })
         assert.equal(spec.stdio.stdin, 'ignore')
         return handle(0, 'rc noise\n' + probeOutput(spec.argv.slice(4), (name) => '/home/me/.nvm/bin/' + name),
           'bash: cannot set terminal process group (1): Inappropriate ioctl for device\nbash: no job control in this shell\n')
@@ -1375,7 +1385,12 @@ await checkAsync('a bash login shell is probed interactively and its job-control
       const config = await request('/triage-desk/config')
       assert.deepEqual(config.body.config.detectedAgents.claude, { available: true, path: '/home/me/.nvm/bin/claude', executable: 'claude' })
     })
-    assert.deepEqual(probes, [['/bin/bash', '-lic']])
+    // Settings costs two login-shell probes: the agents, and one shared lookup
+    // of the machine tools (terminal emulators and python3 for the paste wrapper).
+    assert.equal(probes.length, 2, JSON.stringify(probes))
+    for (const probe of probes) assert.deepEqual(probe.shell, ['/bin/bash', '-lic'])
+    const tools = probes.find((probe) => probe.names.includes('python3'))
+    assert.ok(tools && tools.names.includes('ghostty') && tools.names.includes('gnome-terminal'), JSON.stringify(probes))
   } finally {
     if (oldShell === undefined) delete process.env.SHELL
     else process.env.SHELL = oldShell
@@ -1556,6 +1571,80 @@ check('Windows Terminal arguments escape the ; command separator', () => {
   }
   const cmd = openTerminalPlan('win32', { scriptPath: 'C:\\x.ps1', title: 'a;b' })
   assert.equal(cmd.argv.includes('a\\;b'), false, 'cmd.exe start has no wt parsing')
+})
+
+check('terminal choices are validated against every platform catalog', () => {
+  assert.deepEqual(TERMINAL_CATALOG.darwin.map((entry) => entry.id), ['terminal', 'iterm', 'ghostty'])
+  assert.ok(TERMINAL_CATALOG.linux.some((entry) => entry.id === 'ghostty'))
+  assert.deepEqual(TERMINAL_CATALOG.win32.map((entry) => entry.id), ['windows-terminal', 'console'])
+  assert.equal(normalizeTerminalChoice(' Ghostty '), 'ghostty')
+  assert.equal(normalizeTerminalChoice('hyper'), 'auto')
+  assert.equal(normalizeTerminalChoice(undefined), 'auto')
+  const config = normalizeLauncherConfig({})
+  assert.equal(config.terminal, 'auto')
+  assert.equal(config.promptDelivery, 'paste', 'typing prompts in is the default')
+  assert.equal(normalizeLauncherConfig({ promptDelivery: 'clipboard' }).promptDelivery, 'clipboard')
+  assert.equal(normalizeLauncherConfig({ promptDelivery: 'fax' }).promptDelivery, 'paste')
+})
+
+check('Ghostty opens a tab, falls back to a window, and is focused by tab title', () => {
+  const scriptPath = "/tmp/it's here/launch.command"
+  assert.deepEqual(openTerminalPlan('darwin', { scriptPath, app: 'ghostty' }), {
+    argv: ['/usr/bin/osascript', '-e', buildGhosttyTabAppleScript(scriptPath)],
+    variant: 'tab',
+    app: 'ghostty',
+  })
+  assert.ok(buildGhosttyTabAppleScript(scriptPath).includes(`set command of launchConfig to "'/tmp/it'\\\\''s here/launch.command'"`),
+    'the path is shell-quoted, then escaped as an AppleScript string')
+  assert.deepEqual(openTerminalPlan('darwin', { scriptPath, app: 'ghostty', tab: false }).argv,
+    ['/usr/bin/open', '-na', 'Ghostty', '--args', '-e', scriptPath])
+  assert.deepEqual(openTerminalPlan('darwin', { scriptPath, app: 'terminal' }).argv, ['/usr/bin/open', '-a', 'Terminal', scriptPath])
+  assert.equal(openTerminalPlan('darwin', { scriptPath, iterm: true }).variant, 'tab', 'the older iterm flag still selects iTerm2')
+  const focus = focusTerminalPlan('darwin', { title: 'Triage Desk: "x" [Codex]', app: 'ghostty' })
+  assert.ok(focus.argv[2].includes('if not matched and name of t contains "Triage Desk: \\"x\\" [Codex]" then'))
+  assert.equal(focusTerminalPlan('darwin', { title: 't', app: 'terminal' }), null)
+  assert.deepEqual(openTerminalPlan('linux', { scriptPath, terminal: '/usr/bin/ghostty' }).argv, ['/usr/bin/ghostty', '-e', scriptPath])
+  assert.deepEqual(openTerminalPlan('win32', { scriptPath: 'C:\\t\\launch.ps1', wt: '' }).argv.slice(0, 4), ['cmd.exe', '/c', 'start', ''],
+    'the PowerShell window choice skips Windows Terminal')
+})
+
+check('paste prompts lose control characters but keep newlines and tabs', () => {
+  assert.equal(sanitizePastePrompt('a\r\nb\rc\x1b[201~d\te\u0007\u009b'), 'a\nb\nc[201~d\te')
+  for (const text of ['Trust this folder?', 'Do you trust the contents of this project?', 'a project you created or one you trust?']) {
+    assert.ok(new RegExp(PASTE_TRUST_PATTERN.replace('(?i)', ''), 'i').test(text), text)
+  }
+  assert.ok(!new RegExp(PASTE_TRUST_PATTERN.replace('(?i)', ''), 'i').test('Trusted Types policy updated'))
+})
+
+check('paste launcher scripts run the wrapper on POSIX and the ConPTY host on Windows', () => {
+  const posix = buildPasteLauncherScript({
+    cwd: "/home/me/it's a clone",
+    title: 'Triage Desk: x [Codex]',
+    bareCommand: '/usr/bin/codex --model=gpt-5',
+    python: '/usr/bin/python3',
+    wrapperFile: '/tmp/td/paste-wrapper.py',
+    promptFile: '/tmp/td/prompt.txt',
+    binDir: '/usr/bin',
+    platform: 'linux',
+  })
+  assert.ok(posix.startsWith('#!/bin/sh\n'))
+  assert.ok(posix.includes("\n'/usr/bin/python3' -I '/tmp/td/paste-wrapper.py' '/tmp/td/prompt.txt' '/bin/sh' -c '/usr/bin/codex --model=gpt-5'\n"), posix)
+  assert.ok(posix.includes("rm -f -- '/tmp/td/paste-wrapper.py'"))
+  assert.ok(posix.includes('exec "${SHELL:-/bin/sh}" -i'), 'a shell stays after the agent exits')
+  assert.throws(() => buildPasteLauncherScript({ cwd: '/w', title: 't', bareCommand: 'codex', python: 'python3', wrapperFile: '/w.py', promptFile: '/p' }), /python must be absolute/)
+  const windows = buildWindowsPasteLauncherScript({
+    cwd: 'C:\\Users\\O\'Brien\\repo',
+    title: 'Triage Desk: x [Codex]',
+    bareCommand: 'codex --model=gpt-5',
+    wrapperFile: 'C:\\Temp\\td\\paste-host.cs',
+    promptFile: 'C:\\Temp\\td\\prompt.txt',
+  })
+  const payload = windows.match(/-EncodedCommand ' \+ '([A-Za-z0-9+/=]+)'/)
+  assert.ok(payload, windows)
+  assert.equal(Buffer.from(payload[1], 'base64').toString('utf16le'), "& 'codex' '--model=gpt-5'")
+  assert.ok(windows.includes('[TriageDesk.PasteHost]::Run($tdCommand, $tdPrompt, (Get-Location).ProviderPath)'))
+  assert.ok(windows.includes("if (-not $tdPasted) {\n  & 'codex' '--model=gpt-5'\n}"), 'a failed host runs the agent directly')
+  assert.ok(windows.includes("Set-Location -LiteralPath 'C:\\Users\\O''Brien\\repo'"))
 })
 
 await fs.rm(fixture, { recursive: true, force: true })

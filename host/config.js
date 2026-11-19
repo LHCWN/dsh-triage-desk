@@ -16,9 +16,12 @@ import {
   MAX_CLONE_DIRS,
   MAX_REPO_PATHS,
   MAX_SCENARIOS,
+  PROMPT_DELIVERY_MODES,
   REPO_PATTERN,
   SCENARIO_REASON_LABELS,
   SCENARIO_SECTION_LABELS,
+  TERMINAL_AUTO,
+  TERMINAL_IDS,
   defaultScenarios,
   expandHome,
   hasSafePromptPlaceholder,
@@ -40,9 +43,16 @@ export const EDITABLE_FIELDS = [
   'repoPaths',
   'scenarios',
   'defaultScenario',
+  'terminal',
+  'promptDelivery',
 ]
 
-export function publicConfig(settings, runtime, launcher, detected) {
+/**
+ * `detected` is the agent detection map; `environment` carries what the host
+ * found on this machine: `terminals` (detectTerminals) and `promptPaste`
+ * (whether the paste wrapper can run, and why not).
+ */
+export function publicConfig(settings, runtime, launcher, detected, environment = {}) {
   return {
     orgs: settings.orgs,
     includePersonal: settings.includePersonal,
@@ -62,6 +72,11 @@ export function publicConfig(settings, runtime, launcher, detected) {
     scenarios: launcher.scenarios,
     defaultScenario: launcher.defaultScenario,
     scenarioDefaults: defaultScenarios(),
+    terminal: launcher.terminal,
+    promptDelivery: launcher.promptDelivery,
+    terminals: environment.terminals || null,
+    promptPaste: environment.promptPaste || null,
+    platform: environment.platform || process.platform,
     supportsPrompt: true,
     supportsAgentDiscovery: true,
     detectedAgents: detected || {},
@@ -200,6 +215,17 @@ export function sanitizePatch(input, currentLauncher) {
       throw new BadRequest(`refreshSeconds must be an integer between ${min} and ${max}`)
     }
     patch.refreshSeconds = value
+  }
+  if (input.terminal !== undefined) {
+    const id = typeof input.terminal === 'string' ? input.terminal.trim().toLowerCase() : ''
+    if (id !== TERMINAL_AUTO && !TERMINAL_IDS.includes(id)) throw new BadRequest(`unknown terminal "${id}"`)
+    patch.terminal = id
+  }
+  if (input.promptDelivery !== undefined) {
+    if (!PROMPT_DELIVERY_MODES.includes(input.promptDelivery)) {
+      throw new BadRequest(`promptDelivery must be one of ${PROMPT_DELIVERY_MODES.join(', ')}`)
+    }
+    patch.promptDelivery = input.promptDelivery
   }
   if (input.agents !== undefined) patch.agents = sanitizeAgents(input.agents)
   if (input.defaultAgent !== undefined) {

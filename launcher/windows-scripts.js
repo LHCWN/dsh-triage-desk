@@ -125,6 +125,63 @@ export function buildWindowsClipboardLauncherScript({ cwd, title, bareCommand })
 }
 
 /**
+ * PowerShell `-EncodedCommand` payload: base64 of the UTF-16LE script text
+ * (about_PowerShell_exe, 5.1: "Accepts a base-64-encoded string version of a
+ * command"), so the agent invocation needs no command-line quoting.
+ */
+function encodedCommand(script) {
+  return Buffer.from(script, 'utf16le').toString('base64')
+}
+
+/**
+ * Builds the PowerShell 5.1 script for paste mode on Windows: compiles the C#
+ * ConPTY paste host (`wrapperFile`, see paste-wrapper.js), runs the agent in a
+ * nested `powershell.exe -EncodedCommand` (so `.cmd`/`.ps1` shims resolve as
+ * usual) and types the prompt from `promptFile` into its input box, unsent.
+ * When the host cannot start (no ConPTY before Windows 10 1809, or a compile
+ * failure) the agent runs directly and the prompt stays on the clipboard.
+ */
+export function buildWindowsPasteLauncherScript({ cwd, title, bareCommand, wrapperFile, promptFile }) {
+  for (const [name, value] of [['wrapper file', wrapperFile], ['prompt file', promptFile]]) {
+    if (typeof value !== 'string' || value.trim() === '' || /[\r\n\u0000]/.test(value)) throw new Error(name + ' is required')
+  }
+  const invocation = windowsBareInvocation(bareCommand)
+  const lines = [
+    '# Triage Desk launcher (paste mode; generated for this launch).',
+    windowsScriptCwd(cwd),
+    '$Host.UI.RawUI.WindowTitle = ' + windowsQuote(terminalTitle(title)),
+    '$tdPrompt = ' + windowsQuote(promptFile),
+    '$tdHost = ' + windowsQuote(wrapperFile),
+    '$tdPasted = $false',
+    'try {',
+    '  Add-Type -TypeDefinition (Get-Content -Raw -LiteralPath $tdHost -Encoding UTF8) -Language CSharp',
+    // CreateProcess command line: the quoted powershell.exe path, then the
+    // base64 payload (only [A-Za-z0-9+/=], so it needs no quoting).
+    `  $tdCommand = '"' + (Join-Path $PSHOME 'powershell.exe') + '" -NoLogo -EncodedCommand ' + ` +
+      windowsQuote(encodedCommand(invocation)),
+    "  Write-Host ''",
+    "  Write-Host 'Triage Desk: the prompt will appear in the agent''s input box. Review it, then press Enter.'",
+    "  Write-Host ''",
+    '  $global:LASTEXITCODE = [TriageDesk.PasteHost]::Run($tdCommand, $tdPrompt, (Get-Location).ProviderPath)',
+    '  $tdPasted = $true',
+    '} catch {',
+    "  Write-Host ''",
+    "  Write-Host ('Triage Desk: could not type the prompt into the agent (' + $_.Exception.Message + ').')",
+    "  Write-Host 'The prompt is on your clipboard. Paste it with Ctrl+V, edit it, then send it.'",
+    "  Write-Host ''",
+    '}',
+    'Remove-Item -LiteralPath $tdPrompt, $tdHost -Force -ErrorAction SilentlyContinue',
+    'if (-not $tdPasted) {',
+    '  ' + invocation,
+    '}',
+    ...windowsExitStatusLines('Triage Desk: the agent exited with status '),
+    'Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue',
+    '',
+  ]
+  return lines.join('\n')
+}
+
+/**
  * Builds the PowerShell 5.1 script for the GitHub login button: runs
  * `gh auth login --web` and prints the result hint. The opener keeps the
  * window open with `-NoExit`.

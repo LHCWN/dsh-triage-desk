@@ -26,17 +26,29 @@ import the launcher layer only through `launcher.js` and the data layer through
     with `meta.lastError`);
   - `config.js` — `EDITABLE_FIELDS`, `sanitizePatch`, `publicConfig`;
   - `processes.js` — `createProcesses`: `runProcess`, executable lookup,
-    clipboard, `openTerminal` (focus-or-reuse an existing tab, else open a tab in
-    the shared window with a window fallback), `startLinuxTerminal` (acknowledges
-    an emulator still running after 500 ms instead of waiting for it), Windows
-    Terminal / iTerm2 / `wmctrl`·`xdotool` detection;
+    clipboard, `openTerminal(scriptPath, title, signal, choice)` (resolves the
+    saved terminal choice, falling back to Automatic when it is not installed;
+    focus-or-reuse an existing tab, else open a tab in the shared window with a
+    window fallback; the result carries `terminal: { id, label, fallback }`),
+    `startLinuxTerminal` (acknowledges an emulator still running after 500 ms
+    instead of waiting for it), `detectTerminals` (the platform catalog with
+    what is installed and what Automatic resolves to), `detectPasteSupport`
+    (`{ available, reason, python }`: Python 3 with `pty` on macOS/Linux —
+    `xcode-select -p` is checked before `/usr/bin/python3`, which is only an
+    installer stub without the Command Line Tools — and ConPTY, build 17763+,
+    on Windows), and `wmctrl`·`xdotool` detection. Terminal emulators and
+    `python3` share one cached login-shell lookup (`locateTools`);
   - `agents.js` — `createAgents`: `detectAgents` (one login-shell probe for all
     agents, absolute paths only) and `discoverAgents`;
   - `clones.js` — `createClones`: clone directories and scans, workspace
     fallback, native directory picker, `resolveClone`;
   - `launch.js` — `createLaunch`: scenario/agent resolution,
     `renderScenarioPrompt`, `launchForItem` (runs the detected path and passes
-    its directory as `binDir`), temp directories, `openLoginTerminal`;
+    its directory as `binDir`; picks the delivery mode — `draft` for agents with
+    a native draft flag, `paste` when `promptDelivery` is `paste` and
+    `detectPasteSupport` allows it, else `clipboard` with `delivery.pasteBlocked`
+    naming the reason; the clipboard always gets a copy), temp directories,
+    `openLoginTerminal`;
   - `gh.js` — `createGh`: `gh`/`git` resolution and auth status;
   - `http.js`, `errors.js`, `tool-text.js` — JSON body/response helpers,
     `BadRequest`/`LaunchError`, and the tool's text rendering.
@@ -80,7 +92,22 @@ import the launcher layer only through `launcher.js` and the data layer through
   - `scenarios.js` and `prompt.js` — built-in scenarios, normalization and
     validation, section/reason labels, and prompt rendering (item tokens,
     section `{links}` block, safe trimming);
-  - `settings.js` — `normalizeLauncherConfig`;
+  - `settings.js` — `normalizeLauncherConfig` (also `terminal`, via
+    `normalizeTerminalChoice`, and `promptDelivery`: `paste` | `clipboard`);
+  - `terminals.js` — `TERMINAL_CATALOG` per platform (`id`, `label`, whether a
+    launch opens a tab, macOS app bundles or Linux/Windows executable names),
+    `TERMINAL_IDS`, `normalizeTerminalChoice`;
+  - `paste-wrapper.js` — the paste wrapper that types a prompt into an agent's
+    input box: `PASTE_WRAPPER_PY` (Python 3 `pty`, macOS/Linux) and
+    `PASTE_WRAPPER_CS` (C# over ConPTY, compiled by PowerShell 5.1 `Add-Type`),
+    one state machine with shared constants (`PASTE_QUIET_MS`,
+    `PASTE_SETTLE_MS`, `PASTE_DEADLINE_MS`, `PASTE_TRUST_PATTERN`): ready once
+    the agent turns bracketed paste on and its output is quiet or has settled, a
+    folder-trust dialog holds the paste until the user presses Enter, then one
+    bracketed paste with no Enter. `sanitizePastePrompt` strips control
+    characters (keeps newline and tab) so the prompt cannot end the paste early.
+    `dev/smoke-paste.mjs` checks both implementations against a fake agent; CI
+    runs it on ubuntu, macOS and Windows;
   - `clones.js` and `repo-urls.js` — `scanCloneDirs` (per-root budget, symlinks
     followed once by realpath), `parseGitConfigRemotes` / `remoteToRepo` (all
     GitHub remotes, scp form with or without a user), `parseSshConfigHosts` /
@@ -88,11 +115,14 @@ import the launcher layer only through `launcher.js` and the data layer through
     `chooseCloneRepo` (upstream, origin, first GitHub remote), `matchClone`,
     `lookupRepoPath` (case-insensitive `repoPaths`);
   - `posix-scripts.js`, `windows-scripts.js`, `terminal-plan.js` — POSIX and
-    PowerShell 5.1 launcher/login scripts, `openTerminalPlan(platform,
-    capabilities)` (iTerm2 tab or Terminal.app window on macOS, shared-window
-    tabs on Windows/Linux), `focusTerminalPlan(platform, capabilities)`
-    (best-effort raise-by-title for focus-or-reuse, `null` when unsupported),
-    and `buildItermTabAppleScript`;
+    PowerShell 5.1 launcher/login scripts (draft, paste, clipboard and login
+    variants), `openTerminalPlan(platform, capabilities)` (macOS `app`: iTerm2
+    or Ghostty tab, Terminal.app window; shared-window tabs on Windows/Linux;
+    `wt: ''` asks for a plain PowerShell window), `focusTerminalPlan(platform,
+    capabilities)` (best-effort raise-by-title for focus-or-reuse in iTerm2,
+    Ghostty, wmctrl/xdotool; `null` when unsupported), and
+    `buildItermTabAppleScript` / `buildGhosttyTabAppleScript` (Ghostty 1.4
+    AppleScript dictionary);
   - `common.js` — small shared helpers.
 
 Useful route boundaries: `GET /triage-desk/snapshot`, `POST /triage-desk/launch`,
@@ -206,6 +236,10 @@ host renders the prompt from the snapshot and returns `scenario`, `count`,
 way so an older running host never receives a request it cannot answer. Additive
 fields the client reads with a fallback for an older host: `invalidAgents`,
 `labels: { sections, reasons }` (prompt preview labels, otherwise raw codes),
+`terminal`, `promptDelivery`, `terminals` (detectTerminals; null hides the
+terminal picker), `promptPaste` (detectPasteSupport; null means unknown and the
+launch menu assumes the clipboard), `platform` (paste keys in hints and toasts),
+the launch result's `terminal` and `delivery: { mode, pasteBlocked, platform }`,
 `detectedAgents[id].executable`, review items' `optional` flag (absent →
 counted), and the optional `{ commands }` body of `POST /triage-desk/agents/find`
 (the host leaves out agents whose executable is already configured; an oversized

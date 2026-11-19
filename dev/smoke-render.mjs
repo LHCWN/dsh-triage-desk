@@ -469,7 +469,15 @@ function settingsHarness({
         const body = JSON.parse(options.body)
         launches.push({ url, body })
         return Promise.resolve(response(200, url === '/triage-desk/launch'
-          ? { ok: true, mode: 'draft', cwd: '/work', count: body.urls ? body.urls.length : 1 }
+          ? {
+              ok: true,
+              mode: 'draft',
+              cwd: '/work',
+              count: body.urls ? body.urls.length : 1,
+              agent: { id: 'claude', label: 'Claude Code' },
+              terminal: { id: 'iterm', label: 'iTerm2', fallback: false },
+              delivery: { mode: 'draft', pasteBlocked: null, platform: 'darwin' },
+            }
           : { ok: true, prompt: 'rendered', trimmed: null }))
       }
       if (url === '/triage-desk/config' && options.method === 'POST') {
@@ -1043,7 +1051,7 @@ for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-
   assert.equal(harness.launches[0].body.reason, 'author-replied', 'a terminal launch sends the author-replied reason')
   assert.equal(harness.launches[0].body.agent, 'claude')
   assert.equal(harness.store.get().openMenu, null, 'a successful launch closes the menu')
-  assert.equal(harness.store.get().toast.text, 'launch.draft:/work')
+  assert.equal(harness.store.get().toast.text, 'launch.draft:Claude Code,iTerm2,/work,⌘V')
   harness.click(rowTrigger())
   harness.change(picker(), 'dsh')
   harness.click(item('link'))
@@ -1058,8 +1066,74 @@ for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-
     scenario: 'review-all', section: 'review', agent: 'claude',
     urls: ['https://github.com/tester/example/pull/1', 'https://github.com/tester/example/pull/2'],
   }, 'a section launch sends the union of its sections')
-  assert.equal(harness.store.get().toast.text, 'launch.draft:/work' + 'launch.countSuffix:2')
+  assert.equal(harness.store.get().toast.text, 'launch.draft:Claude Code,iTerm2,/work,⌘V' + 'launch.countSuffix:2')
   harness.dispose()
+}
+
+{
+  // Terminal choice and prompt delivery: Settings shows this platform's
+  // terminals (uninstalled ones disabled), the delivery cards with a warning
+  // when typing prompts in is not possible, saves both, and the launch menu
+  // says where the agent opens and how it gets the prompt.
+  const configExtra = {
+    platform: 'linux',
+    terminal: 'auto',
+    promptDelivery: 'paste',
+    terminals: {
+      platform: 'linux',
+      auto: 'gnome-terminal',
+      autoLabel: 'GNOME Terminal',
+      options: [
+        { id: 'gnome-terminal', label: 'GNOME Terminal', tabs: true, available: true },
+        { id: 'ghostty', label: 'Ghostty', tabs: false, available: true },
+        { id: 'kitty', label: 'kitty', tabs: false, available: false },
+      ],
+    },
+    promptPaste: { available: true, reason: null },
+  }
+  const linkOnly = state.config.scenarios.filter((scenario) => scenario.id === 'link')
+  const harness = settingsHarness({ snapshotPayload: snapshot, scenarios: linkOnly, configExtra })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+  await harness.flush()
+  const terminalSelect = () => harness.nodes().find((node) => node.type === 'select' && node.props.id === 'adx-terminal')
+  const options = flattenTree(terminalSelect().props.children).filter((node) => node?.type === 'option')
+  assert.deepEqual(options.map((node) => node.props.value), ['auto', 'gnome-terminal', 'ghostty', 'kitty'])
+  assert.equal(flattenTree(options[0].props.children).join(''), 'settings.terminalAuto:GNOME Terminal')
+  assert.equal(options[3].props.disabled, true, 'an uninstalled terminal cannot be picked')
+  assert.ok(harness.text().includes('settings.terminalTabs:GNOME Terminal'), 'automatic explains tabs')
+  harness.change(terminalSelect(), 'ghostty')
+  assert.ok(harness.text().includes('settings.terminalWindows:Ghostty'), 'Ghostty on Linux opens windows')
+  const card = (value) => harness.nodes().find((node) => node.props?.role === 'radio' && node.props['data-value'] === value)
+  assert.equal(card('paste').props['aria-checked'], 'true', 'typing into the agent is the default')
+  assert.ok(harness.text().includes('settings.deliveryClipboardHint:Ctrl+Shift+V'), 'the Linux paste keys are shown')
+  harness.click(card('clipboard'))
+  assert.equal(card('clipboard').props['aria-checked'], 'true')
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('settings.save')))
+  assert.equal(harness.pending.length, 1)
+  assert.equal(harness.pending[0].body.terminal, 'ghostty')
+  assert.equal(harness.pending[0].body.promptDelivery, 'clipboard')
+  harness.dispose()
+
+  // Without a usable Python the paste card warns, and a codex launch says clipboard.
+  const blocked = settingsHarness({
+    snapshotPayload: snapshot,
+    configExtra: { ...configExtra, platform: 'darwin', promptPaste: { available: false, reason: 'python-clt' } },
+  })
+  await blocked.flush()
+  blocked.click(blocked.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+  await blocked.flush()
+  assert.ok(blocked.text().includes('settings.pasteUnavailable.python-clt'), 'the missing-tools warning is shown')
+  blocked.dispose()
+
+  const menu = settingsHarness({ snapshotPayload: snapshot, configExtra })
+  await menu.flush()
+  menu.click(menu.nodes().filter((node) => node.type === 'button' && node.props['aria-label'] === 'launch.title')[0])
+  assert.ok(menu.text().includes('launch.via.draft:GNOME Terminal'), 'Claude Code opens with its native draft')
+  const picker = menu.nodes().find((node) => node.type === 'select' && node.props.className?.includes('adx-launch-agent-select'))
+  menu.change(picker, 'codex')
+  assert.ok(menu.text().includes('launch.via.paste:GNOME Terminal'), 'Codex gets the prompt typed in')
+  menu.dispose()
 }
 
 /* -------------------------------------------- attention badge, counts, snooze */

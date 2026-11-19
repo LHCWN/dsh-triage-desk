@@ -27,6 +27,7 @@ const {
   MAX_SCENARIOS,
   defaultScenarios,
   openTerminalPlan,
+  PASTE_WRAPPER_PY,
 } = await import(path.join(here, '..', 'launcher.js'))
 
 const fixture = await fs.mkdtemp(path.join(os.tmpdir(), 'triage-desk-routes-'))
@@ -44,6 +45,7 @@ const PR_URL_2 = 'https://github.com/acme/widgets/pull/7'
 const OTHER_REPO_URL = 'https://github.com/acme/api/pull/7'
 const OTHER_REPO_URL_2 = 'https://github.com/acme/api/pull/9'
 const captured = {
+  pythonOk: false,
   routes: new Map(),
   tool: null,
   prompt: null,
@@ -128,6 +130,10 @@ function fakeSpawn(spec) {
       return fakeHandle(1, '', 'You are not logged into any GitHub hosts.')
     }
     return fakeHandle(0, '', '')
+  }
+  if (argv[0].endsWith('/python3') && argv[1] === '-I') {
+    // The paste-support probe: a working Python 3 prints its major version.
+    return captured.pythonOk ? fakeHandle(0, '3\n', '') : fakeHandle(1, '', 'no python')
   }
   if (argv[0] === '/usr/bin/git' || argv[0] === 'git') {
     captured.gitCalls.push(argv)
@@ -253,9 +259,19 @@ async function recordAsync(name, callback) {
   }
 }
 
+/**
+ * Removes the per-launch temp directories. Only `triage-desk-*` directories
+ * under the system temp dir are touched: `open -a Terminal` (the activation
+ * nudge) also lands in `launchFiles`, and its "file" is just `Terminal`.
+ */
 async function cleanupLaunches() {
+  const tmp = await fs.realpath(os.tmpdir())
   for (const file of captured.launchFiles.splice(0)) {
-    await fs.rm(path.dirname(file), { recursive: true, force: true }).catch(() => undefined)
+    const dir = path.dirname(file)
+    const real = await fs.realpath(dir).catch(() => '')
+    if (!path.isAbsolute(dir) || !path.basename(dir).startsWith('triage-desk-')) continue
+    if (real === '' || path.dirname(real) !== tmp) continue
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined)
   }
 }
 
@@ -1046,10 +1062,12 @@ await recordAsync('the darwin terminal plan opens a Terminal window', async () =
   assert.deepEqual(openTerminalPlan('darwin', { scriptPath }), {
     argv: ['/usr/bin/open', '-a', 'Terminal', scriptPath],
     variant: 'window',
+    app: 'terminal',
   })
   assert.deepEqual(openTerminalPlan('darwin', { scriptPath, tab: true }), {
     argv: ['/usr/bin/open', '-a', 'Terminal', scriptPath],
     variant: 'window',
+    app: 'terminal',
   })
 })
 
@@ -1089,6 +1107,86 @@ await recordAsync('routes are fenced before doing any work', async () => {
 
 assert.ok(captured.prompt && typeof captured.prompt.text === 'string')
 assert.ok(captured.prompt.text.includes('launch'))
+
+await recordAsync('config GET reports terminals, paste support and the platform', async () => {
+  const res = await callHandler('/triage-desk/config', 'GET')
+  const { config } = await json(res)
+  assert.equal(config.platform, 'darwin')
+  assert.equal(config.terminal, 'auto')
+  assert.equal(config.promptDelivery, 'paste')
+  assert.deepEqual(config.terminals.options.map((entry) => entry.id), ['terminal', 'iterm', 'ghostty'])
+  assert.ok(['iterm', 'terminal'].includes(config.terminals.auto))
+  assert.deepEqual(config.promptPaste, { available: false, reason: 'python-missing', python: null },
+    'a Python that fails the probe is reported as missing')
+})
+
+await recordAsync('config POST validates the terminal and prompt delivery', async () => {
+  const before = captured.edits.length
+  for (const body of [{ terminal: 'no-such-terminal' }, { promptDelivery: 'telepathy' }, { promptDelivery: 1 }]) {
+    const res = await callHandler('/triage-desk/config', 'POST', body)
+    assert.equal(res.statusCode, 400, JSON.stringify(body))
+  }
+  assert.equal(captured.edits.length, before, 'rejected values are never written')
+  const res = await callHandler('/triage-desk/config', 'POST', { terminal: 'Ghostty', promptDelivery: 'clipboard' })
+  assert.equal(res.statusCode, 200, res.body)
+  assert.deepEqual(captured.edits.at(-1), { terminal: 'ghostty', promptDelivery: 'clipboard' })
+})
+
+await recordAsync('without a working Python, agents fall back to the clipboard and say why', async () => {
+  captured.opens.length = 0
+  const res = await callHandler('/triage-desk/launch', 'POST', { url: PR_URL, agent: 'codex' })
+  const payload = await json(res)
+  assert.equal(payload.mode, 'clipboard')
+  assert.deepEqual(payload.delivery, { mode: 'clipboard', pasteBlocked: 'python-missing', platform: 'darwin' })
+  assert.equal(typeof payload.terminal.label, 'string')
+  await cleanupLaunches()
+})
+
+// A second host instance whose login shell has a working python3: agents
+// without a native draft get the prompt typed in by the paste wrapper.
+captured.pythonOk = true
+apply(ctx, {
+  agents: [
+    { id: 'claude', label: 'Claude Code', command: 'claude {prompt}' },
+    { id: 'codex', label: 'Codex', command: 'codex --model=gpt-5 {prompt}' },
+  ],
+  defaultAgent: 'codex',
+  cloneDirs: [path.join(fixture, 'Playground')],
+  terminal: 'terminal',
+})
+
+await recordAsync('paste mode runs the agent through the Python wrapper with the prompt in a file', async () => {
+  captured.opens.length = 0
+  captured.clipboard = null
+  const res = await callHandler('/triage-desk/launch', 'POST', { url: PR_URL, scenario: 'review-pr' })
+  const payload = await json(res)
+  assert.equal(res.statusCode, 200, res.body)
+  assert.equal(payload.mode, 'paste')
+  assert.deepEqual(payload.delivery, { mode: 'paste', pasteBlocked: null, platform: 'darwin' })
+  assert.deepEqual(payload.terminal, { id: 'terminal', label: 'Terminal', fallback: false })
+  assert.ok(captured.clipboard.startsWith('Review the pull request'), 'the clipboard keeps a copy')
+  const launcherFile = captured.opens.find((entry) => entry.length === 4)[3]
+  const script = await fs.readFile(launcherFile, 'utf8')
+  const dir = path.dirname(launcherFile)
+  const wrapper = path.join(dir, 'paste-wrapper.py')
+  const promptFile = path.join(dir, 'prompt.txt')
+  assert.ok(script.includes("'/opt/homebrew/bin/python3' -I '" + wrapper + "' '" + promptFile + "' '/bin/zsh' -c '/opt/homebrew/bin/codex --model=gpt-5'"), script)
+  assert.ok(!script.includes('Review the pull request'), 'the prompt never appears in the script')
+  assert.equal(await fs.readFile(wrapper, 'utf8'), PASTE_WRAPPER_PY)
+  assert.ok((await fs.readFile(promptFile, 'utf8')).startsWith('Review the pull request ' + PR_URL))
+  const tool = await captured.tool.execute({ action: 'launch', url: PR_URL })
+  assert.match(tool.text, /typed into the agent's input box and has not been sent/)
+  assert.equal(tool.launched.mode, 'paste')
+  await cleanupLaunches()
+})
+
+await recordAsync('a native draft agent keeps its draft when paste mode is on', async () => {
+  const res = await callHandler('/triage-desk/launch', 'POST', { url: PR_URL, agent: 'claude' })
+  const payload = await json(res)
+  assert.equal(payload.mode, 'draft')
+  assert.equal(payload.delivery.pasteBlocked, null)
+  await cleanupLaunches()
+})
 
 await fs.rm(fixture, { recursive: true, force: true })
 
