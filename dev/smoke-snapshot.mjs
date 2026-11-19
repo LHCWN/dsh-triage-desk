@@ -905,7 +905,9 @@ await check('a refresh that loses every source keeps the previous snapshot as st
   assert.equal(second.status, 'stale', 'the failed refresh must not replace the good snapshot')
   assert.equal(second.counts.review, 1)
   assert.match(second.text, /PR 8/)
-  assert.match(second.text, /refresh failed, showing the previous snapshot/)
+  // The failed refresh is reported once, in the Status line, not again as a warning.
+  assert.match(second.text, /\nStatus: stale — /)
+  assert.doesNotMatch(second.text, /refresh failed, showing the previous snapshot/)
   failing = false
   const third = await captured.tool.execute({})
   assert.equal(third.status, 'ok', 'the good snapshot is still cached')
@@ -969,8 +971,17 @@ await check('the tool text separates an empty filter from an empty inbox', async
 })
 
 await check('the tool text reports stale and partial snapshots with their reason', async () => {
-  const stale = formatToolText(toolSnapshot({ status: 'stale', meta: { lastError: { code: 'rate-limited', message: 'GitHub rate limit exceeded' } } }), null, toolNow)
+  const stale = formatToolText(toolSnapshot({
+    status: 'stale',
+    meta: { lastError: { code: 'rate-limited', message: 'GitHub rate limit exceeded' } },
+    warnings: [
+      { code: 'orgs-truncated', message: 'only the first 10 organizations are scanned' },
+      { code: 'rate-limited', message: 'refresh failed, showing the previous snapshot: GitHub rate limit exceeded' },
+    ],
+  }), null, toolNow)
   assert.ok(stale.includes('Status: stale — GitHub rate limit exceeded (snapshot from 2026-11-19T12:00:00.000Z)'), stale)
+  assert.ok(stale.includes('Warnings: only the first 10 organizations are scanned'), stale)
+  assert.ok(!stale.includes('refresh failed'), 'the failed refresh is reported once, in the Status line')
   const partial = formatToolText(toolSnapshot({ status: 'partial' }), null, toolNow)
   assert.ok(partial.includes('Status: partial — some sources could not be read'), partial)
   assert.ok(!formatToolText(toolSnapshot(), null, toolNow).includes('Status:'), 'a fresh snapshot has no status line')

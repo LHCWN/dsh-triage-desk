@@ -551,6 +551,9 @@ check('Windows invocations preserve quoted paths and static arguments', () => {
   // A static argument whose whitespace sits only inside quotes needs --%.
   const quotedOnly = buildWindowsClipboardLauncherScript({ cwd: 'C:\\work', title: 'test', bareCommand: 'agent --say "\\"a b\\"" --yes' })
   assert.ok(quotedOnly.includes("& 'agent' --% --say \"\\\"a b\\\"\" --yes"), quotedOnly)
+  // PowerShell 5.1 drops an empty native argument; --% passes it as "".
+  const emptyArg = buildWindowsClipboardLauncherScript({ cwd: 'C:\\work', title: 'test', bareCommand: 'agent --model "" --yes' })
+  assert.ok(emptyArg.includes("& 'agent' --% --model \"\" --yes"), emptyArg)
 })
 
 check('bare commands drop the prompt and its flag', () => {

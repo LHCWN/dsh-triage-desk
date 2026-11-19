@@ -64,7 +64,8 @@ async function check(name, callback) {
  * checked by smoke:launcher), into its own launch directory and runs it.
  */
 async function runLauncher(build) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'triage-desk-'))
+  // Under root, so a launcher that fails to remove it is still cleaned up.
+  const dir = await fs.mkdtemp(path.join(root, 'triage-desk-'))
   const record = path.join(root, 'record-' + path.basename(dir) + '.json')
   const scriptFile = path.join(dir, 'launch.ps1')
   const script = build(dir)
@@ -133,6 +134,15 @@ await check('clipboard launcher keeps static arguments of a .cmd shim', async ()
   }))
   assert.ok(verbatim.recorded, 'the agent ran: ' + verbatim.result.stdout + verbatim.result.stderr)
   assert.deepEqual(verbatim.recorded.argv, ['--say', '"a b"', '--yes'])
+  assert.equal(verbatim.dirLeft, false)
+  // PowerShell 5.1 drops an empty native argument, so it goes through --% too.
+  const empty = await runLauncher(() => buildWindowsClipboardLauncherScript({
+    cwd: clone,
+    title: 'Triage Desk: clipboard',
+    bareCommand: '"' + process.execPath + '" "' + recorder + '" --model "" --yes',
+  }))
+  assert.ok(empty.recorded, 'the agent ran: ' + empty.result.stdout + empty.result.stderr)
+  assert.deepEqual(empty.recorded.argv, ['--model', '', '--yes'])
   assert.equal(realpathSync.native(run.recorded.cwd), realpathSync.native(clone))
   assert.equal(run.dirLeft, false)
 })

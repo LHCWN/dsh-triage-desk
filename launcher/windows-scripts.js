@@ -58,15 +58,26 @@ function escapeArgQuotes(value) {
   return String(value).replace(/(\\*)"/g, '$1$1\\"')
 }
 
-/** The CommandLineToArgvW form of one argument, for a `--%` command line. */
+/**
+ * The CommandLineToArgvW form of one argument, for a `--%` command line.
+ * PowerShell expands `%NAME%` in that line, so a static argument containing
+ * such text is expanded there; agent commands are trusted configuration and
+ * this form is used only when 5.1 cannot pass an argument at all.
+ */
 function windowsCommandLineArg(value) {
   const text = String(value)
   if (text !== '' && !/[\s"]/.test(text)) return text
   return '"' + escapeArgQuotes(text).replace(/(\\+)$/, '$1$1') + '"'
 }
 
-/** A static argument as PowerShell 5.1 must receive it, or null when only `--%` can pass it. */
+/**
+ * A static argument as PowerShell 5.1 must receive it, or null when only `--%`
+ * can pass it. An empty string is null too: 5.1's legacy passing drops empty
+ * arguments (PowerShell 7.3's PSNativeCommandArgumentPassing notes list
+ * passing `''` as `""` among its changes), and `--%` writes it as `""`.
+ */
 function windowsNativeArg(value) {
+  if (String(value) === '') return null
   const escaped = escapeArgQuotes(value)
   if (psWrapsArg(escaped)) return windowsQuote(escaped.replace(/(\\+)$/, '$1$1'))
   return /\s/.test(escaped) ? null : windowsQuote(escaped)
@@ -100,6 +111,8 @@ function windowsBareInvocation(bareCommand) {
  * expression, so the concatenation is one argument). When 5.1 would not wrap
  * the prompt argument although it has whitespace (or a static argument needs
  * it), the line uses `--%` with the argument in `$env:TD_PROMPT_ARG`.
+ * Trailing backslashes are matched with `\z`: in .NET regex `$` also matches
+ * before a final newline.
  */
 function windowsDraftInvocationLines(agentCommand, draftFlag) {
   assertSafeAgentCommand(agentCommand)
@@ -113,7 +126,7 @@ function windowsDraftInvocationLines(agentCommand, draftFlag) {
   const normal = [executable, ...before.map(windowsNativeArg), windowsQuote(draftFlag), promptArg, ...after.map(windowsNativeArg)].join(' ')
   const verbatim = [executable, '--%', ...before.map(windowsCommandLineArg), draftFlag, '%TD_PROMPT_ARG%', ...after.map(windowsCommandLineArg)].join(' ')
   const verbatimLines = [
-    "  $env:TD_PROMPT_ARG = " + windowsQuote(prefix) + " + '\"' + ($prompt -replace '(\\\\+)$', '$1$1') + '\"'",
+    "  $env:TD_PROMPT_ARG = " + windowsQuote(prefix) + " + '\"' + ($prompt -replace '(\\\\+)\\z', '$1$1') + '\"'",
     '  ' + verbatim,
     '  Remove-Item Env:TD_PROMPT_ARG -ErrorAction SilentlyContinue',
   ]
@@ -121,7 +134,7 @@ function windowsDraftInvocationLines(agentCommand, draftFlag) {
   return [
     '$tdArg = ' + (prefix === '' ? '$prompt' : windowsQuote(prefix) + ' + $prompt'),
     'if (Test-TdQuoted $tdArg) {',
-    "  $tdArg = $prompt -replace '(\\\\+)$', '$1$1'",
+    "  $tdArg = $prompt -replace '(\\\\+)\\z', '$1$1'",
     '  ' + normal,
     "} elseif ($tdArg -notmatch '\\s') {",
     '  $tdArg = $prompt',

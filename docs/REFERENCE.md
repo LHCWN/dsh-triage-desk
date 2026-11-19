@@ -523,6 +523,12 @@ the settings endpoint and read with defaults in code, so the bundle needs no
   runs the draft and clipboard launchers for real on Windows in CI: a
   drive-letter clone path with non-ASCII characters and `;`, a prompt with
   quotes and a trailing backslash, an `.exe` agent and an npm-style `.cmd` shim.
+  A `.cmd` shim runs through `cmd.exe`, which reads the command line again and
+  does not treat `\"` as an escaped quote: in a prompt with double quotes, `&`,
+  `|`, `<`, `>` and `^` can fall outside cmd.exe's quoting and act as
+  operators, `%NAME%` is expanded, and a line break ends the command. Such
+  prompts are not passed intact to a `.cmd` agent; an `.exe` agent is not
+  affected.
 - **Linux launch errors**: launches observe immediate startup errors for 500 ms
   and then report success; the emulator keeps running without a lifetime
   timeout. Failures after that window are not reported.

@@ -68,8 +68,13 @@ export function formatToolText(snapshot, wanted, now = Date.now()) {
       ? `Nothing in the requested sections; ${elsewhere} item(s) are in other sections.`
       : 'Nothing needs your attention right now.')
   }
-  if (Array.isArray(snapshot.warnings) && snapshot.warnings.length > 0) {
-    lines.push('', `Warnings: ${snapshot.warnings.map((entry) => entry.message).join('; ')}`)
+  // The Status line already reports a stale snapshot's failed refresh, so its
+  // warning (same code, same message) is not repeated.
+  const lastError = snapshot.status === 'stale' ? snapshot.meta?.lastError : null
+  const warnings = (Array.isArray(snapshot.warnings) ? snapshot.warnings : []).filter((entry) =>
+    !(lastError && entry.code === lastError.code && String(entry.message).includes(lastError.message)))
+  if (warnings.length > 0) {
+    lines.push('', `Warnings: ${warnings.map((entry) => entry.message).join('; ')}`)
   }
   return lines.join('\n')
 }
