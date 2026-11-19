@@ -63,6 +63,9 @@ const captured = {
   ghMissing: false,
 }
 
+const claude = { id: 'claude', label: 'Claude Code', command: 'claude {prompt}' }
+const codex = { id: 'codex', label: 'Codex', command: 'codex {prompt}' }
+
 const customScenarios = [
   {
     id: 'custom-review',
@@ -223,8 +226,8 @@ const ctx = {
 
 apply(ctx, {
   agents: [
-    { id: 'claude', label: 'Claude Code', command: 'claude {prompt}' },
-    { id: 'codex', label: 'Codex', command: 'codex {prompt}' },
+    claude,
+    codex,
     { id: 'missing', label: 'Missing Agent', command: 'missing-agent {prompt}' },
   ],
   defaultAgent: 'claude',
@@ -233,8 +236,8 @@ apply(ctx, {
   defaultScenario: 'link',
 })
 
-async function callHandler(routePath, method, body) {
-  const route = captured.routes.get(routePath)
+async function callHandler(routePath, method, body, routes = captured.routes) {
+  const route = routes.get(routePath)
   if (!route || typeof route.handler !== 'function') throw new Error('missing route ' + routePath)
   const req = Readable.from(body === undefined ? [] : [Buffer.from(JSON.stringify(body))])
   req.method = method
@@ -761,8 +764,8 @@ await recordAsync('config GET reports invalidAgents and POST accepts --flag={pro
   assert.deepEqual(config.config.invalidAgents, [])
   captured.edits.length = 0
   const agents = [
-    { id: 'claude', label: 'Claude Code', command: 'claude {prompt}' },
-    { id: 'codex', label: 'Codex', command: 'codex {prompt}' },
+    claude,
+    codex,
     { id: 'aider', label: 'Aider', command: 'aider --message={prompt}' },
   ]
   const res = await callHandler('/triage-desk/config', 'POST', { agents })
@@ -770,77 +773,27 @@ await recordAsync('config GET reports invalidAgents and POST accepts --flag={pro
   assert.deepEqual(captured.edits[0].agents, agents)
 })
 
-await recordAsync('a saved invalid agent is reported, then repaired by saving the fixed command', async () => {
-  // A separate host instance per "plugin start": the loader re-applies the
-  // plugin with the merged config after configEditor.edit, as DSH does.
-  const startHost = (config) => {
-    const routes = new Map()
-    const edits = []
-    const editor = { entries: () => [entry], edit: async (_entry, change) => { edits.push(change(config)) } }
-    apply({
-      ...ctx,
-      webServer: { register: (route) => { routes.set(route.path, route); return () => {} } },
-      tools: { register: () => () => {} },
-      systemPrompt: { section: () => () => {} },
-      get: (name) => (name === 'configEditor' ? editor : ctx.get(name)),
-    }, config)
-    const call = async (method, body) => {
-      const req = Readable.from(body === undefined ? [] : [Buffer.from(JSON.stringify(body))])
-      Object.assign(req, { method, url: '/triage-desk/config', headers: {} })
-      const res = fakeResponse()
-      await routes.get('/triage-desk/config').handler(req, res)
-      return { status: res.statusCode, body: JSON.parse(res.body) }
-    }
-    return { call, edits }
-  }
-  const legacy = { id: 'legacy', label: 'Legacy', command: 'legacy-agent "{prompt}"' }
-  const claude = { id: 'claude', label: 'Claude Code', command: 'claude {prompt}' }
-  const saved = {
-    agents: [claude, legacy],
-    defaultAgent: 'claude',
-    scenarios: [
-      ...defaultScenarios(),
-      { id: 'legacy-run', label: 'Legacy run', scope: 'item', sections: ['review'], prompt: '{url}', agent: 'legacy', enabled: true },
-    ],
-  }
-  const before = startHost(saved)
-  const config = await before.call('GET')
-  assert.deepEqual(config.body.config.invalidAgents, [{ ...legacy, reason: 'placeholder' }])
-  assert.deepEqual(config.body.config.agents.map((agent) => agent.id), ['claude'])
-  assert.ok(config.body.config.scenarios.some((scenario) => scenario.agent === 'legacy'), 'the pinned scenario is kept')
-
-  const stillInvalid = await before.call('POST', { agents: [claude, legacy] })
-  assert.equal(stillInvalid.status, 400)
-  assert.match(stillInvalid.body.error.message, /agent "legacy" command must contain exactly one \{prompt\}/)
-  assert.equal(before.edits.length, 0)
-
-  const fixed = { ...legacy, command: 'legacy-agent --message={prompt}' }
-  const repaired = await before.call('POST', { agents: [claude, fixed] })
-  assert.equal(repaired.status, 200, JSON.stringify(repaired.body))
-  assert.deepEqual(before.edits[0].agents, [claude, fixed])
-
-  const after = await startHost(before.edits[0]).call('GET')
-  assert.deepEqual(after.body.config.invalidAgents, [])
-  assert.deepEqual(after.body.config.agents.map((agent) => agent.id), ['claude', 'legacy'])
+/** GraphQL answer for every snapshot query: an empty but cacheable (`partial`) snapshot. */
+const EMPTY_GRAPHQL = JSON.stringify({
+  data: {
+    viewer: { login: 'octocat', organizations: { nodes: [] } },
+    rateLimit: { cost: 1, remaining: 4000, resetAt: '2026-01-01T11:00:00Z' },
+  },
 })
 
 /**
- * A plugin fiber as DSH runs it. configEditor.edit writes the profile and the
- * loader calls fiber.update(config), which runs the fiber's own
- * `internal/update` listeners as a waterfall around a restart: a listener
- * that returns without calling next() keeps the running instance (cordis
- * src/events.ts and src/fiber.ts `update`; the loader's Group plugin applies
- * its config this way). The restart disposes every effect of the fiber,
- * tools and routes included, and applies the plugin again.
+ * A DSH plugin fiber: a save runs the `internal/update` waterfall documented
+ * on the listener in index.js, then (if no listener stopped it) a restart that
+ * disposes every owned effect and applies the plugin again. `hookConfig`
+ * picks the config value the listeners receive.
  */
-function startFiber(initialConfig) {
+function startFiber(initialConfig, hookConfig = (config) => config) {
   const tools = new Map()
   const routes = new Map()
   let effects = new Set()
   let updateHooks = []
   let config = initialConfig
-  const stats = { restarts: 0, toolUnregistrations: 0, registeredDuringSave: [], warnings: [] }
-  let failNextWire = false
+  const stats = { saves: 0, restarts: 0, toolUnregistrations: 0, githubCalls: 0, registeredDuringSave: [], warnings: [] }
   const own = (dispose) => {
     effects.add(dispose)
     return dispose
@@ -848,26 +801,8 @@ function startFiber(initialConfig) {
   const editor = {
     entries: () => [entry],
     edit: async (_entry, change) => {
-      const next = change(config, {})
-      if (failNextWire) {
-        // Test switch: the next read of `orgs` throws, so the live rewire of
-        // this save fails inside normalizeSettings. Only the first read
-        // throws, so the fallback restart applies the plugin with the same
-        // config and comes back up.
-        failNextWire = false
-        const orgs = next.orgs
-        let thrown = false
-        Object.defineProperty(next, 'orgs', {
-          configurable: true,
-          enumerable: true,
-          get() {
-            if (thrown) return orgs
-            thrown = true
-            throw new Error('settings cannot be wired')
-          },
-        })
-      }
-      const updating = Promise.resolve(update(next))
+      stats.saves += 1
+      const updating = Promise.resolve(update(change(config, {})))
       // A triage_desk call arriving while the loader applies the save.
       stats.registeredDuringSave.push(tools.has('triage_desk'))
       await updating
@@ -888,7 +823,16 @@ function startFiber(initialConfig) {
         updateHooks = updateHooks.filter((hook) => hook !== listener)
       })
     },
+    subprocess: {
+      ...ctx.subprocess,
+      spawn: (spec) => {
+        if (spec.argv[1] !== 'api') return ctx.subprocess.spawn(spec)
+        stats.githubCalls += 1
+        return fakeHandle(0, EMPTY_GRAPHQL, '')
+      },
+    },
     webServer: {
+      // Owned through the ctx.effect that every route registration runs in.
       register: (route) => {
         routes.set(route.path, route)
         return () => routes.delete(route.path)
@@ -919,40 +863,57 @@ function startFiber(initialConfig) {
     const hooks = [...updateHooks]
     const dispatch = () => {
       const hook = hooks.shift()
-      return hook === undefined ? restart() : hook(next, dispatch)
+      return hook === undefined ? restart() : hook(hookConfig(next), dispatch)
     }
     return dispatch()
   }
   apply(fiberCtx(), config)
   const call = async (method, body) => {
-    const req = Readable.from(body === undefined ? [] : [Buffer.from(JSON.stringify(body))])
-    Object.assign(req, { method, url: '/triage-desk/config', headers: {} })
-    const res = fakeResponse()
-    await routes.get('/triage-desk/config').handler(req, res)
+    const res = await callHandler('/triage-desk/config', method, body, routes)
     return { status: res.statusCode, body: JSON.parse(res.body) }
   }
-  return {
-    call,
-    tools,
-    stats,
-    failNextWire: () => {
-      failNextWire = true
-    },
-  }
+  return { call, tools, stats }
 }
 
+await recordAsync('a saved invalid agent is reported, then repaired by saving the fixed command', async () => {
+  const legacy = { id: 'legacy', label: 'Legacy', command: 'legacy-agent "{prompt}"' }
+  const host = startFiber({
+    agents: [claude, legacy],
+    defaultAgent: 'claude',
+    scenarios: [
+      ...defaultScenarios(),
+      { id: 'legacy-run', label: 'Legacy run', scope: 'item', sections: ['review'], prompt: '{url}', agent: 'legacy', enabled: true },
+    ],
+  })
+  const config = await host.call('GET')
+  assert.deepEqual(config.body.config.invalidAgents, [{ ...legacy, reason: 'placeholder' }])
+  assert.deepEqual(config.body.config.agents.map((agent) => agent.id), ['claude'])
+  assert.ok(config.body.config.scenarios.some((scenario) => scenario.agent === 'legacy'), 'the pinned scenario is kept')
+
+  const stillInvalid = await host.call('POST', { agents: [claude, legacy] })
+  assert.equal(stillInvalid.status, 400)
+  assert.match(stillInvalid.body.error.message, /agent "legacy" command must contain exactly one \{prompt\}/)
+  assert.equal(host.stats.saves, 0)
+
+  const fixed = { ...legacy, command: 'legacy-agent --message={prompt}' }
+  const repaired = await host.call('POST', { agents: [claude, fixed] })
+  assert.equal(repaired.status, 200, JSON.stringify(repaired.body))
+  assert.deepEqual(repaired.body.saved.agents, [claude, fixed])
+
+  const after = await host.call('GET')
+  assert.deepEqual(after.body.config.invalidAgents, [])
+  assert.deepEqual(after.body.config.agents.map((agent) => agent.id), ['claude', 'legacy'])
+})
+
 await recordAsync('a settings save keeps triage_desk registered and applies the settings live', async () => {
-  const claude = { id: 'claude', label: 'Claude Code', command: 'claude {prompt}' }
-  const codex = { id: 'codex', label: 'Codex', command: 'codex {prompt}' }
   const host = startFiber({ agents: [claude, codex], defaultAgent: 'claude', refreshSeconds: 600 })
   const tool = host.tools.get('triage_desk')
   assert.ok(tool, 'the tool is registered at start')
 
   const saved = await host.call('POST', { defaultAgent: 'codex', refreshSeconds: 900, terminal: 'iterm' })
   assert.equal(saved.status, 200, JSON.stringify(saved.body))
-  assert.equal(saved.body.restarting, false, 'the save was applied without a restart')
   assert.deepEqual(host.stats.registeredDuringSave, [true, true], 'triage_desk stays callable during the save')
-  assert.equal(host.stats.restarts, 0)
+  assert.equal(host.stats.restarts, 0, 'the save was applied without a restart')
   assert.equal(host.stats.toolUnregistrations, 0)
   assert.equal(host.tools.get('triage_desk'), tool, 'the same tool registration serves calls after the save')
 
@@ -967,17 +928,37 @@ await recordAsync('a settings save keeps triage_desk registered and applies the 
   assert.equal(host.stats.restarts, 0)
 })
 
+await recordAsync('a launcher-only save keeps the cached snapshot; a GitHub settings change rebuilds it', async () => {
+  const host = startFiber({ agents: [claude, codex], defaultAgent: 'claude' })
+  const report = () => host.tools.get('triage_desk').execute({})
+  assert.equal((await report()).status, 'partial', 'the fake GitHub answers with a cacheable snapshot')
+  const built = host.stats.githubCalls
+  assert.ok(built > 0, 'the first report builds a snapshot')
+
+  const launcherOnly = await host.call('POST', { defaultAgent: 'codex', terminal: 'iterm', promptDelivery: 'clipboard' })
+  assert.equal(launcherOnly.status, 200, JSON.stringify(launcherOnly.body))
+  await report()
+  assert.equal(host.stats.githubCalls, built, 'no GitHub call after a save that keeps the GitHub settings')
+
+  const github = await host.call('POST', { includeBotReviews: true })
+  assert.equal(github.status, 200, JSON.stringify(github.body))
+  await report()
+  assert.ok(host.stats.githubCalls > built, 'a GitHub settings change builds a new snapshot')
+  assert.equal(host.stats.restarts, 0)
+})
+
 await recordAsync('a settings save that cannot be applied live falls back to a restart', async () => {
-  const claude = { id: 'claude', label: 'Claude Code', command: 'claude {prompt}' }
-  const codex = { id: 'codex', label: 'Codex', command: 'codex {prompt}' }
-  const host = startFiber({ agents: [claude, codex], defaultAgent: 'claude', orgs: ['acme'] })
+  // normalizeSettings reads the config, so the listener's wire() throws.
+  const unwirable = new Proxy({}, { get: () => { throw new Error('settings cannot be wired') } })
+  let poisoned = true
+  const host = startFiber({ agents: [claude, codex], defaultAgent: 'claude', orgs: ['acme'] }, (config) =>
+    poisoned ? unwirable : config,
+  )
   const tool = host.tools.get('triage_desk')
   assert.ok(tool, 'the tool is registered at start')
 
-  host.failNextWire()
   const saved = await host.call('POST', { defaultAgent: 'codex' })
   assert.equal(saved.status, 200, JSON.stringify(saved.body))
-  assert.equal(saved.body.restarting, true, 'the response reports the restart')
   assert.equal(host.stats.restarts, 1, 'the failed rewire called next() into the restart')
   assert.equal(host.stats.toolUnregistrations, 1, 'the restart disposed the old tool registration')
   assert.deepEqual(host.stats.registeredDuringSave, [false, true], 'the tool is back once the restart finished')
@@ -992,10 +973,10 @@ await recordAsync('a settings save that cannot be applied live falls back to a r
   const config = await host.call('GET')
   assert.equal(config.body.config.defaultAgent, 'codex', 'the restarted host serves the saved settings')
 
+  poisoned = false
   const again = await host.call('POST', { defaultAgent: 'claude' })
   assert.equal(again.status, 200, JSON.stringify(again.body))
-  assert.equal(again.body.restarting, false, 'the restarted instance applies the next save live')
-  assert.equal(host.stats.restarts, 1)
+  assert.equal(host.stats.restarts, 1, 'the restarted instance applies the next save live')
   assert.equal((await host.call('GET')).body.config.defaultAgent, 'claude')
 })
 
@@ -1028,7 +1009,7 @@ await recordAsync('config POST checks scenario agents against the patched agent 
   const withCurrentAgents = await callHandler('/triage-desk/config', 'POST', { scenarios })
   assert.equal(withCurrentAgents.statusCode, 200)
   const withPatchedAgents = await callHandler('/triage-desk/config', 'POST', {
-    agents: [{ id: 'claude', label: 'Claude Code', command: 'claude {prompt}' }],
+    agents: [claude],
     scenarios,
   })
   assert.equal(withPatchedAgents.statusCode, 400)
@@ -1037,7 +1018,7 @@ await recordAsync('config POST checks scenario agents against the patched agent 
 
 await recordAsync('an agents-only patch cannot orphan a saved scenario agent', async () => {
   const res = await callHandler('/triage-desk/config', 'POST', {
-    agents: [{ id: 'claude', label: 'Claude Code', command: 'claude {prompt}' }],
+    agents: [claude],
   })
   assert.equal(res.statusCode, 400)
   const payload = await json(res)

@@ -16,6 +16,7 @@
  * everything goes through Cordis context services and Node builtins.
  */
 
+import { isDeepStrictEqual } from 'node:util'
 import { normalizeSettings, REFRESH_SECONDS, SECTION_IDS } from './github.js'
 import {
   DEFAULT_CLONE_DIRS,
@@ -79,14 +80,22 @@ export function apply(ctx, config = {}) {
 
   /* ------------------------------------------------------------------ wiring */
 
+  /** The GitHub part over `settings`: processes, gh discovery and the snapshot store. */
+  const wireGithub = (settings) => {
+    const processes = createProcesses({ ctx, settings, platform })
+    const gh = createGh({ settings, platform, findExecutable: processes.findExecutable, runProcess: processes.runProcess })
+    const snapshots = createSnapshotStore({ ctx, settings, resolveGh: gh.resolveGh, log: safeLog })
+    return { settings, ...processes, ...gh, ...snapshots }
+  }
+
   /**
-   * Everything that depends on the saved config: normalized settings and the
-   * `host/` factories over them, with their caches (snapshot, detection,
-   * clone scans). Built at start and rebuilt for every saved config; routes
-   * and the tool read the current wiring when a request starts, so a request
-   * in flight finishes on the wiring it started with.
+   * Everything that depends on the saved config: the normalized settings and
+   * the `host/` factories over them, merged into one object (their exports do
+   * not overlap). `previous` is the wiring a save replaces: a part whose
+   * inputs are unchanged is kept with its caches, so a save that leaves the
+   * GitHub settings alone keeps the cached snapshot and spends no quota.
    */
-  const wire = (raw) => {
+  const wire = (raw, previous) => {
     const settings = normalizeSettings(raw)
     const launcherSettings = normalizeLauncherConfig(raw)
     if (launcherSettings.invalidAgents.length > 0) {
@@ -97,89 +106,64 @@ export function apply(ctx, config = {}) {
         launcherSettings.invalidAgents.map((agent) => agent.id).join(', '),
       )
     }
-    const {
-      runProcess,
-      findExecutable,
-      copyToClipboard,
-      isExecutableFile,
-      locateExecutables,
-      openTerminal,
-      detectTerminals,
-      detectPasteSupport,
-    } = createProcesses({ ctx, settings, platform })
-    const { detectAgents, discoverAgents } = createAgents({
-      launcherSettings,
-      platform,
-      locateExecutables,
-      isExecutableFile,
-    })
-    const { pickDirectoryPath, isDirectory, workspaceDirectory, scanLocalClones, resolveClone } = createClones({
-      ctx,
-      settings,
-      launcherSettings,
-    })
-    const { resolveGit, resolveGh, readGhAuth } = createGh({ settings, platform, findExecutable, runProcess })
-    const snapshots = createSnapshotStore({ ctx, settings, resolveGh, log: safeLog })
-    const { cleanupStaleTempDirs, renderScenarioPrompt, launchForItem, openLoginTerminal } = createLaunch({
+    // Cloned before resolveGh rewrites settings.ghCommand, so the next save
+    // compares saved values with saved values.
+    const inputs = { settings: structuredClone(settings), launcherSettings }
+    const same = (pick) => previous !== undefined && isDeepStrictEqual(pick(previous.inputs), pick(inputs))
+    const keepGithub = same((input) => input.settings)
+    const github = keepGithub ? previous.parts.github : wireGithub(settings)
+    const agents =
+      keepGithub && same((input) => input.launcherSettings.agents)
+        ? previous.parts.agents
+        : createAgents({
+            launcherSettings,
+            platform,
+            locateExecutables: github.locateExecutables,
+            isExecutableFile: github.isExecutableFile,
+          })
+    const clones =
+      keepGithub && same((input) => [input.launcherSettings.cloneDirs, input.launcherSettings.repoPaths])
+        ? previous.parts.clones
+        : createClones({ ctx, settings: github.settings, launcherSettings })
+    const launch = createLaunch({
       launcherSettings,
       platform,
       log: safeLog,
-      findSnapshotEntry: snapshots.findSnapshotEntry,
-      runProcess,
-      copyToClipboard,
-      openTerminal,
-      detectPasteSupport,
-      detectAgents,
-      resolveClone,
-      workspaceDirectory,
+      findSnapshotEntry: github.findSnapshotEntry,
+      runProcess: github.runProcess,
+      copyToClipboard: github.copyToClipboard,
+      openTerminal: github.openTerminal,
+      detectPasteSupport: github.detectPasteSupport,
+      detectAgents: agents.detectAgents,
+      resolveClone: clones.resolveClone,
+      workspaceDirectory: clones.workspaceDirectory,
     })
-    return {
-      settings,
-      launcherSettings,
-      snapshots,
-      cache: snapshots.cache,
-      runProcess,
-      detectTerminals,
-      detectPasteSupport,
-      detectAgents,
-      discoverAgents,
-      pickDirectoryPath,
-      isDirectory,
-      scanLocalClones,
-      resolveGit,
-      readGhAuth,
-      cleanupStaleTempDirs,
-      renderScenarioPrompt,
-      launchForItem,
-      openLoginTerminal,
-    }
+    if (previous !== undefined && !keepGithub) previous.cache.retire()
+    return { inputs, parts: { github, agents, clones }, launcherSettings, ...github, ...agents, ...clones, ...launch }
   }
   let host = wire(config)
-  let restarting = false
 
   /**
    * Saved settings are applied to this running instance. Restarting it would
    * unregister the `triage_desk` tool and the routes until the plugin is back,
    * and an agent calling the tool meanwhile gets `unknown tool "triage_desk"`.
    * configEditor.edit ends in the loader's `fiber.update(config)`, which runs
-   * this fiber's `internal/update` listeners around the restart; a listener
-   * that returns without calling `next()` keeps the instance (cordis
-   * `src/fiber.ts` update() and `src/events.ts`; the loader's Group plugin
-   * applies its config the same way). A config that cannot be wired falls
-   * back to the restart, which reports the failure through the fiber.
+   * this fiber's `internal/update` listeners as a waterfall around the
+   * restart; a listener that returns without calling `next()` keeps the
+   * instance (cordis `src/fiber.ts` update() and `src/events.ts`; the loader's
+   * Group plugin applies its config the same way). A config that cannot be
+   * wired falls back to the restart, which reports the failure through the
+   * fiber. Routes and the tool take the wiring once per request, so a request
+   * in flight finishes on the wiring it started with.
    */
   ctx.on('internal/update', (nextConfig, next) => {
-    let rewired
     try {
-      rewired = wire(nextConfig !== null && typeof nextConfig === 'object' ? nextConfig : {})
+      host = wire(nextConfig, host)
     } catch (error) {
       safeLog('warn', 'saved settings could not be applied live, restarting: %s', errorMessage(error))
-      restarting = true
       return next()
     }
-    host = rewired
     safeLog('info', 'settings applied without a restart')
-    return undefined
   })
 
   /* ------------------------------------------------------------------ routes */
@@ -212,19 +196,11 @@ export function apply(ctx, config = {}) {
     }
   }
 
-  const runtime = {
-    get sources() {
-      const lastSnapshot = host.snapshots.lastSnapshot()
-      return lastSnapshot !== null && Array.isArray(lastSnapshot.sources) ? lastSnapshot.sources : []
-    },
-    get editable() {
-      return editable()
-    },
-  }
-
   /**
    * Registers an exact host route. Every route gets the same connection fence
    * and a 405 with an `allow` header for other methods before `handler` runs.
+   * `handler(req, res, wiring)` gets the wiring current when the request
+   * started and reads nothing else from `host`.
    */
   const route = (routePath, methods, label, handler) =>
     ctx.effect(
@@ -245,7 +221,7 @@ export function apply(ctx, config = {}) {
               res.end()
               return
             }
-            await handler(req, res)
+            await handler(req, res, host)
           },
         }),
       label,
@@ -271,6 +247,7 @@ export function apply(ctx, config = {}) {
         kind: 'exact',
         path: SNAPSHOT_PATH,
         resource: async (request) => {
+          const { cache, settings } = host
           const rejection = ctx.connection.requestRejection({ headers: request.headers })
           if (rejection !== undefined) return new Response(null, { status: rejection })
           let force = false
@@ -280,7 +257,7 @@ export function apply(ctx, config = {}) {
             force = false
           }
           try {
-            return jsonResponse(200, await host.cache.read(force))
+            return jsonResponse(200, await cache.read(force))
           } catch (error) {
             safeLog('warn', 'snapshot route failed: %s', errorMessage(error))
             return jsonResponse(200, {
@@ -288,7 +265,7 @@ export function apply(ctx, config = {}) {
               status: 'error',
               generatedAt: new Date().toISOString(),
               sources: [],
-              orgs: host.settings.orgs,
+              orgs: settings.orgs,
               org: '',
               user: null,
               counts: { total: 0 },
@@ -312,8 +289,11 @@ export function apply(ctx, config = {}) {
     lastSaveError = null
   }
 
-  route(CONFIG_PATH, ['GET', 'POST'], 'triage-desk: GET/POST /triage-desk/config', async (req, res) => {
-    const { settings, launcherSettings, detectAgents, detectTerminals, detectPasteSupport } = host
+  route(CONFIG_PATH, ['GET', 'POST'], 'triage-desk: GET/POST /triage-desk/config', async (
+    req,
+    res,
+    { settings, launcherSettings, lastSnapshot, detectAgents, detectTerminals, detectPasteSupport },
+  ) => {
     if (req.method === 'GET') {
       // Agents, terminals and paste support are independent probes of this
       // machine; each failure only leaves its part of the response empty.
@@ -331,6 +311,11 @@ export function apply(ctx, config = {}) {
           return null
         }),
       ])
+      const snapshot = lastSnapshot()
+      const runtime = {
+        sources: snapshot !== null && Array.isArray(snapshot.sources) ? snapshot.sources : [],
+        editable: editable(),
+      }
       sendJson(res, 200, {
         ok: true,
         config: publicConfig(settings, runtime, launcherSettings, detected, { terminals, promptPaste, platform }),
@@ -364,13 +349,7 @@ export function apply(ctx, config = {}) {
       })
       return
     }
-    // The editor owns the write. An accepted request is not a saved
-    // configuration: keep this response pending until it commits. edit()
-    // fulfils only after the loader reconciled, i.e. after the
-    // `internal/update` listener above rewired this instance (or, when that
-    // failed, after the restart); past the await only plain values and the
-    // raw `res` are touched (safeLog never throws), so a committed write is
-    // never reported as a failure.
+    // Answer only once edit() settled, i.e. the `internal/update` listener applied the config.
     let failure = null
     try {
       await saveConfig(patch)
@@ -378,7 +357,7 @@ export function apply(ctx, config = {}) {
       failure = errorMessage(error)
     }
     if (failure === null) {
-      sendJson(res, 200, { ok: true, saved: patch, restarting })
+      sendJson(res, 200, { ok: true, saved: patch })
       return
     }
     lastSaveError = { message: failure, at: new Date().toISOString() }
@@ -386,7 +365,7 @@ export function apply(ctx, config = {}) {
     sendJson(res, 500, { ok: false, error: { code: 'save-failed', message: failure } })
   })
 
-  route(LAUNCH_PATH, ['POST'], 'triage-desk: POST /triage-desk/launch', async (req, res) => {
+  route(LAUNCH_PATH, ['POST'], 'triage-desk: POST /triage-desk/launch', async (req, res, { launchForItem }) => {
     let body
     try {
       body = await readJsonBody(req)
@@ -395,7 +374,7 @@ export function apply(ctx, config = {}) {
       return
     }
     try {
-      const result = await host.launchForItem(body)
+      const result = await launchForItem(body)
       sendJson(res, 200, result)
     } catch (error) {
       if (error instanceof LaunchError) {
@@ -407,7 +386,7 @@ export function apply(ctx, config = {}) {
     }
   })
 
-  route(PROMPT_PATH, ['POST'], 'triage-desk: POST /triage-desk/prompt', async (req, res) => {
+  route(PROMPT_PATH, ['POST'], 'triage-desk: POST /triage-desk/prompt', async (req, res, { renderScenarioPrompt }) => {
     let body
     try {
       body = await readJsonBody(req)
@@ -416,7 +395,7 @@ export function apply(ctx, config = {}) {
       return
     }
     try {
-      const rendered = host.renderScenarioPrompt(body)
+      const rendered = renderScenarioPrompt(body)
       sendJson(res, 200, {
         ok: true,
         prompt: rendered.prompt,
@@ -434,7 +413,7 @@ export function apply(ctx, config = {}) {
     }
   })
 
-  route(AGENTS_FIND_PATH, ['POST'], 'triage-desk: POST /triage-desk/agents/find', async (req, res) => {
+  route(AGENTS_FIND_PATH, ['POST'], 'triage-desk: POST /triage-desk/agents/find', async (req, res, { discoverAgents }) => {
     // Optional body { commands }: found agents sharing an executable with
     // one of these (already configured) commands are left out.
     let commands
@@ -446,7 +425,7 @@ export function apply(ctx, config = {}) {
       return
     }
     try {
-      const result = await host.discoverAgents(commands)
+      const result = await discoverAgents(commands)
       sendJson(res, 200, { ok: true, found: result.found, checked: result.checked })
     } catch (error) {
       if (error instanceof LaunchError) {
@@ -458,7 +437,7 @@ export function apply(ctx, config = {}) {
     }
   })
 
-  route(CLONES_PATH, ['GET'], 'triage-desk: GET /triage-desk/clones', async (req, res) => {
+  route(CLONES_PATH, ['GET'], 'triage-desk: GET /triage-desk/clones', async (req, res, { launcherSettings, scanLocalClones }) => {
     let force = false
     try {
       force = new URL(req.url, 'http://127.0.0.1').searchParams.get('refresh') === '1'
@@ -466,7 +445,6 @@ export function apply(ctx, config = {}) {
       force = false
     }
     try {
-      const { launcherSettings, scanLocalClones } = host
       const scan = await scanLocalClones(force)
       const roots = Array.isArray(scan.roots) ? scan.roots : []
       const dirs = roots.map((dir) => {
@@ -489,17 +467,20 @@ export function apply(ctx, config = {}) {
     }
   })
 
-  route('/triage-desk/pick-directory', ['POST'], 'triage-desk: POST /triage-desk/pick-directory', async (req, res) => {
+  route('/triage-desk/pick-directory', ['POST'], 'triage-desk: POST /triage-desk/pick-directory', async (req, res, { pickDirectoryPath }) => {
     try {
-      const selected = await host.pickDirectoryPath()
+      const selected = await pickDirectoryPath()
       sendJson(res, 200, { ok: true, path: selected })
     } catch (error) {
       sendPickError(res, error)
     }
   })
 
-  route('/triage-desk/pick-clone', ['POST'], 'triage-desk: POST /triage-desk/pick-clone', async (req, res) => {
-    const { pickDirectoryPath, isDirectory, resolveGit, runProcess } = host
+  route('/triage-desk/pick-clone', ['POST'], 'triage-desk: POST /triage-desk/pick-clone', async (
+    req,
+    res,
+    { pickDirectoryPath, isDirectory, resolveGit, runProcess },
+  ) => {
     try {
       const selected = await pickDirectoryPath()
       if (selected === null) {
@@ -536,9 +517,9 @@ export function apply(ctx, config = {}) {
     }
   })
 
-  route('/triage-desk/auth', ['GET'], 'triage-desk: GET /triage-desk/auth', async (req, res) => {
+  route('/triage-desk/auth', ['GET'], 'triage-desk: GET /triage-desk/auth', async (req, res, { readGhAuth }) => {
     try {
-      sendJson(res, 200, { ok: true, auth: await host.readGhAuth() })
+      sendJson(res, 200, { ok: true, auth: await readGhAuth() })
     } catch (error) {
       sendJson(res, 500, {
         ok: false,
@@ -547,9 +528,8 @@ export function apply(ctx, config = {}) {
     }
   })
 
-  route('/triage-desk/auth/login', ['POST'], 'triage-desk: POST /triage-desk/auth/login', async (req, res) => {
+  route('/triage-desk/auth/login', ['POST'], 'triage-desk: POST /triage-desk/auth/login', async (req, res, { readGhAuth, openLoginTerminal }) => {
     try {
-      const { readGhAuth, openLoginTerminal } = host
       const auth = await readGhAuth()
       if (auth.available === false) {
         sendJson(res, 400, {
@@ -630,6 +610,7 @@ export function apply(ctx, config = {}) {
       ],
     },
     async execute(args, exec) {
+      const { launchForItem, cache } = host
       const input = args !== null && typeof args === 'object' ? args : {}
       const signal = exec !== null && exec !== undefined && exec.signal !== undefined ? exec.signal : undefined
       if (input.action !== undefined && input.action !== 'report' && input.action !== 'launch') {
@@ -644,7 +625,7 @@ export function apply(ctx, config = {}) {
         }
         try {
           // launchForItem reads the row context from the cached snapshot itself.
-          const result = await host.launchForItem({ url: input.url, agent: input.agent }, signal)
+          const result = await launchForItem({ url: input.url, agent: input.agent }, signal)
           const where = `Opened ${result.agent.label}${result.terminal ? ' in ' + result.terminal.label : ''} at ${result.cwd} for ${result.repo}`
           const prefix =
             result.mode === 'draft'
@@ -671,7 +652,7 @@ export function apply(ctx, config = {}) {
       if (input.sections !== undefined && !Array.isArray(input.sections)) {
         throw new Error('sections must be an array of section ids')
       }
-      const snapshot = await host.cache.read(input.refresh === true, exec && exec.signal)
+      const snapshot = await cache.read(input.refresh === true, exec && exec.signal)
       const wanted = Array.isArray(input.sections) ? new Set(input.sections) : null
       return {
         text: formatToolText(snapshot, wanted),
@@ -696,11 +677,10 @@ export function apply(ctx, config = {}) {
   // Clean launcher scratch directories left by previous launches.
   void host.cleanupStaleTempDirs()
 
-  const { settings } = host
   safeLog(
     'info',
     'ready (organizations: %s; personal: %s)',
-    settings.orgs.length > 0 ? settings.orgs.join(', ') : 'auto-detect all',
-    settings.includePersonal ? 'on' : 'off',
+    host.settings.orgs.length > 0 ? host.settings.orgs.join(', ') : 'auto-detect all',
+    host.settings.includePersonal ? 'on' : 'off',
   )
 }

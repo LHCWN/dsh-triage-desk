@@ -38,6 +38,7 @@ export function createSnapshotCache(build, ttlMs, cacheable) {
   let state = { at: 0, snapshot: null }
   let inflight = null
   let queuedForce = false
+  let retired = false
   const shouldCache = typeof cacheable === 'function' ? cacheable : () => true
   const ttl = () => (typeof ttlMs === 'function' ? ttlMs() : ttlMs)
   // `signal` cancels only this caller's wait. It is never forwarded into the
@@ -63,14 +64,19 @@ export function createSnapshotCache(build, ttlMs, cacheable) {
       })
       .finally(() => {
         inflight = null
-        if (queuedForce) {
+        if (queuedForce && !retired) {
           queuedForce = false
           void read(true)
         }
       })
     return raceAbort(inflight, signal)
   }
-  return { read, peek: () => state.snapshot }
+  // A retired cache was replaced by a new one: a forced read queued during its
+  // last build is dropped, since no reader will ever see that rebuild.
+  const retire = () => {
+    retired = true
+  }
+  return { read, peek: () => state.snapshot, retire }
 }
 
 /* -------------------------------------------------------------------------- */
