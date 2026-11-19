@@ -1134,6 +1134,23 @@ for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-
   menu.change(picker, 'codex')
   assert.ok(menu.text().includes('launch.via.paste:GNOME Terminal'), 'Codex gets the prompt typed in')
   menu.dispose()
+
+  // Windows keeps the native draft for an .exe only (the host's
+  // windowsDraftArgumentSafe); a .cmd shim of Claude Code gets the prompt typed in.
+  for (const [file, via] of [['C:\\bin\\claude.exe', 'draft'], ['C:\\npm\\claude.cmd', 'paste']]) {
+    const windowsMenu = settingsHarness({
+      snapshotPayload: snapshot,
+      configExtra: {
+        ...configExtra,
+        platform: 'win32',
+        detectedAgents: { claude: { available: true, path: file, executable: 'claude' } },
+      },
+    })
+    await windowsMenu.flush()
+    windowsMenu.click(windowsMenu.nodes().filter((node) => node.type === 'button' && node.props['aria-label'] === 'launch.title')[0])
+    assert.ok(windowsMenu.text().includes('launch.via.' + via + ':GNOME Terminal'), 'Claude Code as ' + file + ' on Windows: ' + via)
+    windowsMenu.dispose()
+  }
 }
 
 /* -------------------------------------------- attention badge, counts, snooze */
