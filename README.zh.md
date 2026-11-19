@@ -72,7 +72,7 @@ dsh plugin --profile <profile> add dsh-triage-desk@latest
 
 iTerm2、Ghostty（macOS）、GNOME Terminal、Konsole、Xfce Terminal 和 Windows Terminal 会打开标签页；其他终端每次启动都会打开新窗口。已保存但未安装的终端会回退到“自动”，启动时的 Toast 提示会说明这一点。
 
-**提示传递方式。** Claude Code 以其原生 `--prefill` 草稿打开提示。在 Windows 上这要求 Claude Code 是 `.exe`：通过 npm 安装的版本（`.cmd` 包装脚本）按其他智能体的方式处理，因为 `cmd.exe` 无法原样传递提示。对于其他所有智能体，设置 → **提示传递方式**提供：
+**提示传递方式。** Claude Code 以其原生 `--prefill` 草稿打开提示。在 Windows 上这要求 Claude Code 是 `.exe`：通过 npm 安装的版本（`.cmd` 包装脚本）按其他智能体的方式处理，因为 `cmd.exe` 无法原样传递提示。Scoop、bun、Chocolatey、Volta、mise 或 proto 的 `.exe` 包装程序同样如此，因为它们可能启动 `.cmd`（[提示传递方式](docs/REFERENCE.md#prompt-delivery)）。对于其他所有智能体，设置 → **提示传递方式**提供：
 
 - **填入智能体**（默认，推荐）：一个小型粘贴包装器会等到智能体的输入框就绪，然后把提示粘贴进去，但不按 Enter。macOS 上需要 Python 3（`xcode-select --install`），Linux 上需要 Python 3，Windows 上需要 Windows 10 1809 或更高版本；不满足时，启动会改用剪贴板，设置和 Toast 提示会说明如何解决。
 - **复制到剪贴板**：智能体以空白状态打开，由你自行粘贴提示（macOS 上按 ⌘V，Linux 终端中按 Ctrl+Shift+V，Windows 上按 Ctrl+V）。

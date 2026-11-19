@@ -16,6 +16,10 @@
  *     detection reported, pinned as the host pins it (the command's own name
  *     is not on PATH); the `.ps1` runs under the launcher's Bypass
  *     (docs/REFERENCE.md#agents);
+ *   - an `.exe` shim in Scoop's layout (`<name>.shim` beside it) that starts a
+ *     `.cmd` gets no native draft from the host, and the paste launcher types
+ *     the hostile prompt through it intact (issue #12); a symlink to it in
+ *     another folder is recognized too (when the shell may create symlinks);
  *   - every launcher removes itself and its per-launch directory.
  *
  * Run with `npm run smoke:windows`. Not shipped in the npm package.
@@ -32,6 +36,8 @@ import {
   buildWindowsClipboardLauncherScript,
   buildWindowsDraftLauncherScript,
   buildWindowsPasteLauncherScript,
+  draftCommandForStatus,
+  isWindowsShim,
   sanitizePastePrompt,
   windowsQuote,
   withAgentExecutable,
@@ -280,6 +286,90 @@ for (const [kind, detected, args] of [
     assert.equal(run.dirLeft, false)
   })
 }
+
+// A stand-in for Scoop's shim.exe (kiennq/scoop-better-shimexe shim.cpp): it
+// reads `path = …` from the `.shim` file beside it and starts that target with
+// the caller's raw arguments appended, through CreateProcess (Process.Start
+// without the shell), so a `.cmd` target runs in cmd.exe. Compiled once by
+// PowerShell 5.1 Add-Type (C# 5).
+const FAKE_SHIM_CS = String.raw`using System;
+using System.Diagnostics;
+using System.IO;
+public static class FakeShim {
+  public static int Main() {
+    string self = Process.GetCurrentProcess().MainModule.FileName;
+    string target = null;
+    foreach (string line in File.ReadAllLines(Path.ChangeExtension(self, ".shim"))) {
+      int separator = line.IndexOf('=');
+      if (separator > 0 && line.Substring(0, separator).Trim().ToLowerInvariant() == "path") {
+        target = line.Substring(separator + 1).Trim().Trim('"');
+      }
+    }
+    string commandLine = Environment.CommandLine;
+    int end = commandLine.StartsWith("\"") ? commandLine.IndexOf('"', 1) + 1 : commandLine.IndexOf(' ');
+    string rest = end <= 0 || end >= commandLine.Length ? "" : commandLine.Substring(end).TrimStart();
+    ProcessStartInfo start = new ProcessStartInfo(target, rest);
+    start.UseShellExecute = false;
+    using (Process child = Process.Start(start)) {
+      child.WaitForExit();
+      return child.ExitCode;
+    }
+  }
+}
+`
+let fakeShimExe = null
+/** `<tools>\<name>.exe` and `<name>.shim` pointing at `target`, as Scoop lays them out. */
+async function scoopShim(name, target) {
+  if (fakeShimExe === null) {
+    const source = path.join(root, 'fake-shim.cs')
+    const exe = path.join(root, 'fake-shim.exe')
+    await fs.writeFile(source, FAKE_SHIM_CS, 'utf8')
+    const compiled = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      'Add-Type -Path ' + windowsQuote(source) + ' -OutputAssembly ' + windowsQuote(exe) + ' -OutputType ConsoleApplication'],
+    { encoding: 'utf8', timeout: 120_000 })
+    assert.ok(existsSync(exe), 'the fake shim compiled: ' + compiled.stdout + compiled.stderr)
+    fakeShimExe = exe
+  }
+  const exe = path.join(tools, name + '.exe')
+  await fs.copyFile(fakeShimExe, exe)
+  await fs.writeFile(path.join(tools, name + '.shim'), 'path = "' + target + '"\r\n', 'utf8')
+  return exe
+}
+
+await check('an .exe shim of a .cmd gets no draft, and the paste launcher types a hostile prompt through it intact', async () => {
+  const exe = await scoopShim('agent-shim', agentShim)
+  const status = { available: true, path: exe, executable: 'claude', shim: await isWindowsShim(exe) }
+  assert.equal(status.shim, true, 'the Scoop layout is recognized')
+  assert.equal(draftCommandForStatus({ command: 'claude {prompt}', draftFlag: '--prefill' }, status, 'win32'), null)
+  const result = path.join(root, 'paste-shim-result.json')
+  const bareCommand = pinnedBareCommand('td-not-on-path plain "' + result + '" {prompt}', exe)
+  assert.equal(bareCommand, '"' + exe + '" plain "' + result + '"')
+  const run = await runLauncher(pasteLauncher({ bareCommand, prompt: HOSTILE, title: 'Triage Desk: paste [shim]' }), 90_000)
+  const output = run.result.stdout + run.result.stderr
+  assert.ok(existsSync(result), 'the agent ran through the shim: ' + output)
+  assertUnsentPaste(JSON.parse(await fs.readFile(result, 'utf8')), HOSTILE, output)
+  assert.equal(existsSync(canary), false, 'nothing in the prompt ran')
+  assert.equal(run.dirLeft, false)
+})
+
+// A file symlink needs SeCreateSymbolicLinkPrivilege (an elevated shell, as on
+// the CI runner) or Developer Mode; without it this check only says so.
+await check('a symlink in another folder to an .exe shim is recognized through its target', async () => {
+  const exe = await scoopShim('linked-shim', agentShim)
+  const elsewhere = path.join(root, 'linked bin')
+  await fs.mkdir(elsewhere, { recursive: true })
+  const link = path.join(elsewhere, 'claude.exe')
+  try {
+    await fs.symlink(exe, link, 'file')
+  } catch (error) {
+    if (error && error.code === 'EPERM') {
+      console.log('     (skipped: creating a symlink needs elevation or Developer Mode)')
+      return
+    }
+    throw error
+  }
+  assert.equal(await isWindowsShim(link), true)
+})
 
 const failed = checks.filter((entry) => entry.ok === false)
 console.log(`\n${checks.length - failed.length}/${checks.length} windows checks passed`)

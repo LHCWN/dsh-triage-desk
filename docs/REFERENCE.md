@@ -247,6 +247,40 @@ by its absolute path (see [Agents](#agents)). On Windows this means a
 terminal, cannot start a `.cmd` shim instead of the detected `.exe`, or the
 reverse.
 
+An `.exe` can itself be a shim that starts another program, possibly a `.cmd`
+or `cmd.exe`. Detection recognizes these shims by what sits next to them and
+never reads what they point at, so a recognized shim gets no draft:
+
+- **Scoop**: a `<name>.shim` file beside the `.exe`; its `path` may be
+  `cmd.exe`, and the shim starts whatever it names.
+- **bun** global bins: a `<name>.bunx` file beside it; bun starts a `.cmd`/`.bat`
+  target as `cmd /c`.
+- **Chocolatey**: the `.exe` is in Chocolatey's `bin` folder:
+  `$env:ChocolateyInstall\bin`, `%ProgramData%\chocolatey\bin`, the legacy
+  `C:\Chocolatey\bin`, or any folder with Chocolatey's `choco.exe` beside it.
+  A shimgen shim can point at a `.bat` file.
+- **Volta**: `volta-shim.exe` beside it; Volta starts every tool as `cmd.exe /C`.
+- **mise**: mise's `.mode` file beside it; `mise x` starts `.cmd` tools too.
+- **proto**: proto's `registry.json` beside it; the shim runs `proto run`,
+  which starts what the tool's plugin names.
+
+When the detected `.exe` is a symlink or sits in a junction, the markers beside
+the target count too, so a link in another folder to a shim also loses the
+draft. A link to something other than an `.exe`, and a marker or link that
+cannot be checked (other than missing), count as a shim.
+
+So Claude Code installed with Scoop or bun gets the prompt typed in, like an npm
+install. The official installer, winget and a manually placed `claude.exe` keep
+the draft: winget `Links` entries are symlinks to the program itself, with no
+shim process. npm, pnpm and yarn global bins are `.cmd`/`.ps1` files, which the
+`.exe` rule already excludes.
+
+The shim check is a best effort over the managers above. A hard link has no
+target to follow, so a hard link to a shim placed in another folder is not
+recognized, and managers without a marker beside the `.exe` (aqua's
+`aqua-proxy.exe` hard links, for one) are not covered. For such an install,
+write the absolute path of the program the shim starts in the agent command.
+
 For every other agent, Settings → **Prompt delivery** (config key
 `promptDelivery`) chooses how the prompt arrives:
 
@@ -617,13 +651,13 @@ This section was checked against DSH 0.2.2-rc.5; the plugin supports
   drive-letter clone path with non-ASCII characters and `;`, draft prompts with
   quotes and a trailing backslash or with `"`, `&`, `|`, `<`, `>`, `^`,
   `%PATH%` and a line break (one intact argument to an `.exe` agent), the latter
-  typed into an npm-style `.cmd` shim, and paste launches of an `.exe`, `.cmd`
-  and `.ps1` agent started by their detected paths (the `.ps1` marked as
-  downloaded, and run under the launch window's inherited `Bypass`). A
-  `.cmd`/`.bat` agent never gets the prompt as an argument
-  ([Prompt delivery](#prompt-delivery)); static arguments in its configured
-  command still go through `cmd.exe` and are trusted configuration
-  ([Agents](#agents)).
+  typed into an npm-style `.cmd` shim and into an `.exe` shim in Scoop's layout
+  that starts a `.cmd`, and paste launches of an `.exe`, `.cmd` and `.ps1` agent
+  started by their detected paths (the `.ps1` marked as downloaded, and run
+  under the launch window's inherited `Bypass`). A `.cmd`/`.bat` agent never
+  gets the prompt as an argument ([Prompt delivery](#prompt-delivery)); static
+  arguments in its configured command still go through `cmd.exe` and are
+  trusted configuration ([Agents](#agents)).
 - **Linux launch errors**: launches observe immediate startup errors for 500 ms
   and then report success; the emulator keeps running without a lifetime
   timeout. Failures after that window are not reported.

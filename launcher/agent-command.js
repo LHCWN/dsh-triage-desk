@@ -265,17 +265,29 @@ export function withAgentExecutable(agentCommand, executablePath, platform = pro
 }
 
 /**
- * The Windows pin: `{ command, path }` with the first word replaced by the
- * detected path (trimmed, normalized, drive or UNC root, double-quoted), or
- * null when there is no such path. See docs/REFERENCE.md#agents.
+ * The detected path as the Windows pin writes it: trimmed and normalized
+ * (`/` becomes `\`; an absolute path written in the agent command skips the
+ * probe's trimming), with a drive or UNC root, or null. `\x` and `C:x` stay
+ * drive-relative after normalizing, so they are rejected: the current drive
+ * can differ between detection and the launch's cwd. A Windows path cannot
+ * contain `"`, so the quoted pin stays one word; a `{prompt}` in it would
+ * break the command rule (assertSafeAgentCommand).
  */
-function windowsPin(agentCommand, detectedPath) {
+function windowsPinPath(detectedPath) {
   const trimmed = typeof detectedPath === 'string' ? detectedPath.trim() : ''
-  // A Windows path cannot contain `"`, so the quoted word stays one word; a
-  // `{prompt}` in it would break the command rule (assertSafeAgentCommand).
   if (trimmed === '' || /[\r\n\u0000"]/.test(trimmed) || trimmed.includes(PROMPT_TOKEN)) return null
   const normalized = path.win32.normalize(trimmed)
-  if (!/^(?:[A-Za-z]:\\|\\\\)/.test(normalized)) return null
+  return /^(?:[A-Za-z]:\\|\\\\)/.test(normalized) ? normalized : null
+}
+
+/**
+ * The Windows pin: `{ command, path }` with the first word replaced by the
+ * detected path (windowsPinPath, double-quoted), or null when there is no such
+ * path. See docs/REFERENCE.md#agents.
+ */
+function windowsPin(agentCommand, detectedPath) {
+  const normalized = windowsPinPath(detectedPath)
+  if (normalized === null) return null
   const first = commandWords(agentCommand, 'win32')?.[0]
   if (first === undefined) return null
   // Trailing backslashes are doubled so the closing quote stays a quote (CommandLineToArgvW).
@@ -284,9 +296,10 @@ function windowsPin(agentCommand, detectedPath) {
 }
 
 /**
- * Whether a native draft can hand the prompt to this Windows executable as a
- * command-line argument: only for a resolved `.exe`, the case the PowerShell
- * 5.1 argument rules in windows-scripts.js were measured against
+ * The path a Windows native draft would pin (windowsPinPath) when it is an
+ * `.exe`, else null; isWindowsShim checks the same path. Only a resolved
+ * `.exe` can take the prompt as a command-line argument: the case the
+ * PowerShell 5.1 argument rules in windows-scripts.js were measured against
  * (dev/smoke-windows.mjs). A `.cmd`/`.bat` runs through `cmd.exe`
  * (CreateProcess documentation: a batch file needs the command interpreter,
  * `cmd.exe /c`), which parses the line again and does not treat `\"` as an
@@ -296,20 +309,37 @@ function windowsPin(agentCommand, detectedPath) {
  * through another layer that was not measured, and an unresolved path is
  * unknown. Those agents get the prompt typed in or on the clipboard instead.
  */
-function windowsDraftArgumentSafe(executablePath) {
-  return /\.exe$/i.test(executablePath)
+export function windowsDraftExecutable(detectedPath) {
+  const executablePath = windowsPinPath(detectedPath)
+  return executablePath !== null && /\.exe$/i.test(executablePath) ? executablePath : null
 }
 
 /**
  * The one decision whether a launch may use the agent's native draft flag:
  * the command to run with it, or null when the prompt must be typed in or
  * copied instead. `detectedPath` is the path agent detection resolved ('' when
- * none). The executable is pinned as withAgentExecutable does; on Windows the
- * pinned path must also be an `.exe` (windowsDraftArgumentSafe).
+ * none) and `shim` whether isWindowsShim found a shim layout there. The
+ * executable is pinned as withAgentExecutable does; on Windows the pinned path
+ * must also be an `.exe` (windowsDraftExecutable) that is not a shim, which may
+ * start `cmd.exe`. Windows drafts only when `shim` is exactly `false`, so a
+ * call that skipped the check gets no draft. Internal: callers use
+ * draftCommandForStatus.
  */
-export function draftCommandFor(agent, detectedPath, platform = process.platform) {
+function draftCommandFor(agent, detectedPath, platform, shim) {
   if (typeof agent.draftFlag !== 'string') return null
   if (platform !== 'win32') return withAgentExecutable(agent.command, detectedPath, platform)
+  if (shim !== false) return null
   const pin = windowsPin(agent.command, detectedPath)
-  return pin !== null && windowsDraftArgumentSafe(pin.path) ? pin.command : null
+  return pin !== null && windowsDraftExecutable(pin.path) !== null ? pin.command : null
+}
+
+/**
+ * draftCommandFor for an agent detection status (`{ available, path, shim? }`
+ * from detectAgents), so the launch and the launch menu's `draft` flag decide
+ * alike. The one entry point of the draft decision.
+ */
+export function draftCommandForStatus(agent, status, platform = process.platform) {
+  const found = status !== undefined && status !== null && status.available === true
+  const detectedPath = found && typeof status.path === 'string' ? status.path : ''
+  return draftCommandFor(agent, detectedPath, platform, found ? status.shim : undefined)
 }

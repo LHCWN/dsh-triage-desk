@@ -21,7 +21,7 @@ import {
   buildWindowsDraftLauncherScript,
   buildWindowsLoginLauncherScript,
   buildWindowsPasteLauncherScript,
-  draftCommandFor,
+  draftCommandForStatus,
   PASTE_WRAPPER_CS,
   PASTE_WRAPPER_PY,
   parseRepoUrl,
@@ -249,9 +249,10 @@ export function createLaunch({
     // prompt already in its composer. Other agents get it typed into their
     // input box by the paste wrapper when it can run here, else via the
     // clipboard; `delivery.pasteBlocked` says why paste was not used.
-    // draftCommandFor decides when the draft may be used (Windows: an .exe).
+    // draftCommandForStatus decides when the draft may be used (Windows: an
+    // .exe that is not a known shim).
     const windows = platform === 'win32'
-    const draftCommand = draftCommandFor(agent, detectedPath, platform)
+    const draftCommand = draftCommandForStatus(agent, status, platform)
     let mode = 'clipboard'
     let pasteBlocked = null
     let python = null

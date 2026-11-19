@@ -27,13 +27,15 @@ export {
   agentExecutable,
   bareAgentCommand,
   buildDraftCommand,
-  draftCommandFor,
+  draftCommandForStatus,
   hasSafePromptPlaceholder,
   shellQuote,
   withAgentExecutable,
 } from './launcher/agent-command.js'
 
 export { buildExecutableProbe, classifyProbeAnswer, parseExecutableProbe } from './launcher/executable-probe.js'
+
+export { isWindowsShim } from './launcher/windows-shims.js'
 
 export {
   AGENT_ID_PATTERN,

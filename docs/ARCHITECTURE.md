@@ -31,7 +31,7 @@ import the launcher layer only through `launcher.js` and the data layer through
     with `meta.lastError`; a store a save replaced hands over its snapshot as
     that fallback until the new store caches a build);
   - `config.js` — `EDITABLE_FIELDS`, `sanitizePatch`, `publicConfig` (adds
-    `detectedAgents[id].draft` from `draftCommandFor`);
+    `detectedAgents[id].draft` from `draftCommandForStatus`);
   - `processes.js` — `createProcesses`: `runProcess`, executable lookup,
     clipboard, `openTerminal(scriptPath, title, signal, choice)` (resolves the
     saved terminal choice, falling back to Automatic when it is not installed;
@@ -46,15 +46,18 @@ import the launcher layer only through `launcher.js` and the data layer through
     on Windows), and `wmctrl`·`xdotool` detection. Terminal emulators and
     `python3` share one cached login-shell lookup (`locateTools`);
   - `agents.js` — `createAgents`: `detectAgents` (one login-shell probe for all
-    agents, absolute paths only; a Windows command path is reported resolved)
-    and `discoverAgents`;
+    agents, absolute paths only; a Windows command path is reported resolved,
+    and every found Windows agent also carries a `shim` verdict from
+    `isWindowsShim` on that path, of which only `shim: false` allows the draft;
+    `publicConfig` keeps it on the host) and `discoverAgents`;
   - `clones.js` — `createClones`: clone directories and scans, workspace
     fallback, native directory picker, `resolveClone`;
   - `launch.js` — `createLaunch`: scenario/agent resolution,
     `renderScenarioPrompt`, `launchForItem` (runs the detected path through
     `withAgentExecutable`, detecting again with `force` when the cached path
-    is gone, and on macOS/Linux passes its directory as `binDir`; picks the delivery mode — `draft` when `draftCommandFor` returns
-    a command, `paste` when `promptDelivery` is `paste` and
+    is gone, and on macOS/Linux passes its directory as `binDir`; picks the
+    delivery mode — `draft` when `draftCommandForStatus` returns a command for
+    that (possibly fresh) status, `paste` when `promptDelivery` is `paste` and
     `detectPasteSupport` allows it, else `clipboard` with
     `delivery.pasteBlocked` naming the reason; the clipboard always gets a
     copy), temp directories, `openLoginTerminal`;
@@ -88,10 +91,12 @@ import the launcher layer only through `launcher.js` and the data layer through
     wording `AGENT_COMMAND_RULE`, `shellQuote`, and the command variants
     (`bareAgentCommand`, `buildDraftCommand`, and `withAgentExecutable`, the
     one pin of the detected executable; Windows uses `windowsPin`, see
-    [REFERENCE.md](REFERENCE.md#agents)), and `draftCommandFor`, the one
-    decision whether a launch uses the native draft (on Windows only for a
-    pinned `.exe`, never a `.cmd`/`.bat` that `cmd.exe` would re-parse).
-    `{prompt}` appears once, unquoted, after an executable word, either
+    [REFERENCE.md](REFERENCE.md#agents)), and `draftCommandForStatus`, the one
+    decision whether a launch uses the native draft, taken from a detection
+    status for both the launch and the launch menu (on Windows only for a
+    pinned `.exe` that is not a known shim, never a `.cmd`/`.bat` that
+    `cmd.exe` would re-parse). `{prompt}` appears once, unquoted, after an
+    executable word, either
     as a whole word or directly after `-x=`/`--flag=`; backticks, `$(`, `${`,
     unquoted `; & | < > ( )` and word-initial `#` are rejected. The host is the
     only implementation of this rule;
@@ -102,6 +107,12 @@ import the launcher layer only through `launcher.js` and the data layer through
     `classifyProbeAnswer`: zsh `whence -p` and bash `type -P`, both under
     `-lic`, other shells `command -v`; an alias to one absolute path resolves to
     it, other aliases and functions yield `reason: 'alias' | 'function'`;
+  - `windows-shims.js` — `isWindowsShim(path, io?)`: true when a Windows
+    `.exe`, or the target a symlink or junction resolves to, is in a known shim
+    layout (Scoop, bun, Chocolatey, Volta, mise, proto), when a link resolves
+    to something other than an `.exe`, or when a marker or link cannot be
+    checked; such an `.exe` gets no native draft. A best effort over the listed
+    managers;
   - `scenarios.js` and `prompt.js` — built-in scenarios, normalization and
     validation, section/reason labels, and prompt rendering (item tokens,
     section `{links}` block, safe trimming);

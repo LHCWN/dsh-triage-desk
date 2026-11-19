@@ -4,7 +4,7 @@
  */
 
 import path from 'node:path'
-import { DISCOVERABLE_AGENTS, agentExecutable } from '../launcher.js'
+import { DISCOVERABLE_AGENTS, agentExecutable, isWindowsShim } from '../launcher.js'
 import { LaunchError } from './errors.js'
 
 const DETECTION_CACHE_MS = 120_000
@@ -20,6 +20,9 @@ export function createAgents({ launcherSettings, platform, locateExecutables, is
    * `probe-failed` with `available: null` when the login shell itself failed.
    * On Windows a command path is reported resolved (`\x` gets the current
    * drive), which is the path fs.access checks (path.toNamespacedPath).
+   * On Windows every found agent also carries `shim` (isWindowsShim on that
+   * reported path): `true`
+   * for a known shim layout, `false` otherwise; only `false` allows the draft.
    */
   const detectionCache = { at: 0, value: null }
   const detectAgents = async (force = false) => {
@@ -62,6 +65,13 @@ export function createAgents({ launcherSettings, platform, locateExecutables, is
             : { available: false, path: null, reason: verdict.reason, executable })
         }
       }
+    }
+    if (platform === 'win32') {
+      const found = Array.from(results.values()).filter((status) => status.available === true)
+      const paths = Array.from(new Set(found.map((status) => status.path)))
+      const shims = new Map(await Promise.all(paths.map(async (file) => [file, await isWindowsShim(file)])))
+      // An explicit verdict for every found agent: a missing one means no draft.
+      for (const status of found) status.shim = shims.get(status.path) === true
     }
     const value = Object.fromEntries(results)
     detectionCache.at = Date.now()

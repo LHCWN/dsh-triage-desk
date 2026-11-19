@@ -20,6 +20,10 @@
   prompt would not pass intact, and an item title could run a command. Such an
   agent gets the prompt typed in (or on the clipboard), and the launch menu says
   so.
+- **Windows: `.exe` shims get no prompt argument either.** A Scoop, bun,
+  Chocolatey, Volta, mise or proto shim can start a `.cmd` or `cmd.exe`, so
+  Claude Code installed through one of them, or reached through a symlink to
+  one, gets the prompt typed in, like an npm install.
 - **Windows: launches run the detected agent.** Draft, paste and clipboard
   launches start the agent by the absolute path that detection reported, as on
   macOS and Linux. A `$PROFILE` alias or function, or a different PATH order in
