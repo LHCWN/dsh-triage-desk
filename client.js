@@ -2138,7 +2138,7 @@ window.__ModuleLoader__.load({
               config: Object.assign({}, state.config, patch),
               ...(Number.isFinite(seconds) && seconds >= 15 ? { pollSeconds: seconds } : {}),
             })
-            // 200 arrives after the restarted host committed the write: read the
+            // 200 arrives after the host wrote and applied the config: read the
             // normalized config back (fresh invalidAgents, detection, sources).
             // A failed read keeps the merged patch and the saved status.
             void loadConfig({ quiet: true })
@@ -5025,24 +5025,11 @@ window.__ModuleLoader__.load({
       const [search, setSearch] = useState('')
       const [stuck, setStuck] = useState(false)
       const scrollRef = useRef(null)
-      const timersRef = useRef([])
       // Written by SettingsView in a layout effect, so the gear/Back/Cancel
       // guard reads the committed dirty state without waiting for a re-render.
       const settingsDirtyRef = useRef(false)
       const [confirmLeave, setConfirmLeave] = useState(false)
       const [tick, setTick] = useState(() => Date.now())
-      const later = (callback, delay) => {
-        const id = window.setTimeout(callback, delay)
-        timersRef.current.push(id)
-        return id
-      }
-
-      useEffect(() => {
-        return () => {
-          for (const id of timersRef.current) window.clearTimeout(id)
-          timersRef.current = []
-        }
-      }, [])
 
       // Relative times ("updated 3 min ago", row ages) advance once a minute
       // while the page is mounted; `now` reaches memoized Section/Row as a prop.
@@ -5231,12 +5218,9 @@ window.__ModuleLoader__.load({
         leaveSettings()
       }
       const keepEditing = () => setConfirmLeave(false)
-      const afterSave = () => {
-        // A config save rebuilds the host's snapshot cache; a non-forced poll
-        // picks up the fresh snapshot without triggering extra GitHub scans.
-        later(() => void store.load(false), 1500)
-        later(() => void store.load(false), 4500)
-      }
+      // The save is applied by the time it is confirmed; a non-forced read
+      // serves the snapshot for the saved settings without an extra GitHub scan.
+      const afterSave = () => void store.load(false)
 
       const settingsButton = h(
         'button',

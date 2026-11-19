@@ -488,7 +488,8 @@ function settingsHarness({
       if (url === '/triage-desk/config') return Promise.resolve(response(200, { config, saveError: host.saveError }))
       if (url === '/triage-desk/auth') return Promise.resolve(response(200, { auth: state.auth }))
       if (url === '/triage-desk/snapshot') {
-        return Promise.resolve(response(200, host.snapshot ?? snapshotPayload ?? { sections: [], settings: { refreshSeconds: 1200 } }))
+        // Like the host, the default snapshot reports the saved refresh setting.
+        return Promise.resolve(response(200, host.snapshot ?? snapshotPayload ?? { sections: [], settings: { refreshSeconds: config.refreshSeconds } }))
       }
       throw new Error('unexpected request: ' + url)
     },
@@ -588,7 +589,7 @@ async function editSettings(harness) {
 {
   const harness = settingsHarness()
   await editSettings(harness)
-  harness.reply(200, { ok: true, restarting: true })
+  harness.reply(200, { ok: true })
   await harness.flush()
   assert.ok(harness.text().includes('settings.saved'), 'confirmed persistence shows Saved')
   assert.ok(harness.text().includes('settings.done'), 'confirmed persistence marks the form clean')
