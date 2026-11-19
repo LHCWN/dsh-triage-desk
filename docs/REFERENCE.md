@@ -651,8 +651,8 @@ Checks:
   `PullSearch`, `IssueSearch`, `PullSearchPage`, `BranchScan`) and rejects
   queries with unused or undeclared variables: section classification, search
   pagination and truncation, branch CI, quota stops, partial and failed sources,
-  the previous snapshot kept as stale, and a cancelled tool call not cancelling
-  the build.
+  the previous snapshot kept as stale (also across a GitHub settings save), and
+  a cancelled tool call not cancelling the build.
 - `npm run smoke:paste`: end-to-end check of the paste wrapper against a fake
   agent (the Python pty wrapper on macOS and Linux, the ConPTY host on Windows):
   the prompt arrives as one bracketed paste with no Enter, a folder-trust dialog

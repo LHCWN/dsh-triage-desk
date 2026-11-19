@@ -28,7 +28,8 @@ import the launcher layer only through `launcher.js` and the data layer through
     `hasTransientWarnings`;
   - `snapshot.js` — `createSnapshotStore`: build, adaptive TTL on low quota, and
     the stale fallback (a failed build serves the previous snapshot as `stale`
-    with `meta.lastError`);
+    with `meta.lastError`; a store a save replaced hands over its snapshot as
+    that fallback until the new store caches a build);
   - `config.js` — `EDITABLE_FIELDS`, `sanitizePatch`, `publicConfig` (adds
     `detectedAgents[id].draft` from `draftCommandFor`);
   - `processes.js` — `createProcesses`: `runProcess`, executable lookup,

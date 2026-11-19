@@ -80,11 +80,15 @@ export function apply(ctx, config = {}) {
 
   /* ------------------------------------------------------------------ wiring */
 
-  /** The GitHub part over `settings`: processes, gh discovery and the snapshot store. */
-  const wireGithub = (settings) => {
+  /**
+   * The GitHub part over `settings`: processes, gh discovery and the snapshot
+   * store. `previous` is the part it replaces, whose snapshot stays the stale
+   * fallback until the new store has built one.
+   */
+  const wireGithub = (settings, previous) => {
     const processes = createProcesses({ ctx, settings, platform })
     const gh = createGh({ settings, platform, findExecutable: processes.findExecutable, runProcess: processes.runProcess })
-    const snapshots = createSnapshotStore({ ctx, settings, resolveGh: gh.resolveGh, log: safeLog })
+    const snapshots = createSnapshotStore({ ctx, settings, resolveGh: gh.resolveGh, log: safeLog, previous })
     return { settings, ...processes, ...gh, ...snapshots }
   }
 
@@ -111,7 +115,7 @@ export function apply(ctx, config = {}) {
     const inputs = { settings: structuredClone(settings), launcherSettings }
     const same = (pick) => previous !== undefined && isDeepStrictEqual(pick(previous.inputs), pick(inputs))
     const keepGithub = same((input) => input.settings)
-    const github = keepGithub ? previous.parts.github : wireGithub(settings)
+    const github = keepGithub ? previous.parts.github : wireGithub(settings, previous === undefined ? undefined : previous.parts.github)
     const agents =
       keepGithub && same((input) => input.launcherSettings.agents)
         ? previous.parts.agents

@@ -4,11 +4,17 @@
  * `stale` (with `meta.lastError`), and lookups of cached rows by URL.
  */
 
-import { buildSnapshot, SECTION_IDS, GhError } from '../github.js'
+import { buildSnapshot, snapshotSettings, SECTION_IDS, GhError } from '../github.js'
 import { createSnapshotCache, shouldCacheSnapshot } from './snapshot-cache.js'
 
-export function createSnapshotStore({ ctx, settings, resolveGh, log: safeLog }) {
+/**
+ * `previous` is the store a settings save replaced. Until this store caches
+ * its first build, its snapshot is the fallback: a failed build serves it
+ * marked `stale` (reporting the saved settings), and row lookups read it.
+ */
+export function createSnapshotStore({ ctx, settings, resolveGh, log: safeLog, previous }) {
   let lastSnapshot = null
+  let inherited = previous === undefined ? null : previous.fallbackSnapshot()
 
   let cache = null
   let adaptiveTtlMs = settings.ttlMs
@@ -28,10 +34,12 @@ export function createSnapshotStore({ ctx, settings, resolveGh, log: safeLog }) 
     } catch (error) {
       const code = error instanceof GhError ? error.code : 'internal'
       const message = error instanceof Error ? error.message : String(error)
-      const previous = cache === null ? null : cache.peek()
-      if (previous !== null && previous !== undefined) {
+      const previous = fallbackSnapshot()
+      if (previous !== null) {
         return {
           ...previous,
+          // An inherited snapshot was built for the replaced settings.
+          settings: snapshotSettings(settings),
           status: 'stale',
           warnings: [
             ...(Array.isArray(previous.warnings) ? previous.warnings : []),
@@ -53,14 +61,7 @@ export function createSnapshotStore({ ctx, settings, resolveGh, log: safeLog }) 
         sections: SECTION_IDS.map((id) => ({ id, items: [] })),
         warnings: [],
         error: { code: `gh-${code}`, message },
-        settings: {
-          orgs: settings.orgs,
-          includePersonal: settings.includePersonal,
-          sourcesAuto: settings.orgs.length === 0,
-          refreshSeconds: settings.refreshSeconds,
-          requireGreenChecks: settings.requireGreenChecks,
-          includeBotReviews: settings.includeBotReviews,
-        },
+        settings: snapshotSettings(settings),
         meta: { durationMs: 0, rateLimit: null },
       }
     }
@@ -68,10 +69,18 @@ export function createSnapshotStore({ ctx, settings, resolveGh, log: safeLog }) 
 
   cache = createSnapshotCache(build, () => adaptiveTtlMs, shouldCacheSnapshot)
 
+  /** The cached snapshot, else the one inherited from `previous`, else null. */
+  const fallbackSnapshot = () => {
+    const own = cache === null ? null : cache.peek()
+    if (own === null || own === undefined) return inherited
+    inherited = null
+    return own
+  }
+
   /** Snapshot row for an exact URL, with its section id, or null. */
   const findSnapshotEntry = (url) => {
-    const snapshot = cache.peek()
-    if (snapshot === null || snapshot === undefined || !Array.isArray(snapshot.sections)) return null
+    const snapshot = fallbackSnapshot()
+    if (snapshot === null || !Array.isArray(snapshot.sections)) return null
     for (const section of snapshot.sections) {
       for (const item of (section && section.items) || []) {
         if (item && item.url === url) return { section: section.id, item }
@@ -80,5 +89,5 @@ export function createSnapshotStore({ ctx, settings, resolveGh, log: safeLog }) 
     return null
   }
 
-  return { cache, lastSnapshot: () => lastSnapshot, findSnapshotEntry }
+  return { cache, lastSnapshot: () => lastSnapshot, fallbackSnapshot, findSnapshotEntry }
 }
