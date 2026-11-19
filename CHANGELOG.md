@@ -59,6 +59,14 @@
 ### Package
 
 - **Shorter plugin description** in both locales.
+- **Uninstall is documented.** The reference documents what removing the
+  plugin leaves in the profile and how to reset it.
+
+### Development
+
+- **`check:docs` checks anchors.** It covers every shipped Markdown file,
+  checks `#section` links against the target file's headings and `<a id>`
+  anchors, and fails a link whose case differs from the file on disk.
 
 ## 0.1.0 — 2026-11-15
 

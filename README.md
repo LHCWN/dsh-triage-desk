@@ -62,6 +62,11 @@ To update later, run the following and restart DSH:
 dsh plugin --profile <profile> add dsh-triage-desk@latest
 ```
 
+Removing the plugin (`dsh plugin --profile <profile> remove dsh-triage-desk`,
+or **Remove** in Plugin Manager) keeps your saved settings in the profile, and
+a reinstall picks them up again. To start from the defaults, see
+[uninstall and saved settings](docs/REFERENCE.md#uninstall-and-saved-settings).
+
 ### From a local checkout (development)
 
 1. Clone the repository.

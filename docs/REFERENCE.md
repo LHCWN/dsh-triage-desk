@@ -15,6 +15,7 @@ overview; [ARCHITECTURE.md](ARCHITECTURE.md) maps files and contracts.
   - [Agents](#agents)
 - [Clone discovery](#clone-discovery)
 - [Configuration](#configuration)
+- [Uninstall and saved settings](#uninstall-and-saved-settings)
 - [How it works](#how-it-works)
 - [Limitations](#limitations)
 - [Development](#development)
@@ -399,7 +400,25 @@ and the warning lists the rejected ones.
 ## Configuration
 
 The settings form writes the plugin row's `config` into the active DSH profile.
-The same fields can be set manually in `cordis.patch.yml`:
+The same fields can be set manually in `cordis.patch.yml`. The first **Save**
+in Settings adds an override for the plugin's row to the profile's own patch
+file, `$DSH_HOME/profiles/<profile>/cordis.patch.yml` (`DSH_HOME` defaults to
+`.dsh` in your home folder on macOS, Linux and Windows):
+
+```yaml
+- id: triage-desk
+  name: dsh-triage-desk
+  config:
+    orgs:
+      - acme
+    refreshSeconds: 600
+    # … the other fields Settings saved
+```
+
+Turning the row off in Plugin Manager writes `disabled: true` into the same
+override (or adds one if Settings has not saved yet).
+
+Fields:
 
 | Field | Default | Meaning |
 |---|---|---|
@@ -425,6 +444,26 @@ The same fields can be set manually in `cordis.patch.yml`:
 There is intentionally no `export const Config`: the row config is validated by
 the settings endpoint and read with defaults in code, so the bundle needs no
 `@deepseek-ai/*` dependency (a linked local bundle cannot resolve them).
+
+## Uninstall and saved settings
+
+Updating, removing and reinstalling the plugin never edit the profile's
+`cordis.patch.yml`. The [saved override](#configuration), including a
+`disabled: true` row, stays and applies again when the plugin is reinstalled.
+While the plugin is not installed, DSH logs
+`patch: entry triage-desk not found` each time it loads the profile (its offline
+config dump quotes the id: `patch: entry "triage-desk" not found`); the warning
+is harmless.
+
+To start from the defaults, quit DSH and delete the whole `- id: triage-desk`
+override (the line and everything indented under it) from the profile's
+`cordis.patch.yml`. Deleting it also stops the warning. Leave the rows of other
+plugins as they are. If it was the only entry, leave `[]` on a line of its
+own: the file must stay a YAML list, and DSH does not start the profile when it
+holds only comments.
+
+This section was checked against DSH 0.2.2-rc.5; the plugin supports
+`>=0.2.2-rc.2 <0.3.0`.
 
 ## How it works
 
@@ -579,8 +618,11 @@ The local install and reload rules are in [DEV_LOCAL.md](DEV_LOCAL.md).
 
 Checks:
 
-- `npm run check:docs`: verifies that relative links and images in both READMEs
-  (English and Chinese) resolve.
+- `npm run check:docs`: verifies that relative links, images and `[ref]:`
+  definitions in every shipped Markdown file (both READMEs, the changelog, and
+  `docs/`) resolve from the linking file's directory with exact case, and that
+  `#section` anchors name a heading or `<a id>` anchor in the target file.
+  Links in fenced or indented code blocks and code spans are skipped.
 - `npm run smoke:client`: registers the client bundle against a fake module
   loader, checks the slot registrations, validates EN/ZH dictionary parity (key
   sets, placeholders, literal `t()` keys), and tests polling, retries, and

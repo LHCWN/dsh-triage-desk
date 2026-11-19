@@ -48,6 +48,8 @@ dsh plugin --profile <profile> add dsh-triage-desk
 dsh plugin --profile <profile> add dsh-triage-desk@latest
 ```
 
+移除插件（`dsh plugin --profile <profile> remove dsh-triage-desk`，或在 Plugin Manager 中点击**移除**）不会删除 profile 中已保存的设置，重新安装后会再次使用这些设置。如需恢复默认值，参见[卸载与已保存的设置](docs/REFERENCE.md#uninstall-and-saved-settings)。
+
 ### 从本地检出安装（开发）
 
 1. 克隆仓库。
