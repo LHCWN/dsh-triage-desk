@@ -155,9 +155,11 @@ whole file.
   slot shared by the transient retry and `scheduleErrorRetry`
   (`ERROR_RETRY_SECONDS` 15/60/300, each capped by the poll interval), and a
   save generation protecting confirmed settings/cadence from older in-flight
-  config/snapshot reads. `confirmAccepted` handles an older running host that
-  answers a save with 202: the status becomes `applying` and the config is read
-  back after the restart;
+  config/snapshot reads (a snapshot read started before a save is followed by a
+  fresh one). `reloadAfterSave` is the panel's read after a confirmed save; its
+  first failure is retried once after `SAVE_RELOAD_RETRY_MS`.
+  `confirmAccepted` handles an older running host that answers a save with 202:
+  the status becomes `applying` and the config is read back after the restart;
 - `staleDetail` puts the current failure (`meta.lastError`) into the stale banner;
 - snooze lives in the store (`snoozed`, `snooze(item, until?)` returning the
   replaced entry, `setSnooze(id, entry)` for Undo, `unsnooze(id)`), persisted

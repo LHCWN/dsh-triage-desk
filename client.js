@@ -37,6 +37,9 @@ window.__ModuleLoader__.load({
     // Restart window before a 202 (older host) save is read back.
     const APPLY_CONFIRM_MS = 5000
     const APPLY_CONFIRM_ATTEMPTS = 2
+    // A save that fell back to a restart leaves the routes briefly missing:
+    // the first snapshot read after it gets one quiet retry this much later.
+    const SAVE_RELOAD_RETRY_MS = 1500
     const MINUTE_MS = 60_000
     const SAVE_STATUSES = ['saving', 'applying', 'saved']
 
@@ -1895,6 +1898,8 @@ window.__ModuleLoader__.load({
       let inflight = null
       let pendingForce = false
       let configRevision = 0
+      // The configRevision whose post-save snapshot read may still retry once.
+      let saveReloadRevision = -1
       let transientRetried = false
       // One recovery slot shared by the transient retry and the failure backoff.
       let retryTimer = null
@@ -2020,18 +2025,47 @@ window.__ModuleLoader__.load({
             return payload
           })
           .catch((error) => {
+            // A read started before a confirmed save is followed by a fresh one
+            // (see finally); its failure says nothing about the saved settings.
+            if (loadRevision !== configRevision) return null
+            if (loadRevision === saveReloadRevision) {
+              // The first read after a save: the plugin may still be coming
+              // back from a restart. Retry once before showing the failure.
+              saveReloadRevision = -1
+              cancelRetry()
+              retryTimer = setTimeout(() => {
+                retryTimer = null
+                if (subscribers > 0 && !disposed && !pageHidden()) void load(false)
+                else set({ refreshing: false })
+              }, SAVE_RELOAD_RETRY_MS)
+              return null
+            }
             set({ status: 'error', error: String((error && error.message) || error), refreshing: false })
             scheduleErrorRetry()
             return null
           })
           .finally(() => {
             inflight = null
+            if (loadRevision === saveReloadRevision) saveReloadRevision = -1
             if (pendingForce) {
               pendingForce = false
               void load(true)
+            } else if (loadRevision !== configRevision) {
+              // Started before a confirmed save: read again for the saved settings.
+              void load(false)
             }
           })
         return inflight
+      }
+
+      /**
+       * The snapshot read after a confirmed save. A read already in flight
+       * started under the old settings, so load() follows it with a fresh one;
+       * the first read for the saved settings retries once if it fails.
+       */
+      const reloadAfterSave = () => {
+        saveReloadRevision = configRevision
+        return load(false)
       }
 
       const loadConfig = (options) => {
@@ -2326,7 +2360,7 @@ window.__ModuleLoader__.load({
       }
 
       return {
-        get, set, subscribe, load, loadConfig, saveConfig, loadAuth, loginGithub,
+        get, set, subscribe, load, reloadAfterSave, loadConfig, saveConfig, loadAuth, loginGithub,
         snooze, unsnooze, setSnooze, setSnoozes, snoozeItems, unsnoozeIds, showToast, dismissToast, dispose,
       }
     }
@@ -5220,7 +5254,7 @@ window.__ModuleLoader__.load({
       const keepEditing = () => setConfirmLeave(false)
       // The save is applied by the time it is confirmed; a non-forced read
       // serves the snapshot for the saved settings without an extra GitHub scan.
-      const afterSave = () => void store.load(false)
+      const afterSave = () => void store.reloadAfterSave()
 
       const settingsButton = h(
         'button',
