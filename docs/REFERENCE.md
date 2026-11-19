@@ -580,7 +580,8 @@ The local install and reload rules are in [DEV_LOCAL.md](DEV_LOCAL.md).
 Checks:
 
 - `npm run check:docs`: verifies that relative links and images in both READMEs
-  (English and Chinese) resolve.
+  (English and Chinese) resolve, including `#section` anchors into Markdown
+  files.
 - `npm run smoke:client`: registers the client bundle against a fake module
   loader, checks the slot registrations, validates EN/ZH dictionary parity (key
   sets, placeholders, literal `t()` keys), and tests polling, retries, and
