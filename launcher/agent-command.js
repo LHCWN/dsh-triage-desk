@@ -241,3 +241,32 @@ export function withAgentExecutable(agentCommand, executablePath, platform = pro
   const pinned = agentCommand.slice(0, executable.start) + quoted + agentCommand.slice(executable.end)
   return hasSafePromptPlaceholder(pinned) ? pinned : agentCommand
 }
+
+/**
+ * The Windows form of withAgentExecutable, used for a native draft: the
+ * executable word (the first word, which the PowerShell draft script runs as
+ * `& '<word>'`) becomes the absolute path detection resolved, so the launch
+ * runs exactly the file that was checked. A bare `& 'claude'` would be
+ * resolved again by the launch PowerShell, which loads the user's $PROFILE
+ * (aliases and functions win over applications: about_Command_Precedence) and
+ * may see another PATH, so it could start a `.cmd` shim instead of the `.exe`
+ * that windowsDraftArgumentSafe approved. The path is double-quoted for the
+ * Windows word rules (a Windows path cannot contain `"`). Returns null when
+ * the command cannot be pinned exactly (a path without a drive or UNC root,
+ * a leading `VAR=` word, or a path the placeholder rule rejects); the caller
+ * must then not use the draft argument.
+ */
+export function withWindowsAgentExecutable(agentCommand, executablePath) {
+  // A drive letter or UNC prefix: `\x` is rooted only on the current drive,
+  // which can differ between detection and the launch's cwd.
+  if (typeof executablePath !== 'string' || !/^(?:[A-Za-z]:\\|\\\\)/.test(executablePath)) return null
+  if (/["\r\n\u0000]/.test(executablePath) || executablePath.endsWith('\\')) return null
+  const words = commandWords(agentCommand, 'win32')
+  if (words === null || words.length === 0) return null
+  const executable = words[0]
+  if (ASSIGNMENT_WORD.test(executable.raw) || executable.raw.endsWith(PROMPT_TOKEN)) return null
+  const pinned = agentCommand.slice(0, executable.start) + '"' + executablePath + '"' + agentCommand.slice(executable.end)
+  if (!hasSafePromptPlaceholder(pinned)) return null
+  const check = commandWords(pinned, 'win32')
+  return check !== null && check[0].value === executablePath ? pinned : null
+}

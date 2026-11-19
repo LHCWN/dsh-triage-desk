@@ -18,7 +18,8 @@
   re-reads the command line: quotes, `& | < > ^`, `%NAME%` and line breaks in a
   prompt were not passed intact, and an item title could run a command. Such an
   agent now gets the prompt typed in (or on the clipboard), and the launch menu
-  says so.
+  says so. The draft runs the detected `.exe` by its absolute path, so a
+  `$PROFILE` alias or a different PATH in the terminal cannot swap in a shim.
 - **Prompt delivery setting.** *Type into the agent* (default) or *Copy to
   clipboard* (`promptDelivery`: `paste` | `clipboard`). When Python 3 or ConPTY
   is missing, Settings says what to install and launches use the clipboard.

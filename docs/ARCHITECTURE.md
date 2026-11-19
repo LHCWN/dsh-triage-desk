@@ -47,7 +47,8 @@ import the launcher layer only through `launcher.js` and the data layer through
     its directory as `binDir`; picks the delivery mode — `draft` for agents with
     a native draft flag (on Windows only when `windowsDraftArgumentSafe` accepts
     the detected path: an `.exe`, never a `.cmd`/`.bat` that `cmd.exe` would
-    re-parse), `paste` when `promptDelivery` is `paste` and
+    re-parse; `withWindowsAgentExecutable` then runs that `.exe` by its
+    absolute path, or the draft is not used), `paste` when `promptDelivery` is `paste` and
     `detectPasteSupport` allows it, else `clipboard` with `delivery.pasteBlocked`
     naming the reason; the clipboard always gets a copy), temp directories,
     `openLoginTerminal`;

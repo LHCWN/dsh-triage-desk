@@ -210,6 +210,8 @@ await check('paste launcher types a hostile prompt into a .cmd shim agent intact
   assert.ok(paste, 'the agent received a paste: ' + JSON.stringify(recorded) + output)
   assert.equal(paste.text, HOSTILE, 'the prompt is typed in byte for byte')
   assert.equal(paste.before, '', 'nothing is typed before the paste')
+  // HOSTILE has no paste end marker of its own, so the first one closes it.
+  assert.ok(!/[\r\n]$/.test(recorded.input.slice(recorded.input.indexOf('\x1b[201~') + 6)), 'no Enter after the paste')
   assert.doesNotMatch(output, /could not type the prompt/, 'the ConPTY host ran')
   assert.equal(existsSync(canary), false, 'nothing in the prompt ran')
   assert.equal(run.dirLeft, false, 'the launcher removes its prompt, host source and directory')

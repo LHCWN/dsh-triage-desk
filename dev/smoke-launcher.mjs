@@ -56,6 +56,7 @@ import {
   parseSshConfigHosts,
   remoteToRepo,
   withAgentExecutable,
+  withWindowsAgentExecutable,
   PASTE_TRUST_PATTERN,
   TERMINAL_CATALOG,
   buildGhosttyTabAppleScript,
@@ -1120,6 +1121,7 @@ await checkAsync('Windows keeps the native draft for an .exe agent only; .cmd/.b
   const release = os.release
   const cases = [
     { name: 'an .exe agent', probe: [0, 'C:\\bin\\claude.exe'], build: '10.0.22631', mode: 'draft', blocked: null },
+    { name: "an .exe agent under a path with spaces and a quote", probe: [0, "C:\\Program Files (x86)\\O'Neil\\claude.EXE"], build: '10.0.22631', mode: 'draft', blocked: null },
     { name: 'an npm .cmd shim', probe: [0, 'C:\\npm\\claude.cmd'], build: '10.0.22631', mode: 'paste', blocked: null },
     { name: 'a .BAT file', probe: [0, 'C:\\tools\\CLAUDE.BAT'], build: '10.0.22631', mode: 'paste', blocked: null },
     { name: 'a .ps1 shim', probe: [0, 'C:\\npm\\claude.ps1'], build: '10.0.22631', mode: 'paste', blocked: null },
@@ -1141,6 +1143,14 @@ await checkAsync('Windows keeps the native draft for an .exe agent only; .cmd/.b
         assert.deepEqual(result.body.delivery, { mode: entry.mode, pasteBlocked: entry.blocked, platform: 'win32' }, entry.name)
         const script = [...files.entries()].find(([file]) => file.endsWith('launch.ps1'))?.[1].toString('utf8') || ''
         assert.equal(script.includes('--prefill'), entry.mode === 'draft', entry.name + ': the prompt argument is used only for a native draft')
+        if (entry.mode === 'draft') {
+          // The launch runs the file detection checked: a profile alias,
+          // function or a different PATH order in the launch shell cannot
+          // swap the .exe for a .cmd shim that would get the prompt argument.
+          const quoted = "& '" + entry.probe[1].split("'").join("''") + "'"
+          assert.ok(script.split('\n').some((line) => line.trimStart().startsWith(quoted + ' ')), entry.name + ': the draft runs the detected .exe')
+          assert.ok(!script.includes("& 'claude'"), entry.name + ': the draft never runs the bare name')
+        }
         if (entry.mode === 'paste') {
           assert.ok(script.includes('(paste mode;'), entry.name)
           const payload = script.match(/-EncodedCommand ' \+ '([A-Za-z0-9+/=]+)'/)
@@ -1305,6 +1315,16 @@ check('the detected executable is pinned without breaking the rule', () => {
   assert.equal(withAgentExecutable('/usr/local/bin/claude {prompt}', '/opt/x/claude'), '/usr/local/bin/claude {prompt}')
   assert.equal(withAgentExecutable('claude {prompt}', 'relative/claude'), 'claude {prompt}')
   assert.equal(withAgentExecutable('claude {prompt}', '/opt/$(x)/claude'), 'claude {prompt}', 'never pin into a rejected command')
+})
+
+check('a Windows draft pins the detected executable or refuses to', () => {
+  assert.equal(withWindowsAgentExecutable('claude {prompt}', 'C:\\bin\\claude.exe'), '"C:\\bin\\claude.exe" {prompt}')
+  assert.equal(withWindowsAgentExecutable('C:\\old\\claude --x {prompt}', 'C:\\new\\claude.exe'), '"C:\\new\\claude.exe" --x {prompt}', 'an explicit path is pinned too')
+  assert.equal(withWindowsAgentExecutable("claude {prompt}", "\\\\srv\\O'Neil (x86)\\claude.exe"), "\"\\\\srv\\O'Neil (x86)\\claude.exe\" {prompt}")
+  assert.equal(withWindowsAgentExecutable('claude {prompt}', 'bin\\claude.exe'), null, 'a relative path')
+  assert.equal(withWindowsAgentExecutable('claude {prompt}', '/opt/claude.exe'), null, 'not a Windows absolute path')
+  assert.equal(withWindowsAgentExecutable('FOO=1 claude {prompt}', 'C:\\bin\\claude.exe'), null, 'a leading assignment word')
+  assert.equal(withWindowsAgentExecutable('claude {prompt}', "C:\\a$'b\\claude.exe"), null, 'a path the placeholder rule rejects')
 })
 
 check('POSIX launchers add the agent directory to PATH only when missing', () => {

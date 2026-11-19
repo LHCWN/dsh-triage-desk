@@ -28,6 +28,7 @@ import {
   scenarioTitle,
   windowsDraftArgumentSafe,
   withAgentExecutable,
+  withWindowsAgentExecutable,
 } from '../launcher.js'
 import { LaunchError } from './errors.js'
 
@@ -198,7 +199,8 @@ export function createLaunch({
     }
     // Run exactly the binary detection found, and make its directory
     // reachable for `#!/usr/bin/env node` shims (see agentPathLines). Windows
-    // keeps PowerShell's own command resolution.
+    // keeps PowerShell's own command resolution, except for a native draft
+    // (windowsDraftCommand below).
     const detectedPath = status !== undefined && status.available === true && typeof status.path === 'string'
       ? status.path
       : ''
@@ -242,13 +244,19 @@ export function createLaunch({
     // input box by the paste wrapper when it can run here, else via the
     // clipboard; `delivery.pasteBlocked` says why paste was not used. On
     // Windows the draft argument is safe only for a resolved .exe
-    // (windowsDraftArgumentSafe); a .cmd/.bat shim is treated like an agent
-    // without a draft flag, so the prompt never reaches cmd.exe.
+    // (windowsDraftArgumentSafe), and the draft runs that .exe by its absolute
+    // path so the launch shell's profile aliases, functions or PATH order
+    // cannot swap in a .cmd shim; a .cmd/.bat shim, or a command that cannot
+    // be pinned, is treated like an agent without a draft flag, so the prompt
+    // never reaches cmd.exe.
     const windows = platform === 'win32'
+    const windowsDraftCommand = windows && typeof agent.draftFlag === 'string' && windowsDraftArgumentSafe(detectedPath)
+      ? withWindowsAgentExecutable(agent.command, detectedPath)
+      : null
     let mode = 'clipboard'
     let pasteBlocked = null
     let python = null
-    if (typeof agent.draftFlag === 'string' && (!windows || windowsDraftArgumentSafe(detectedPath))) {
+    if (typeof agent.draftFlag === 'string' && (!windows || windowsDraftCommand !== null)) {
       mode = 'draft'
     } else if (launcherSettings.promptDelivery === 'paste') {
       const support = await detectPasteSupport().catch(() => ({ available: false, reason: 'python-missing', python: null }))
@@ -297,7 +305,7 @@ export function createLaunch({
         script = buildWindowsDraftLauncherScript({
           cwd: clonePath,
           title: windowTitle,
-          agentCommand: agent.command,
+          agentCommand: windowsDraftCommand,
           promptFile,
           draftFlag: agent.draftFlag,
         })

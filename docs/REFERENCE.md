@@ -233,7 +233,9 @@ focus-or-reuse is best-effort and falls back to a fresh tab or window.
 **Claude Code** opens with its native draft flag,
 `claude --prefill '<prompt>'`: the TUI starts with the prompt in its composer and
 nothing submitted. On Windows the draft is used only when the agent's executable
-resolves to an `.exe`. A `.cmd`/`.bat` shim (what an npm install of `claude`
+resolves to an `.exe`, and the launch runs that `.exe` by its absolute path, so
+a `$PROFILE` alias or function of the same name, or another PATH order in the
+terminal, cannot start a different file. A `.cmd`/`.bat` shim (what an npm install of `claude`
 creates) runs through `cmd.exe`, which reads the command line a second time and
 cannot be given a prompt argument safely, so such an agent, a `.ps1` shim, or one
 whose path detection could not resolve gets the prompt like the agents below:
