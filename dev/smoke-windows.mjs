@@ -12,6 +12,9 @@
  *   - the clipboard launcher keeps static arguments of an npm-style `.cmd` shim;
  *   - the paste launcher types the hostile prompt into a `.cmd` shim agent
  *     intact; the command it smuggles in never runs;
+ *   - paste launches run an `.exe`, `.cmd` and `.ps1` agent by the path
+ *     detection reported, pinned as the host pins it; the command's own name
+ *     is not on PATH, so the bare name could not start it;
  *   - every launcher removes itself and its per-launch directory.
  *
  * Run with `npm run smoke:windows`. Not shipped in the npm package.
@@ -24,10 +27,13 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   PASTE_WRAPPER_CS,
+  bareAgentCommand,
   buildWindowsClipboardLauncherScript,
   buildWindowsDraftLauncherScript,
   buildWindowsPasteLauncherScript,
   sanitizePastePrompt,
+  windowsQuote,
+  withAgentExecutable,
 } from '../launcher.js'
 import { assertUnsentPaste } from './fixtures/paste.mjs'
 import { removeOnExit } from './fixtures/platform.mjs'
@@ -55,6 +61,9 @@ await fs.writeFile(shim, '@"' + process.execPath + '" "%~dp0record-args.mjs" %*\
 const fakeAgent = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-agent.mjs')
 const agentShim = path.join(tools, 'fake-agent.cmd')
 await fs.writeFile(agentShim, '@"' + process.execPath + '" "' + fakeAgent + '" %*\r\n')
+// And behind an npm-style PowerShell shim; it exits with the agent's status.
+const agentPs1 = path.join(tools, 'fake-agent.ps1')
+await fs.writeFile(agentPs1, '& ' + windowsQuote(process.execPath) + ' ' + windowsQuote(fakeAgent) + ' @args\r\nexit $LASTEXITCODE\r\n')
 
 // The clone directory: drive letter, non-ASCII characters, a space and `;`.
 const clone = path.join(root, '工作 repo; ü')
@@ -205,6 +214,40 @@ await check('paste launcher types a hostile prompt into a .cmd shim agent intact
   assert.equal(existsSync(canary), false, 'nothing in the prompt ran')
   assert.equal(run.dirLeft, false, 'the launcher removes its prompt, host source and directory')
 })
+
+// Paste mode runs the program detection reported (issue #11). Each agent's
+// command names a program that is not on PATH, so only the pinned path can
+// start it: the host's pin (withAgentExecutable) and bare command are used.
+for (const [kind, detected, args] of [
+  ['an .exe', process.execPath, '"' + fakeAgent + '" plain'],
+  ['a .cmd', agentShim, 'plain'],
+  ['a .ps1', agentPs1, 'plain'],
+]) {
+  await check('paste launcher runs ' + kind + ' agent by its detected path', async () => {
+    const result = path.join(root, 'pinned-' + path.extname(detected).slice(1) + '.json')
+    const agentCommand = 'td-not-on-path ' + args + ' "' + result + '" {prompt}'
+    const pinned = withAgentExecutable(agentCommand, detected, 'win32')
+    assert.equal(pinned, '"' + detected + '" ' + args + ' "' + result + '" {prompt}')
+    const run = await runLauncher((dir) => {
+      const promptFile = path.join(dir, 'prompt.txt')
+      const wrapperFile = path.join(dir, 'paste-host.cs')
+      writeFileSync(promptFile, sanitizePastePrompt(PROMPT), 'utf8')
+      writeFileSync(wrapperFile, PASTE_WRAPPER_CS, 'utf8')
+      return buildWindowsPasteLauncherScript({
+        cwd: clone,
+        title: 'Triage Desk: paste [Agent]',
+        bareCommand: bareAgentCommand(pinned, 'win32'),
+        wrapperFile,
+        promptFile,
+      })
+    }, 90_000)
+    const output = run.result.stdout + run.result.stderr
+    assert.ok(existsSync(result), 'the agent ran: ' + output)
+    assertUnsentPaste(JSON.parse(await fs.readFile(result, 'utf8')), PROMPT, output)
+    assert.doesNotMatch(output, /could not type the prompt/, 'the ConPTY host ran')
+    assert.equal(run.dirLeft, false)
+  })
+}
 
 const failed = checks.filter((entry) => entry.ok === false)
 console.log(`\n${checks.length - failed.length}/${checks.length} windows checks passed`)
