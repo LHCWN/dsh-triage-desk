@@ -16,6 +16,12 @@ import the launcher layer only through `launcher.js` and the data layer through
   `host/` factories, the exact web routes, the `triage_desk` tool and the
   system-prompt section. It keeps its public exports (`apply`, `inject`,
   `name`, `createSnapshotCache`, `shouldCacheSnapshot`, `hasTransientWarnings`).
+  `wire(config)` builds the settings and the `host/` factories; an
+  `internal/update` listener rebuilds them for a saved config instead of
+  letting the loader restart the plugin, so the tool and the routes stay
+  registered (a config that cannot be wired falls back to the restart).
+  Routes and the tool read the current wiring when a request starts.
+  `dev/smoke-routes.mjs` models the loader's update waterfall (`startFiber`).
 - `host/` — one responsibility per module, each a factory over `{ ctx,
   settings, platform, log, … }` where it needs plugin state:
   - `snapshot-cache.js` — `createSnapshotCache` (single flight, queued forced
@@ -266,9 +272,9 @@ Snapshot sections are fixed: `review`, `rereview`, `merge`, `respond`, `ci`,
   unused or undeclared variables; add a case there when changing section
   classification, pagination, quota limits or snapshot failure handling.
 - `POST /triage-desk/config` returns 200 only after `configEditor.edit` resolves,
-  that is, after the profile write and the plugin restart; failures return 500
-  with `save-failed`. Client success requires this confirmation, and edits made
-  during a pending save remain dirty.
+  that is, after the profile write and the loader's `fiber.update`; failures
+  return 500 with `save-failed`. Client success requires this confirmation, and
+  edits made during a pending save remain dirty.
 - `dev/smoke-client.mjs` covers store lifetimes, polling, the error-retry
   schedule and visibility handling with fake timers.
 - `dev/smoke-render.mjs` renders the real client with a fixture, including the

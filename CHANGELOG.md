@@ -40,6 +40,11 @@
 
 ### Agent tool
 
+- **Saving settings no longer interrupts the tool.** A save is applied to the
+  running plugin instead of restarting it, so a `triage_desk` call made while
+  settings are being saved is answered instead of failing with
+  `unknown tool "triage_desk"`. A config that cannot be applied live still
+  falls back to a restart.
 - **Stale and partial snapshots are reported.** The `triage_desk` report adds a
   `Status: stale|partial — reason` line, and its header says how old the
   snapshot is.

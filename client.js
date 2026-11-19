@@ -204,7 +204,7 @@ window.__ModuleLoader__.load({
       'settings.invalidScenarioAgent': 'Scenario “{scenario}” is pinned to an unknown agent “{agent}” — choose another agent.',
       'settings.scenarioAgentUnknown': 'Unknown agent ({agent})',
       'settings.unavailable': 'This profile cannot save settings from the panel — edit the plugin row config in cordis.patch.yml.',
-      'settings.restartHint': 'Changes restart the plugin; the panel refreshes itself.',
+      'settings.applyHint': 'Changes apply without restarting the plugin; the panel refreshes itself.',
       'settings.minutes': '{n} min',
       'settings.hours': '{n} h',
       'settings.minuteUnit': 'min',
@@ -489,7 +489,7 @@ window.__ModuleLoader__.load({
       'settings.invalidScenarioAgent': '场景“{scenario}”绑定了未知智能体“{agent}”——请选择其他智能体。',
       'settings.scenarioAgentUnknown': '未知智能体（{agent}）',
       'settings.unavailable': '此配置无法从面板保存设置——请编辑 cordis.patch.yml 中该插件的配置。',
-      'settings.restartHint': '修改会重启插件；面板会自动刷新。',
+      'settings.applyHint': '修改无需重启插件即可生效；面板会自动刷新。',
       'settings.minutes': '{n} 分钟',
       'settings.hours': '{n} 小时',
       'settings.minuteUnit': '分钟',
@@ -4685,7 +4685,7 @@ window.__ModuleLoader__.load({
             label: t('settings.bots'),
           }),
         ),
-        h('p', { className: 'adx-form-note' }, t('settings.restartHint')),
+        h('p', { className: 'adx-form-note' }, t('settings.applyHint')),
         h(
           'details',
           { className: 'adx-advanced' },
@@ -5232,8 +5232,8 @@ window.__ModuleLoader__.load({
       }
       const keepEditing = () => setConfirmLeave(false)
       const afterSave = () => {
-        // The plugin restarts after a config save; a non-forced poll picks up
-        // the fresh snapshot once it is back without triggering extra GitHub scans.
+        // A config save rebuilds the host's snapshot cache; a non-forced poll
+        // picks up the fresh snapshot without triggering extra GitHub scans.
         later(() => void store.load(false), 1500)
         later(() => void store.load(false), 4500)
       }

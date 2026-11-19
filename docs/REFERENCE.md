@@ -505,10 +505,13 @@ This section was checked against DSH 0.2.2-rc.5; the plugin supports
   shows the current failure. Delayed recovery is cancelled when the last view
   unmounts or the plugin is disposed, including when an older response arrives
   afterward. No build step, no external network calls.
-- **Settings** are saved through DSH's config editor into the profile patch; a
-  change restarts the plugin and the panel refreshes itself. The host answers
-  only after the profile write and the plugin restart complete, and only then
-  does the panel show **Saved**. A failed write keeps the form open with the
+- **Settings** are saved through DSH's config editor into the profile patch and
+  applied to the running plugin without a restart: the `triage_desk` tool and
+  the routes stay registered, so an agent calling the tool during a save is
+  answered (with the settings it started under). The snapshot cache starts
+  over and the panel refreshes itself. The host answers only after the profile
+  write and the loader applied the config, and only then does the panel show
+  **Saved**. A failed write keeps the form open with the
   error and the edits available for retry. Settings reads started before a
   confirmed save cannot overwrite its values or status. Leaving Settings with
   unsaved edits (Back, Cancel, or the gear) asks whether to discard them or keep
