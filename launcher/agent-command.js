@@ -223,12 +223,20 @@ export function buildDraftCommand(agentCommand, prompt, draftFlag) {
 }
 
 /**
- * Pins the command's executable to the absolute path agent detection found:
- * the first non-assignment word is replaced (shell-quoted when needed). An
- * already path-qualified executable is kept. Detection and launch then run the
- * same binary even when the launch shell lacks the user's aliases or rc PATH.
+ * Pins the command's executable to the absolute path agent detection found, so
+ * detection and launch run the same program even when the launch shell has
+ * other aliases, functions or PATH order. Returns the command unchanged when
+ * the path cannot be pinned exactly; the launch then resolves the command as
+ * written.
+ *
+ * POSIX: the first non-assignment word is replaced (shell-quoted when needed);
+ * an already path-qualified executable is kept.
+ *
+ * Windows (windowsPinnedCommand): the first word becomes the normalized
+ * absolute path, double-quoted.
  */
 export function withAgentExecutable(agentCommand, executablePath, platform = process.platform) {
+  if (platform === 'win32') return windowsPinnedCommand(agentCommand, executablePath) ?? agentCommand
   if (typeof executablePath !== 'string' || !path.isAbsolute(executablePath)) return agentCommand
   if (/[\r\n\u0000]/.test(executablePath)) return agentCommand
   const words = commandWords(agentCommand, platform)
@@ -243,19 +251,47 @@ export function withAgentExecutable(agentCommand, executablePath, platform = pro
 }
 
 /**
- * The Windows form of withAgentExecutable, used for a native draft: the first
- * word becomes the absolute path detection resolved, double-quoted (a Windows
- * path cannot contain `"`). A bare `& 'claude'` would be resolved again by the
- * launch PowerShell, which loads the user's $PROFILE (aliases and functions win
- * over applications: about_Command_Precedence) and may see another PATH, so it
- * could start a `.cmd` shim instead of the `.exe` that windowsDraftArgumentSafe
- * approved. Returns null when the command cannot be pinned exactly; the caller
- * must then not use the draft argument.
+ * One spelling of a detected Windows path for the pin and the draft's `.exe`
+ * check, or '' when it cannot be pinned. An absolute path written in the agent
+ * command skips the probe's trimming and may use `/` (`C:/tools/claude.exe`):
+ * path.win32.normalize turns `/` into `\` and keeps a drive-relative path
+ * (`\x`, `C:x`) drive-relative. Only a drive letter or UNC root is accepted:
+ * `\x` is rooted only on the current drive, which can differ between
+ * detection and the launch's cwd.
  */
-export function withWindowsAgentExecutable(agentCommand, executablePath) {
-  // A drive letter or UNC prefix: `\x` is rooted only on the current drive,
-  // which can differ between detection and the launch's cwd.
-  if (typeof executablePath !== 'string' || !/^(?:[A-Za-z]:\\|\\\\)/.test(executablePath)) return null
+function windowsExecutablePath(detectedPath) {
+  const trimmed = typeof detectedPath === 'string' ? detectedPath.trim() : ''
+  if (trimmed === '' || /[\r\n\u0000]/.test(trimmed)) return ''
+  const normalized = path.win32.normalize(trimmed)
+  return /^(?:[A-Za-z]:\\|\\\\)/.test(normalized) ? normalized : ''
+}
+
+/**
+ * The Windows pin, or null when the command cannot be pinned exactly. A bare
+ * `& 'claude'` is resolved again by the launch PowerShell, which loads the
+ * user's $PROFILE (aliases and functions win over applications:
+ * about_Command_Precedence) and may see another PATH order, so it could start
+ * a `.cmd` or `.ps1` shim instead of the program Settings reports, or the
+ * reverse. The first word is the executable on Windows, also when it is
+ * path-qualified; a POSIX `VAR=value` prefix is not pinned. A Windows path
+ * cannot contain `"`, so double quotes keep it one word.
+ *
+ * What a pinned path runs, checked against the platform documentation:
+ *   - a `.cmd`/`.bat` runs through `cmd.exe` exactly as when PowerShell finds
+ *     it by name (CreateProcess: a batch file needs `cmd.exe /c`), so the
+ *     static arguments of the user's own command are parsed by `cmd.exe`
+ *     either way; prompts never reach that command line (draftCommandFor);
+ *   - a `.ps1` is subject to the same execution policy whether it is called by
+ *     path or found by name. Launch windows start `powershell.exe
+ *     -ExecutionPolicy Bypass` (terminal-plan.js), which sets the Process
+ *     scope, and that policy "affects only the current session and child
+ *     sessions" (about_Execution_Policies, 5.1), so the paste host's nested
+ *     `powershell.exe` runs it under Bypass too. Only a Group Policy setting
+ *     overrides it, and it blocks the bare-name lookup the same way.
+ */
+function windowsPinnedCommand(agentCommand, detectedPath) {
+  const executablePath = windowsExecutablePath(detectedPath)
+  if (executablePath === '') return null
   const words = commandWords(agentCommand, 'win32')
   if (words === null || words.length === 0) return null
   const executable = words[0]
@@ -287,20 +323,14 @@ function windowsDraftArgumentSafe(executablePath) {
  * The one decision whether a launch may use the agent's native draft flag:
  * the command to run with it, or null when the prompt must be typed in or
  * copied instead. `detectedPath` is the path agent detection resolved ('' when
- * none). POSIX pins the executable as withAgentExecutable does; Windows needs
- * an `.exe` (windowsDraftArgumentSafe) run by its absolute path
- * (withWindowsAgentExecutable).
+ * none). The executable is pinned as withAgentExecutable does; on Windows the
+ * draft also needs an `.exe` (windowsDraftArgumentSafe) that the pin replaced
+ * exactly, so the argument rules apply to the program that runs.
  */
 export function draftCommandFor(agent, detectedPath, platform = process.platform) {
   if (typeof agent.draftFlag !== 'string') return null
   if (platform !== 'win32') return withAgentExecutable(agent.command, detectedPath, platform)
-  // One spelling for the .exe check and the pin: an absolute path written in
-  // the agent command skips the probe's trimming and may use `/`
-  // (`C:/tools/claude.exe`). path.win32.normalize turns `/` into `\` and keeps
-  // a drive-relative path (`\x`, `C:x`) drive-relative, so the pin still
-  // rejects it.
-  const trimmed = typeof detectedPath === 'string' ? detectedPath.trim() : ''
-  if (trimmed === '') return null
-  const executablePath = path.win32.normalize(trimmed)
-  return windowsDraftArgumentSafe(executablePath) ? withWindowsAgentExecutable(agent.command, executablePath) : null
+  // windowsExecutablePath gives the check and the pin one spelling.
+  const executablePath = windowsExecutablePath(detectedPath)
+  return windowsDraftArgumentSafe(executablePath) ? windowsPinnedCommand(agent.command, executablePath) : null
 }

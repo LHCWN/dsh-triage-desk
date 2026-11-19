@@ -196,14 +196,14 @@ export function createLaunch({
         ...(status.reason ? { reason: status.reason } : {}),
       })
     }
-    // Run exactly the binary detection found, and make its directory
-    // reachable for `#!/usr/bin/env node` shims (see agentPathLines). Windows
-    // keeps PowerShell's own command resolution, except for a native draft
-    // (draftCommandFor).
+    // Run exactly the program detection found (withAgentExecutable; when it
+    // cannot be pinned the command runs as written), and on macOS/Linux make
+    // its directory reachable for `#!/usr/bin/env node` shims (see
+    // agentPathLines). Windows does not touch PATH.
     const detectedPath = status !== undefined && status.available === true && typeof status.path === 'string'
       ? status.path
       : ''
-    const launchCommand = platform === 'win32' ? agent.command : withAgentExecutable(agent.command, detectedPath, platform)
+    const launchCommand = withAgentExecutable(agent.command, detectedPath, platform)
     const binDir = platform !== 'win32' && detectedPath !== '' ? path.dirname(detectedPath) : undefined
     const { count, trimmed, prompt } = rendered
     let repo = ''
@@ -278,7 +278,7 @@ export function createLaunch({
         const wrapperFile = path.join(tempDir, windows ? 'paste-host.cs' : 'paste-wrapper.py')
         await fs.writeFile(promptFile, sanitizePastePrompt(prompt), 'utf8')
         await fs.writeFile(wrapperFile, windows ? PASTE_WRAPPER_CS : PASTE_WRAPPER_PY, 'utf8')
-        const bareCommand = bareAgentCommand(windows ? agent.command : launchCommand, platform)
+        const bareCommand = bareAgentCommand(launchCommand, platform)
         script = windows
           ? buildWindowsPasteLauncherScript({ cwd: clonePath, title: windowTitle, bareCommand, wrapperFile, promptFile })
           : buildPasteLauncherScript({
@@ -305,7 +305,7 @@ export function createLaunch({
         script = buildWindowsClipboardLauncherScript({
           cwd: clonePath,
           title: windowTitle,
-          bareCommand: bareAgentCommand(agent.command, platform),
+          bareCommand: bareAgentCommand(launchCommand, platform),
         })
       } else if (mode === 'draft') {
         const command = buildDraftCommand(draftCommand, prompt, agent.draftFlag)
