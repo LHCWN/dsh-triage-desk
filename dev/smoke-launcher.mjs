@@ -67,6 +67,8 @@ import {
   sanitizePastePrompt,
   windowsQuote,
   effectiveDefaultAgent,
+  installedAgents,
+  panelDefaultTarget,
   DSH_TARGET,
   DISCOVERABLE_AGENTS,
 } from '../launcher.js'
@@ -152,6 +154,12 @@ check('the default agent falls back to the first installed one', () => {
   // A launch the host runs cannot open a DSH chat: it uses the first installed agent.
   assert.equal(effectiveDefaultAgent(DSH_TARGET, agents, { claude: missing, codex: found }), 'codex')
   assert.equal(effectiveDefaultAgent(DSH_TARGET, agents, { claude: missing }), DSH_TARGET, 'none installed: DSH stays, the launch explains')
+  // The panel opens the saved agent while it can start, else a DSH chat.
+  assert.equal(panelDefaultTarget('codex', { codex: found }), 'codex')
+  assert.equal(panelDefaultTarget('codex', {}), 'codex', 'unknown detection keeps the saved agent')
+  assert.equal(panelDefaultTarget('claude', { claude: missing }), DSH_TARGET)
+  assert.equal(panelDefaultTarget(DSH_TARGET, { claude: found }), DSH_TARGET)
+  assert.deepEqual(installedAgents(agents, { claude: missing, codex: found, opencode: found }).map((agent) => agent.id), ['codex', 'opencode'])
 })
 
 check('presets cover the documented agents', () => {

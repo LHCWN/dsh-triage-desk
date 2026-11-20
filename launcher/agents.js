@@ -53,6 +53,11 @@ function normalizeAgentId(value, fallbackIndex) {
  */
 export const DSH_TARGET = 'dsh'
 
+/** The agents detection found on this machine, in list order. */
+export function installedAgents(agents, detected = {}) {
+  return agents.filter((agent) => detected[agent.id] && detected[agent.id].available === true)
+}
+
 /**
  * The agent a launch the host runs uses for "default". The host cannot open a
  * DSH chat, and a saved agent detection reports missing cannot start, so both
@@ -62,8 +67,18 @@ export const DSH_TARGET = 'dsh'
 export function effectiveDefaultAgent(defaultAgent, agents, detected = {}) {
   const status = detected[defaultAgent]
   if (defaultAgent !== DSH_TARGET && (!status || status.available !== false)) return defaultAgent
-  const found = agents.find((agent) => detected[agent.id] && detected[agent.id].available === true)
+  const [found] = installedAgents(agents, detected)
   return found ? found.id : defaultAgent
+}
+
+/**
+ * What the panel opens for "default": the saved agent while detection does
+ * not report it missing, else a new DSH chat. The panel uses
+ * effectiveDefaultAgent instead when it cannot open DSH.
+ */
+export function panelDefaultTarget(defaultAgent, detected = {}) {
+  const status = detected[defaultAgent]
+  return defaultAgent !== DSH_TARGET && (!status || status.available !== false) ? defaultAgent : DSH_TARGET
 }
 
 /**

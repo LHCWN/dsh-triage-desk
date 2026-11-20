@@ -1363,6 +1363,10 @@ await recordAsync('a default agent that is not installed falls back to the first
   const config = await json(await callHandler('/triage-desk/config', 'GET'))
   assert.equal(config.config.defaultAgent, 'missing', 'the saved choice is kept')
   assert.equal(config.config.effectiveDefaultAgent, 'codex', 'launches use the first installed agent')
+  assert.equal(config.config.defaultTarget, 'dsh', 'the panel opens a DSH chat instead of the missing agent')
+  const reserved = await callHandler('/triage-desk/config', 'POST', { agents: [{ id: 'dsh', label: 'My dsh', command: 'dsh-cli {prompt}' }] })
+  assert.equal(reserved.statusCode, 400)
+  assert.match((await json(reserved)).error.message, /"dsh" is reserved/)
   const res = await callHandler('/triage-desk/launch', 'POST', { url: PR_URL, scenario: 'review-pr' })
   const payload = await json(res)
   assert.equal(res.statusCode, 200, res.body)
@@ -1381,7 +1385,7 @@ apply(ctx, { cloneDirs: [path.join(fixture, 'Playground')], terminal: 'terminal'
 await recordAsync('a fresh profile defaults to DSH and lists only installed agents', async () => {
   const config = (await json(await callHandler('/triage-desk/config', 'GET'))).config
   assert.equal(config.defaultAgent, 'dsh')
-  assert.equal(config.agentsAuto, true)
+  assert.equal(config.defaultTarget, 'dsh', 'the panel opens a DSH chat')
   assert.deepEqual(config.agents.map((agent) => agent.id), ['claude', 'codex'], 'agents that are not installed are not offered')
   assert.equal(config.effectiveDefaultAgent, 'claude', 'a launch the host runs uses the first installed agent')
   const res = await callHandler('/triage-desk/launch', 'POST', { url: PR_URL, scenario: 'review-pr' })

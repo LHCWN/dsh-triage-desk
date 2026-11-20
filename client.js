@@ -1767,27 +1767,45 @@ window.__ModuleLoader__.load({
       return agents.length > 0 ? agents[0].id : ''
     }
 
-    /* What the panel opens for "default": the saved agent while it can start;
-       otherwise (or when the saved default is DSH, a new profile's default) a
-       new DSH chat when the host supports it, else the host's effective agent. */
-    function panelDefaultTarget(config, agents, dsh) {
-      const saved = configValue(config, 'defaultAgent')
-      const detected = configValue(config, 'detectedAgents') || {}
-      const usable = typeof saved === 'string' && saved !== 'dsh' && agents.some((agent) => agent && agent.id === saved) &&
-        !(detected[saved] && detected[saved].available === false)
-      if (usable) return saved
-      if (dsh) return 'dsh'
+    /** The launch target "a new DSH chat" (the host's DSH_TARGET). */
+    const DSH_TARGET = 'dsh'
+
+    /** True when the panel can open a DSH chat with a prompt. */
+    function canOpenDsh(config) {
+      return runtime.uiWorkspace !== null && runtime.uiWorkspace !== undefined && configValue(config, 'supportsPrompt') === true
+    }
+
+    /* What the panel opens for "default": the host's `defaultTarget` (the
+       saved agent while it can start, else DSH), or the host's effective agent
+       when the panel cannot open DSH. An older host sends no defaultTarget. */
+    function panelDefaultTarget(config, agents) {
+      const target = configValue(config, 'defaultTarget')
+      if (target === DSH_TARGET && canOpenDsh(config)) return DSH_TARGET
+      if (typeof target === 'string' && agents.some((agent) => agent && agent.id === target)) return target
       return defaultAgentId(config, agents)
     }
 
-    function scenarioAgentHint(scenario, config, t) {
-      const agents = configList(config, 'agents')
+    /** A launch target's label: DSH, or the agent's label, else its id. */
+    function targetLabel(t, id, agents) {
+      if (id === DSH_TARGET) return t('launch.dshTarget')
+      const agent = agents.find((entry) => entry && entry.id === id)
+      return agent ? agent.label || agent.id : id
+    }
+
+    /** Agent <option>s; agents detection reports missing are marked and say why. */
+    function agentOptions(t, agents, detected) {
+      return agents.map((agent) => {
+        const detection = detected[agent.id]
+        const missing = Boolean(detection && detection.available === false)
+        return h('option', { key: agent.id, value: agent.id, 'data-missing': missing ? 'true' : undefined },
+          (agent.label || agent.id) + (missing ? ' · ' + agentMissingLabel(t, detection) : ''))
+      })
+    }
+
+    /** The agent a scenario runs: its pinned agent, else `target` (what "default" opens). */
+    function scenarioAgentHint(t, scenario, agents, target) {
       const pinned = scenarioPinnedAgent(scenario, agents)
-      if (pinned !== null) return pinned.label
-      if (configValue(config, 'defaultAgent') === 'dsh') return t('launch.dshTarget')
-      const wanted = defaultAgentId(config, agents)
-      const agent = agents.find((entry) => entry !== null && entry !== undefined && entry.id === wanted)
-      return agent !== undefined ? agent.label : wanted
+      return pinned !== null ? pinned.label : targetLabel(t, target, agents)
     }
 
     /** Enabled scenarios of one scope bound to a section, in configured order. */
@@ -2570,7 +2588,7 @@ window.__ModuleLoader__.load({
 
       const launchDsh = (scenarioId) => {
         if (busy) return
-        setLastLaunch({ scenarioId: scenarioId, agentId: null, target: 'dsh' })
+        setLastLaunch({ scenarioId: scenarioId, agentId: null, target: DSH_TARGET })
         setBusy(true)
         setLaunchError(null)
         postJson(PROMPT_URL, buildRequest(scenarioId))
@@ -2586,7 +2604,7 @@ window.__ModuleLoader__.load({
       }
 
       const retry = () => {
-        if (lastLaunch !== null && lastLaunch.target === 'dsh' && lastLaunch.scenarioId) {
+        if (lastLaunch !== null && lastLaunch.target === DSH_TARGET && lastLaunch.scenarioId) {
           launchDsh(lastLaunch.scenarioId)
           return
         }
@@ -2721,25 +2739,20 @@ window.__ModuleLoader__.load({
     function launchTargets(config, picked) {
       const agents = configList(config, 'agents')
       const detected = configValue(config, 'detectedAgents') || {}
-      const dsh = runtime.uiWorkspace !== null && runtime.uiWorkspace !== undefined && configValue(config, 'supportsPrompt') === true
-      const fallback = panelDefaultTarget(config, agents, dsh)
+      const dsh = canOpenDsh(config)
+      const fallback = panelDefaultTarget(config, agents)
       const rank = (agent) =>
         (agent.id === fallback ? 0 : 2) + (detected[agent.id] && detected[agent.id].available === false ? 1 : 0)
       const ordered = agents.slice().sort((left, right) => rank(left) - rank(right))
-      const selected =
-        dsh && picked === 'dsh'
-          ? 'dsh'
-          : ordered.some((agent) => agent.id === picked)
-            ? picked
-            : fallback === 'dsh' && !dsh
-              ? defaultAgentId(config, agents)
-              : fallback
+      const selected = dsh && picked === DSH_TARGET
+        ? DSH_TARGET
+        : ordered.some((agent) => agent.id === picked) ? picked : fallback
       return { agents, detected, dsh, ordered, selected }
     }
 
     /** One line under the agent picker: where the agent opens and how it gets the prompt. */
     function launchVia(t, config, targets) {
-      if (targets.selected === 'dsh') return null
+      if (targets.selected === DSH_TARGET) return null
       const agent = targets.agents.find((entry) => entry.id === targets.selected)
       const terminal = launchTerminalLabel(config)
       if (agent === undefined || terminal === '') return null
@@ -2751,15 +2764,8 @@ window.__ModuleLoader__.load({
     }
 
     function launchTargetPicker(t, targets, busy, onPick) {
-      const options = targets.dsh ? [h('option', { key: 'dsh', value: 'dsh' }, t('launch.dshTarget'))] : []
-      for (const agent of targets.ordered) {
-        const detection = targets.detected[agent.id]
-        const missing = Boolean(detection && detection.available === false)
-        options.push(
-          h('option', { key: agent.id, value: agent.id, 'data-missing': missing ? 'true' : undefined },
-            agent.label + (missing ? ' · ' + agentMissingLabel(t, detection) : '')),
-        )
-      }
+      const options = (targets.dsh ? [h('option', { key: DSH_TARGET, value: DSH_TARGET }, t('launch.dshTarget'))] : [])
+        .concat(agentOptions(t, targets.ordered, targets.detected))
       return h(
         'label',
         { key: 'agent-picker', className: 'adx-launch-agent' },
@@ -2780,7 +2786,7 @@ window.__ModuleLoader__.load({
     /** One scenario of a launch menu; a pinned agent wins over the picked one, except for DSH. */
     function launchScenarioItem(t, scenario, targets, { label, disabled, isDefault, launch, launchDsh }) {
       const pinned = scenarioPinnedAgent(scenario, targets.agents)
-      const toDsh = targets.selected === 'dsh'
+      const toDsh = targets.selected === DSH_TARGET
       return h(
         'button',
         {
@@ -4237,9 +4243,7 @@ window.__ModuleLoader__.load({
           setNotice({ tone: 'error', text: t('settings.invalidScenarios') })
           return
         }
-        const before = baseline.current || {}
-        const agentsEdited = JSON.stringify(form.agents) !== JSON.stringify(before.agents)
-        const defaultAgentEdited = form.defaultAgent !== before.defaultAgent
+        const agentsEdited = JSON.stringify(form.agents) !== JSON.stringify((baseline.current || {}).agents)
         const parsedRepoPaths = parseRepoPathsText(form.repoPaths)
         if (parsedRepoPaths.invalidLine !== null) {
           setNotice({ tone: 'error', text: t('settings.invalidRepoPaths', { line: parsedRepoPaths.invalidLine }) })
@@ -4255,8 +4259,8 @@ window.__ModuleLoader__.load({
             refreshSeconds: Number(form.refreshSeconds),
             requireGreenChecks: form.requireGreenChecks === true,
             includeBotReviews: form.includeBotReviews === true,
-            // Agents and the default are sent only when edited: a profile that
-            // never chose them keeps the discovered list and the DSH default.
+            // Agents are sent only when edited: the form starts from the
+            // installed agents of an unsaved list, which saving would fix.
             ...(agentsEdited
               ? {
                   agents: form.agents.map((agent) => ({
@@ -4266,7 +4270,7 @@ window.__ModuleLoader__.load({
                   })),
                 }
               : {}),
-            ...(defaultAgentEdited || agentsEdited ? { defaultAgent: String(form.defaultAgent || '').trim() } : {}),
+            defaultAgent: String(form.defaultAgent || '').trim(),
             terminal: form.terminal || 'auto',
             promptDelivery: form.promptDelivery === 'clipboard' ? 'clipboard' : 'paste',
             cloneDirs: form.cloneDirs
@@ -4457,7 +4461,8 @@ window.__ModuleLoader__.load({
           const isBuiltin = builtinIds.has(scenario.id)
           const isOpen = openScenario === scenario._key
           const scopeLabel = t(scenario.scope === 'section' ? 'settings.scenarioScopeSection' : 'settings.scenarioScopeItem')
-          const agentLabel = scenarioAgentHint(scenario, { agents: form.agents, defaultAgent: form.defaultAgent }, t)
+          const agentLabel = scenarioAgentHint(t, scenario, form.agents,
+            form.defaultAgent === configValue(config, 'defaultAgent') ? panelDefaultTarget(config, form.agents) : form.defaultAgent)
           const meta = [scopeLabel, agentLabel].filter((entry) => entry !== '').join(' · ')
           const body = isOpen
             ? h(
@@ -4758,19 +4763,17 @@ window.__ModuleLoader__.load({
       // The saved default agent; when it is not installed, launches use the
       // first installed one (the host's effectiveDefaultAgent) and a hint says so.
       function renderDefaultAgent() {
-        const detected = (config && config.detectedAgents) || {}
-        const saved = config && config.defaultAgent
-        const dsh = runtime.uiWorkspace !== null && runtime.uiWorkspace !== undefined && config && config.supportsPrompt === true
-        const used = panelDefaultTarget(config, form.agents, dsh)
-        const labelOf = (id) => {
-          if (id === 'dsh') return t('launch.dshTarget')
-          const agent = form.agents.find((entry) => entry.id === id)
-          return agent ? agent.label || agent.id : id
-        }
+        const detected = configValue(config, 'detectedAgents') || {}
+        const saved = configValue(config, 'defaultAgent')
+        const used = panelDefaultTarget(config, form.agents)
         // The saved agent cannot start: say what the panel opens instead.
-        const fallback = saved !== 'dsh' && used !== saved && form.defaultAgent === saved
+        const fallback = saved !== DSH_TARGET && used !== saved && form.defaultAgent === saved
         const hint = fallback
-          ? t('settings.defaultAgentFallback', { missing: labelOf(saved), reason: agentMissingLabel(t, detected[saved]), used: labelOf(used) })
+          ? t('settings.defaultAgentFallback', {
+              missing: targetLabel(t, saved, form.agents),
+              reason: agentMissingLabel(t, detected[saved]),
+              used: targetLabel(t, used, form.agents),
+            })
           : undefined
         return h(
           Field,
@@ -4783,12 +4786,7 @@ window.__ModuleLoader__.load({
               value: form.defaultAgent,
               onChange: (event) => update({ defaultAgent: event.target.value }),
             },
-            [h('option', { key: 'dsh', value: 'dsh' }, t('launch.dshTarget'))].concat(form.agents.map((agent) => {
-              const detection = detected[agent.id]
-              const missing = Boolean(detection && detection.available === false)
-              return h('option', { key: agent.id, value: agent.id, 'data-missing': missing ? 'true' : undefined },
-                (agent.label || agent.id) + (missing ? ' · ' + agentMissingLabel(t, detection) : ''))
-            })),
+            [h('option', { key: DSH_TARGET, value: DSH_TARGET }, t('launch.dshTarget'))].concat(agentOptions(t, form.agents, detected)),
           ),
         )
       }

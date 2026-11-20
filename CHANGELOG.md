@@ -7,7 +7,7 @@
 - A new profile launches into a new DSH chat by default, and the launch menu
   lists only the coding agents installed on the machine. Choose another default
   in Settings; an agent that cannot start opens a DSH chat instead.
-- Settings saves the agent list and the default agent only when you change them.
+- Settings saves the agent list only when you change it.
 
 ### Fixed
 

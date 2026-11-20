@@ -345,6 +345,7 @@ assert.ok(source.includes('body[data-ds-dark-theme] .adx-root { color-scheme: da
   state.config = {
     ...state.config,
     defaultAgent: 'claude',
+    defaultTarget: 'dsh',
     effectiveDefaultAgent: 'codex',
     detectedAgents: { claude: { available: false, reason: 'missing' }, codex: { available: true } },
   }
@@ -361,7 +362,7 @@ assert.ok(source.includes('body[data-ds-dark-theme] .adx-root { color-scheme: da
   assert.ok(settings.includes('settings.defaultAgentFallback'), 'Settings explains what launches open instead')
   assert.ok(/<option value="claude" data-missing="true" selected="">/.test(settings), 'Settings keeps the saved choice, marked missing')
   assert.ok(settings.includes('<option value="dsh">launch.dshTarget</option>'), 'DSH can be chosen as the default')
-  state.config = { ...state.config, defaultAgent: 'dsh' }
+  state.config = { ...state.config, defaultAgent: 'dsh', defaultTarget: 'dsh' }
   state.view = 'list'
   state.openMenu = 'review:pull:1'
   assert.ok(/<option value="dsh" selected="">/.test(renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))),
@@ -705,8 +706,7 @@ async function editSettings(harness) {
   harness.click(save)
   assert.equal(harness.pending.length, 1, 'clicking Save sends one real store request')
   assert.deepEqual(harness.pending[0].body.orgs, ['edited-org'])
-  assert.ok(!('agents' in harness.pending[0].body) && !('defaultAgent' in harness.pending[0].body),
-    'agents and the default agent are not saved unless edited')
+  assert.ok(!('agents' in harness.pending[0].body), 'the agent list is not saved unless edited')
   assert.ok(harness.text().includes('settings.saving'), 'pending persistence shows Saving')
   assert.ok(!harness.text().includes('settings.saved'), 'pending persistence must never show Saved')
   assert.ok(!harness.text().includes('settings.done'), 'pending persistence must not mark the form clean')

@@ -28,6 +28,8 @@ import {
   DSH_TARGET,
   effectiveDefaultAgent,
   expandHome,
+  installedAgents,
+  panelDefaultTarget,
   hasSafePromptPlaceholder,
   validateDefaultScenario,
   validateScenario,
@@ -74,7 +76,7 @@ function detectedAgentsView(detected, agents, platform) {
  */
 function shownAgents(launcher, detected) {
   if (!launcher.agentsAuto) return launcher.agents
-  const found = launcher.agents.filter((agent) => detected[agent.id] && detected[agent.id].available === true)
+  const found = installedAgents(launcher.agents, detected)
   if (found.length > 0) return found
   const answered = launcher.agents.some((agent) => detected[agent.id] && detected[agent.id].available === false)
   if (answered) return []
@@ -98,14 +100,15 @@ export function publicConfig(settings, runtime, launcher, detected, environment 
     requireGreenChecks: settings.requireGreenChecks,
     includeBotReviews: settings.includeBotReviews,
     agents: shownAgents(launcher, detected || {}),
-    agentsAuto: launcher.agentsAuto,
     // Saved agents set aside because their command breaks the prompt rule:
     // [{ id, label, command, reason: 'placeholder' }], [] when none.
     invalidAgents: launcher.invalidAgents,
     defaultAgent: launcher.defaultAgent,
-    // `defaultAgent` may be DSH_TARGET (a new DSH chat, opened by the panel).
-    // What a launch the host runs uses for "default": the saved agent, or the
-    // first installed one when that is DSH or missing (Settings keeps the saved one).
+    // `defaultAgent` (the saved choice, shown in Settings) may be DSH_TARGET.
+    // `defaultTarget`: what the panel opens for "default" (the saved agent
+    // while it can start, else DSH); `effectiveDefaultAgent`: what a launch
+    // without DSH uses (the host's own launches, a panel that cannot open DSH).
+    defaultTarget: panelDefaultTarget(launcher.defaultAgent, detected || {}),
     effectiveDefaultAgent: effectiveDefaultAgent(launcher.defaultAgent, launcher.agents, detected || {}),
     cloneDirs: launcher.cloneDirs,
     cloneDirsDefault: DEFAULT_CLONE_DIRS,
@@ -139,6 +142,7 @@ function sanitizeAgents(input) {
     const label = typeof entry.label === 'string' ? entry.label.trim() : ''
     const command = typeof entry.command === 'string' ? entry.command.trim() : ''
     if (!AGENT_ID_PATTERN.test(id)) throw new BadRequest(`invalid agent id "${id}"`)
+    if (id === DSH_TARGET) throw new BadRequest(`the agent id "${DSH_TARGET}" is reserved for the DSH launch target`)
     if (label === '' || label.length > MAX_AGENT_LABEL) {
       throw new BadRequest(`agent "${id}" needs a label of up to ${MAX_AGENT_LABEL} characters`)
     }

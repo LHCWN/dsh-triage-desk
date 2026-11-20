@@ -123,9 +123,11 @@ import the launcher layer only through `launcher.js` and the data layer through
     only implementation of this rule;
   - `agents.js` — presets, discoverable CLIs, `DSH_TARGET` (`dsh`, the
     default launch target: a new DSH chat the panel opens; reserved as an agent
-    id), `effectiveDefaultAgent` (what a host-run launch uses for "default":
-    the saved agent, or the first installed one when that is DSH or missing;
-    sent as `effectiveDefaultAgent` in the public config), `normalizeAgentConfig` returning
+    id), `installedAgents`, and the two meanings of "default", both sent in
+    the public config: `panelDefaultTarget` (`defaultTarget`: the saved agent
+    while it can start, else DSH) and `effectiveDefaultAgent` (a launch
+    without DSH: the saved agent, or the first installed one when that is DSH
+    or missing), `normalizeAgentConfig` returning
     `{ agents, invalidAgents }` (rejected saved agents are reported, never
     launched; presets apply only when no saved agent is valid);
   - `executable-probe.js` — `buildExecutableProbe` / `parseExecutableProbe` /
