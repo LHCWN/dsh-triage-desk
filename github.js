@@ -561,6 +561,17 @@ async function ghGraphql(ctx, settings, query, variables, options = {}) {
 /* Snapshot builder                                                           */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * A coverage limit: the snapshot is complete within a stated bound (fewer pull
+ * requests, a narrower branch scan, a hidden list), not missing data that
+ * failed to load. Limits do not make the snapshot partial; the panel shows
+ * them in their own notice, rendered from `code` and `params`. `source` is the
+ * source login, or null for a limit of the whole refresh.
+ */
+function limitWarning(code, source, params, message) {
+  return { code, kind: 'limit', source, params, message }
+}
+
 function iso(value) {
   return typeof value === 'string' && value.length > 0 ? value : null
 }
@@ -709,7 +720,8 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
   const orgLogins = uniqueOrgs.slice(0, MAX_ORGS)
   if (uniqueOrgs.length > MAX_ORGS ||
       (settings.orgs.length === 0 && viewerNode.organizations?.pageInfo?.hasNextPage)) {
-    warnings.push({ code: 'orgs-truncated', message: `Only ${MAX_ORGS} organizations are scanned; configure orgs to select which ones.` })
+    warnings.push(limitWarning('orgs-truncated', null, { max: MAX_ORGS },
+      `Only the first ${MAX_ORGS} organizations are scanned; choose which ones in Settings.`))
   }
   const sources = []
   if (settings.includePersonal) {
@@ -861,10 +873,9 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
 
   const pullsTruncated = (state, search, connection, read) => {
     const total = connection && typeof connection.issueCount === 'number' ? connection.issueCount : null
-    warnings.push({
-      code: 'prs-truncated',
-      message: `${state.source.login}: only the ${read} most recently updated of ${total === null ? 'more' : total} open pull requests ${search.label} were read`,
-    })
+    const login = state.source.login
+    warnings.push(limitWarning('prs-truncated', login, { list: search.alias, read, total },
+      `${login}: ${search.label}, showing the ${read} most recently updated of ${total === null ? 'more' : total} open pull requests`))
   }
 
   // Adds one search page to the source and queues the next page while the
@@ -1037,10 +1048,9 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
   for (const state of states) {
     if (state.profile.level === 0 || !state.pullsTried) continue
     const level = levelOf(state)
-    warnings.push({
-      code: 'source-degraded',
-      message: `${state.source.login}: GitHub timed out on the full pull request search, so each search reads at most ${pullBound(level)} pull requests, ${level.pageSize} per request`,
-    })
+    const login = state.source.login
+    warnings.push(limitWarning('source-degraded', login, { max: pullBound(level), pageSize: level.pageSize },
+      `${login}: too large for GitHub to search in full; each pull request list shows the ${pullBound(level)} most recently updated`))
   }
 
   // The repositories the viewer contributed to in the last year, read once
@@ -1102,10 +1112,10 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
         sourceUnavailable(state, `branch scan (${name})`, error)
       }
     }
-    warnings.push({
-      code: 'branch-scan-narrowed',
-      message: `${state.source.login}: large source; branch CI covers only ${scanned < contributed.length ? `${scanned} of the ${contributed.length}` : `the ${scanned}`} repositories you work in (your pull requests here and your contributions in the last year), and in them only branches with "${viewerLogin}" in their name`,
-    })
+    const login = state.source.login
+    const repos = `${scanned < contributed.length ? `${scanned} of the ${contributed.length}` : `the ${scanned}`} ${contributed.length === 1 ? 'repository' : 'repositories'}`
+    warnings.push(limitWarning('branch-scan-narrowed', login, { login: viewerLogin, scanned, total: contributed.length },
+      `${login}: branch CI checks only branches with "${viewerLogin}" in their name, in ${repos} you work in`))
   }
 
   // 3. Branch CI scan: repositories only, one page per source per round. A
@@ -1183,10 +1193,8 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
     // A large source's branch scan is narrowed (it never pages repositories
     // after it is large), so repository coverage does not apply to it.
     if (!isLarge(state) && state.repoPages > 0 && (state.repoTotal > state.repos.length || state.repoMore)) {
-      warnings.push({
-        code: 'repos-truncated',
-        message: `${source.login}: only ${state.repos.length} of ${state.repoTotal} repositories were scanned for branch CI`,
-      })
+      warnings.push(limitWarning('repos-truncated', source.login, { scanned: state.repos.length, total: state.repoTotal },
+        `${source.login}: branch CI checks the ${state.repos.length} most recently pushed of ${state.repoTotal} repositories`))
     }
     sourceSummaries.push({ kind: source.kind, login: source.login, label: source.label, repos: state.repos.length })
     // A large source lists no new unassigned issues. The warning says so only
@@ -1198,10 +1206,8 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
         (node.repository.viewerPermission === 'ADMIN' || node.repository.viewerPermission === 'MAINTAIN'))
       if (triageable) {
         const count = typeof newIssues.issueCount === 'number' ? newIssues.issueCount : newIssues.nodes.length
-        warnings.push({
-          code: 'new-issues-skipped',
-          message: `${source.login}: ${count} new unassigned issues in the last ${NEW_ISSUE_WINDOW_DAYS} days, some in repositories you maintain; the list is not shown for a source this large`,
-        })
+        warnings.push(limitWarning('new-issues-skipped', source.login, { count, days: NEW_ISSUE_WINDOW_DAYS },
+          `${source.login}: ${count} new unassigned issues in the last ${NEW_ISSUE_WINDOW_DAYS} days are not listed, too many to triage here`))
       }
       state.issueData = { ...state.issueData, newIssues: null }
     }
@@ -1650,17 +1656,14 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
 
   const truncatedTotal = truncated.reviews + truncated.comments + truncated.threads + truncated.search
   if (truncatedTotal > 0) {
+    const count = (n, one, many) => `${n} ${n === 1 ? one : many}`
     const parts = []
-    if (truncated.reviews > 0) parts.push(`${truncated.reviews} PR(s) with older reviews`)
-    if (truncated.comments > 0) parts.push(`${truncated.comments} PR(s) with older comments`)
-    if (truncated.threads > 0) parts.push(`${truncated.threads} PR(s) with older review threads`)
-    if (truncated.search > 0) parts.push(`${truncated.search} source(s) with truncated search results`)
-    warnings.push({
-      code: 'truncated-history',
-      message:
-        `Older history exists beyond the fetched windows: ${parts.join(', ')}. ` +
-        'Your latest review is always fetched, but very old comments/threads may be invisible.',
-    })
+    if (truncated.reviews > 0) parts.push(`older reviews on ${count(truncated.reviews, 'pull request', 'pull requests')}`)
+    if (truncated.comments > 0) parts.push(`older comments on ${count(truncated.comments, 'pull request', 'pull requests')}`)
+    if (truncated.threads > 0) parts.push(`older review threads on ${count(truncated.threads, 'pull request', 'pull requests')}`)
+    if (truncated.search > 0) parts.push(`more search results in ${count(truncated.search, 'source', 'sources')}`)
+    warnings.push(limitWarning('truncated-history', null, { ...truncated },
+      `Not read: ${parts.join(', ')}. Your own latest review is always read.`))
   }
 
   sortSections(sections)
@@ -1673,9 +1676,9 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
   }
   counts.total = total
   meta.durationMs = Date.now() - startedAt
-  // Truncation is informational: do not paint the whole panel as "partial"
-  // just because a long PR has older pages.
-  const status = warnings.some((warning) => warning.code !== 'truncated-history') ? 'partial' : 'ok'
+  // Coverage limits are informational: only data that failed to load makes
+  // the snapshot partial.
+  const status = warnings.some((warning) => warning.kind !== 'limit') ? 'partial' : 'ok'
   const orgLoginsScanned = sources.filter((source) => source.kind === 'org').map((source) => source.login)
 
   return {

@@ -117,7 +117,29 @@ window.__ModuleLoader__.load({
       'page.collapse': 'Collapse section',
       'page.expand': 'Expand section',
       'page.stale': 'Showing the snapshot from {time}: the last refresh failed.',
-      'page.partial': 'Some data is unavailable',
+      'page.partial': 'Some data couldn’t be loaded',
+      'page.partialMore': '+{n} more',
+      'limits.title': 'Limited view of {sources}',
+      'limits.titleGeneral': 'Some lists are shortened',
+      'limits.leadLarge': '{sources} is too large to load in full, so Triage Desk reads a lighter version.',
+      'limits.leadLargeMany': '{sources} are too large to load in full, so Triage Desk reads a lighter version.',
+      'limits.lead': 'Some lists are longer than one refresh reads, so only the most recent part is shown.',
+      'limits.show': 'What’s limited',
+      'limits.hide': 'Hide',
+      'limits.learnMore': 'How large organizations work',
+      'limit.sourceDegraded': 'Pull requests: the {max} most recently updated in each list',
+      'limit.prsTruncated': '{list}: the {read} most recently updated of {total}',
+      'limit.list.reviewRequested': 'Review requests',
+      'limit.list.reviewedBy': 'Pull requests you reviewed',
+      'limit.list.authored': 'Your pull requests',
+      'limit.branchNarrowed': 'Branch CI: only branches with “{login}” in the name, in the {n} repositories you work in',
+      'limit.branchNarrowedOne': 'Branch CI: only branches with “{login}” in the name, in the one repository you work in',
+      'limit.branchNarrowedSome': 'Branch CI: only branches with “{login}” in the name, in {scanned} of the {total} repositories you work in',
+      'limit.branchNarrowedNone': 'Branch CI: not checked, no recent pull requests or commits of yours here',
+      'limit.newIssuesSkipped': 'New unassigned issues: not listed ({count} in the last {days} days)',
+      'limit.reposTruncated': 'Branch CI: the {scanned} most recently pushed of {total} repositories',
+      'limit.orgsTruncated': 'Organizations: only the first {max} are scanned. Choose them in Settings',
+      'limit.history': 'Long pull requests: very old reviews and comments are not read; your latest review always is',
       'page.unauthHint': 'gh does not look signed in. Run `gh auth login` in a terminal and refresh.',
       'page.unavailableHint': 'gh was not found. Install the GitHub CLI and sign in with `gh auth login`.',
       'section.review': 'Waiting for your review',
@@ -402,7 +424,29 @@ window.__ModuleLoader__.load({
       'page.collapse': '收起分类',
       'page.expand': '展开分类',
       'page.stale': '显示的是 {time} 的快照：上次刷新失败。',
-      'page.partial': '部分数据不可用',
+      'page.partial': '部分数据未能加载',
+      'page.partialMore': '另有 {n} 条',
+      'limits.title': '{sources} 仅显示部分内容',
+      'limits.titleGeneral': '部分列表已缩短',
+      'limits.leadLarge': '{sources} 过大，无法完整加载，Triage Desk 改为读取精简内容。',
+      'limits.leadLargeMany': '{sources} 过大，无法完整加载，Triage Desk 改为读取精简内容。',
+      'limits.lead': '部分列表超出单次刷新可读取的长度，仅显示最近的部分。',
+      'limits.show': '查看受限内容',
+      'limits.hide': '收起',
+      'limits.learnMore': '大型组织的处理方式',
+      'limit.sourceDegraded': '拉取请求：每个列表显示最近更新的 {max} 个',
+      'limit.prsTruncated': '{list}：显示 {total} 个中最近更新的 {read} 个',
+      'limit.list.reviewRequested': '审核请求',
+      'limit.list.reviewedBy': '你审核过的拉取请求',
+      'limit.list.authored': '你的拉取请求',
+      'limit.branchNarrowed': '分支 CI：仅检查名称包含“{login}”的分支，范围为你参与的 {n} 个仓库',
+      'limit.branchNarrowedOne': '分支 CI：仅检查名称包含“{login}”的分支，范围为你参与的 1 个仓库',
+      'limit.branchNarrowedSome': '分支 CI：仅检查名称包含“{login}”的分支，范围为你参与的 {total} 个仓库中的 {scanned} 个',
+      'limit.branchNarrowedNone': '分支 CI：未检查，你在这里近期没有拉取请求或提交',
+      'limit.newIssuesSkipped': '未分配的新议题：不列出（最近 {days} 天共 {count} 个）',
+      'limit.reposTruncated': '分支 CI：检查 {total} 个仓库中最近推送的 {scanned} 个',
+      'limit.orgsTruncated': '组织：仅扫描前 {max} 个，可在设置中选择',
+      'limit.history': '较长的拉取请求：不读取很早的审核和评论；你最近的审核始终会读取',
       'page.unauthHint': 'gh 似乎未登录。请在终端运行 `gh auth login` 后刷新。',
       'page.unavailableHint': '未找到 gh。请安装 GitHub CLI 并运行 `gh auth login` 登录。',
       'section.review': '等待你审核',
@@ -655,6 +699,9 @@ window.__ModuleLoader__.load({
         font-size: 14px; line-height: 1.6;
       }
       .adx-root *, .adx-root *::before, .adx-root *::after { box-sizing: border-box; }
+      /* DSH marks its dark theme on <body>; native controls (select lists,
+         scrollbars) follow color-scheme, not the theme tokens. */
+      body[data-ds-dark-theme] .adx-root { color-scheme: dark; }
       .adx-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
       .adx-col { max-width: 960px; margin: 0 auto; padding: 0 clamp(24px, 4vw, 48px) 48px; }
 
@@ -850,7 +897,20 @@ window.__ModuleLoader__.load({
         background: var(--dsw-specific-sidebar-fill, var(--adx-module));
         color: var(--adx-ink-2); font-size: 12px; line-height: 20px;
       }
-      .adx-notice p { flex: 1 1 240px; margin: 0; }
+      .adx-notice-body { flex: 1 1 240px; min-width: 0; }
+      .adx-notice-list { margin: 4px 0 0; padding: 0 0 0 16px; color: var(--adx-ink-2); font-size: 12px; line-height: 19px; }
+      .adx-notice-list li { overflow-wrap: anywhere; }
+      .adx-notice-list li + li { margin-top: 2px; }
+      .adx-limits-details { flex: 1 1 auto; min-width: 0; }
+      .adx-limits-summary { list-style: none; cursor: pointer; border-radius: 6px; }
+      .adx-limits-summary::-webkit-details-marker { display: none; }
+      .adx-limits-summary:focus-visible { outline: var(--adx-ring-w) solid var(--adx-ring); outline-offset: 2px; }
+      .adx-limits-toggle { color: var(--adx-info); white-space: nowrap; }
+      .adx-limits-details[open] .adx-limits-toggle--show,
+      .adx-limits-details:not([open]) .adx-limits-toggle--hide { display: none; }
+      .adx-limits-source { margin-right: 6px; padding: 0 5px; border-radius: 4px; background: var(--adx-hover); color: var(--adx-ink-2); font-size: 11px; }
+      .adx-limits-link { display: inline-block; margin-top: 6px; color: var(--adx-info); font-size: 12px; text-decoration: none; }
+      .adx-limits-link:hover { text-decoration: underline; }
       .adx-notice .adx-btn { margin-left: auto; }
       .adx-notice[data-tone='warning'] {
         background: color-mix(in srgb, var(--adx-warn) 8%, transparent);
@@ -1020,6 +1080,16 @@ window.__ModuleLoader__.load({
         background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
         background-position: calc(100% - 15px) 15px, calc(100% - 10px) 15px;
         background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
+      /* Chromium on Windows and Linux draws a select's dropdown itself and
+         paints each option with its own computed background and color; with
+         none set it falls back to the light default, a white list under the
+         plugin's light-on-dark text. macOS opens a native menu that ignores
+         these. Option colors come from the DSH theme tokens, so the list
+         follows the DSH theme rather than the OS one. */
+      .adx-select option, .adx-select optgroup {
+        background-color: var(--dsw-alias-bg-elevated, var(--adx-module)); color: var(--adx-ink);
+      }
+      .adx-select option[data-missing='true'] { color: var(--adx-ink-3); }
       .adx-select-custom { display: flex; align-items: center; gap: 8px; }
       .adx-select-custom .adx-select { flex: 1 1 auto; min-width: 0; }
       .adx-custom-wrap { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
@@ -2662,7 +2732,8 @@ window.__ModuleLoader__.load({
         const detection = targets.detected[agent.id]
         const missing = Boolean(detection && detection.available === false)
         options.push(
-          h('option', { key: agent.id, value: agent.id }, agent.label + (missing ? ' · ' + agentMissingLabel(t, detection) : '')),
+          h('option', { key: agent.id, value: agent.id, 'data-missing': missing ? 'true' : undefined },
+            agent.label + (missing ? ' · ' + agentMissingLabel(t, detection) : '')),
         )
       }
       return h(
@@ -3506,17 +3577,93 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function Notice({ tone, title, detail, actionLabel, onAction }) {
+    function Notice({ tone, title, detail, items, actionLabel, onAction }) {
       return h(
         'div',
         { className: 'adx-notice', 'data-tone': tone, role: tone === 'error' ? 'alert' : 'status' },
         h(
-          'p',
-          null,
+          'div',
+          { className: 'adx-notice-body' },
           title ? h('strong', null, title) : null,
           detail ? h('span', { className: 'adx-notice-detail' }, detail) : null,
+          items && items.length > 0
+            ? h('ul', { className: 'adx-notice-list' }, items.map((item, index) => h('li', { key: index }, item)))
+            : null,
         ),
         actionLabel ? h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: onAction }, actionLabel) : null,
+      )
+    }
+
+    /* Coverage limits (warnings with kind 'limit'): what the snapshot left
+       out on purpose, in plain words, apart from data that failed to load. */
+    const LIMITS_DOC_URL = 'https://github.com/LHCWN/dsh-triage-desk/blob/main/docs/REFERENCE.md#large-sources'
+    const LARGE_LIMIT_CODES = ['source-degraded', 'branch-scan-narrowed', 'new-issues-skipped']
+    const formatCount = (value) => (typeof value === 'number' ? value.toLocaleString() : '…')
+
+    function limitText(t, warning) {
+      const p = warning.params || {}
+      switch (warning.code) {
+        case 'source-degraded':
+          return t('limit.sourceDegraded', { max: formatCount(p.max) })
+        case 'prs-truncated':
+          return t('limit.prsTruncated', { list: t('limit.list.' + p.list), read: formatCount(p.read), total: formatCount(p.total) })
+        case 'branch-scan-narrowed':
+          if (p.scanned === 0) return t('limit.branchNarrowedNone', { login: p.login })
+          if (p.scanned < p.total) return t('limit.branchNarrowedSome', { login: p.login, scanned: formatCount(p.scanned), total: formatCount(p.total) })
+          return p.scanned === 1 ? t('limit.branchNarrowedOne', { login: p.login }) : t('limit.branchNarrowed', { login: p.login, n: formatCount(p.scanned) })
+        case 'new-issues-skipped':
+          return t('limit.newIssuesSkipped', { count: formatCount(p.count), days: p.days })
+        case 'repos-truncated':
+          return t('limit.reposTruncated', { scanned: formatCount(p.scanned), total: formatCount(p.total) })
+        case 'orgs-truncated':
+          return t('limit.orgsTruncated', { max: p.max })
+        case 'truncated-history':
+          return t('limit.history')
+        default:
+          return String(warning.message || warning.code)
+      }
+    }
+
+    /** The limits notice, or null when there is none worth showing. */
+    function LimitsNotice({ t, warnings }) {
+      const limits = warnings.filter((entry) => entry && entry.kind === 'limit')
+      // Old history on long pull requests is routine: listed only beside
+      // other limits, never a notice of its own.
+      if (!limits.some((entry) => entry.code !== 'truncated-history')) return null
+      const sources = [...new Set(limits.map((entry) => entry.source).filter(Boolean))]
+      // A source's own per-list truncation says more than its generic bound.
+      const shown = limits.filter((entry) => !(entry.code === 'source-degraded' &&
+        limits.some((other) => other.code === 'prs-truncated' && other.source === entry.source)))
+      const large = [...new Set(limits.filter((entry) => LARGE_LIMIT_CODES.includes(entry.code)).map((entry) => entry.source).filter(Boolean))]
+      const names = (list) => list.join(', ')
+      const title = sources.length > 0 ? t('limits.title', { sources: names(sources) }) : t('limits.titleGeneral')
+      const lead = large.length === 0
+        ? t('limits.lead')
+        : t(large.length === 1 ? 'limits.leadLarge' : 'limits.leadLargeMany', { sources: names(large) })
+      const prefix = sources.length > 1
+      return h(
+        'div',
+        { className: 'adx-notice adx-limits', 'data-tone': 'info', role: 'status' },
+        h(
+          'details',
+          { className: 'adx-limits-details' },
+          h(
+            'summary',
+            { className: 'adx-limits-summary' },
+            h('strong', null, title),
+            h('span', { className: 'adx-notice-detail' }, lead, ' ',
+              h('span', { className: 'adx-limits-toggle adx-limits-toggle--show' }, t('limits.show')),
+              h('span', { className: 'adx-limits-toggle adx-limits-toggle--hide' }, t('limits.hide'))),
+          ),
+          h(
+            'ul',
+            { className: 'adx-notice-list' },
+            shown.map((entry, index) => h('li', { key: entry.code + ':' + (entry.source || '') + ':' + index },
+              prefix && entry.source ? h('span', { className: 'adx-limits-source' }, entry.source) : null,
+              limitText(t, entry))),
+          ),
+          h('a', { className: 'adx-limits-link', href: LIMITS_DOC_URL, target: '_blank', rel: 'noreferrer noopener' }, t('limits.learnMore')),
+        ),
       )
     }
 
@@ -5556,11 +5703,15 @@ window.__ModuleLoader__.load({
                       })
                     : null,
                   data && data.status === 'partial'
-                    ? h(Notice, {
-                        tone: 'warning',
-                        title: t('page.partial'),
-                        detail: (data.warnings || []).map((entry) => entry.message).slice(0, 2).join('; '),
-                      })
+                    ? (() => {
+                        const problems = (data.warnings || []).filter((entry) => entry && entry.kind !== 'limit')
+                        const items = problems.slice(0, 3).map((entry) => String(entry.message || entry.code))
+                        if (problems.length > 3) items.push(t('page.partialMore', { n: problems.length - 3 }))
+                        return h(Notice, { tone: 'warning', title: t('page.partial'), items })
+                      })()
+                    : null,
+                  data && (data.status === 'ok' || data.status === 'partial')
+                    ? h(LimitsNotice, { t, warnings: data.warnings || [] })
                     : null,
                   loading ? h(Skeleton, { t }) : null,
                   showEmpty

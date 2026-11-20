@@ -641,6 +641,12 @@ larger than 12 MB), Triage Desk reads that source lighter instead of failing:
   are still checked in those repositories; a branch without your login in its
   name, in a repository you have no pull request or contribution in, is not.
 
+The panel shows these limits in a quiet **Limited view** notice, collapsed to
+one line, with the list of what is shortened and a link here. Limits do not
+make the snapshot partial: the warning banner (**Some data couldn't be
+loaded**) is only for data that failed to load, one line per problem. The agent
+tool reports limits on their own `Limits:` line.
+
 ## Limitations
 
 - **Coverage per refresh**: at most 10 organizations (`orgs-truncated` warning),

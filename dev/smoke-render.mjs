@@ -256,6 +256,50 @@ const staleFallback = renderToStaticMarkup(React.createElement(pageRegistration.
 assert.ok(staleFallback.includes('refresh failed, showing the previous snapshot: offline'), 'without lastError the latest warning is shown')
 state.data = snapshot
 
+// Coverage limits get their own quiet notice; only failures make the
+// "couldn't be loaded" banner, one line per problem.
+const limit = (code, source, params) => ({ code, kind: 'limit', source, params, message: code + ' message' })
+state.data = {
+  ...snapshot,
+  status: 'ok',
+  warnings: [
+    limit('source-degraded', 'llvm', { max: 50, pageSize: 10 }),
+    limit('branch-scan-narrowed', 'llvm', { login: 'tester', scanned: 1, total: 1 }),
+    limit('truncated-history', null, { reviews: 0, comments: 0, threads: 1, search: 0 }),
+  ],
+}
+const limitsHtml = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+assert.ok(limitsHtml.includes('adx-limits') && limitsHtml.includes('limits.title') && limitsHtml.includes('limits.leadLarge'), 'limits get their own notice')
+assert.ok(limitsHtml.includes('limit.sourceDegraded') && limitsHtml.includes('limit.branchNarrowedOne') && limitsHtml.includes('limit.history'))
+assert.ok(limitsHtml.includes('<details') && !limitsHtml.includes('<details open'), 'the limits list starts collapsed')
+assert.ok(limitsHtml.includes('REFERENCE.md#large-sources'), 'the notice links the explanation')
+assert.ok(!limitsHtml.includes('page.partial') && !limitsHtml.includes('source-degraded message'), 'limits are not shown as failures or raw messages')
+state.data = { ...snapshot, status: 'ok', warnings: [limit('truncated-history', null, { reviews: 1, comments: 0, threads: 0, search: 0 })] }
+assert.ok(!renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store })).includes('adx-limits'),
+  'old history on long pull requests alone is no notice')
+state.data = {
+  ...snapshot,
+  status: 'partial',
+  warnings: [
+    { code: 'source-unavailable', message: 'org:acme: pull request search failed: HTTP 500' },
+    { code: 'search-unavailable', message: 'acme: issue search failed: HTTP 500' },
+    limit('prs-truncated', 'llvm', { list: 'reviewRequested', read: 50, total: 900 }),
+  ],
+}
+const partialHtml = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+assert.ok(partialHtml.includes('page.partial'), 'failures keep the warning banner')
+assert.ok(partialHtml.includes('<li>org:acme: pull request search failed: HTTP 500</li><li>acme: issue search failed: HTTP 500</li>'), 'one line per problem')
+assert.ok(!partialHtml.includes(';'.repeat(1) + ' acme'), 'problems are not glued with semicolons')
+assert.ok(partialHtml.includes('limit.prsTruncated') && !partialHtml.includes('prs-truncated message'), 'limits stay out of the failure banner')
+state.data = snapshot
+
+// Windows draws select lists from the option styles: they must use the theme.
+// The stylesheet is injected into document.head, so check the client source.
+const clientCss = source
+assert.ok(/\.adx-select option, \.adx-select optgroup \{\s*background-color: var\(--dsw-alias-bg-elevated/.test(clientCss),
+  'select options take the theme surface, not the white default')
+assert.ok(clientCss.includes('body[data-ds-dark-theme] .adx-root { color-scheme: dark; }'), 'native controls follow the DSH dark theme')
+
 state.openMenu = 'review:pull:1'
 state.config.supportsPrompt = false
 const menuWithoutDsh = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
