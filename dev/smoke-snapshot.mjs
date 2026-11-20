@@ -1259,6 +1259,28 @@ await check('a remembered lighter level is reported only when this build searche
   assert.ok(!hasWarning(snapshot, 'source-degraded'))
 })
 
+await check('a narrowed scan replaces what an earlier organization page read for the same repository', async () => {
+  const { ctx } = fakeCtx({
+    orgs: ['llvm'],
+    branches: (login, vars) => {
+      if (login !== 'llvm') return ok(repoPage(login))
+      // Page 1 reads llvm-project without the viewer's branch (alphabetical
+      // first 100); page 2 times out, so the source is narrowed.
+      if (vars.after === undefined) return ok(repoPage('llvm', [{ nameWithOwner: 'llvm/llvm-project' }], { hasNextPage: true, endCursor: 'p2' }))
+      return gateway502()
+    },
+    contributions: () => contributed('llvm/llvm-project'),
+    repo: (vars) => ok({
+      repository: repoNode({ nameWithOwner: `${vars.owner}/${vars.name}`, branchRefs: { nodes: [myBranch('users/me/fix')] } }),
+      rateLimit,
+    }),
+  })
+  const snapshot = await buildSnapshot(ctx, settings())
+  const ci = snapshot.sections.find((entry) => entry.id === 'ci').items.map((item) => item.ref)
+  assert.deepEqual(ci, ['users/me/fix'], 'the narrowed read of llvm-project is classified')
+  assert.equal(snapshot.sources.find((source) => source.login === 'llvm').repos, 1, 'the repository is counted once')
+})
+
 await check('a GitHub timeout on the organization branch scan narrows it for that source', async () => {
   const { ctx, calls } = fakeCtx({
     orgs: ['llvm'],
