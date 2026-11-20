@@ -359,13 +359,25 @@ launch command, while the internal agent id stays stable and is not shown):
 
 | Agent id | Launch command | Prompt delivery |
 |---|---|---|
-| `claude` | `claude {prompt}` | native `--prefill` (input box, unsent) |
-| `codex` | `codex {prompt}` | Prompt delivery setting |
+| `claude` | `claude --dangerously-skip-permissions {prompt}` | native `--prefill` (input box, unsent) |
+| `codex` | `codex --dangerously-bypass-approvals-and-sandbox {prompt}` | Prompt delivery setting |
 | `opencode` | `opencode --prompt {prompt}` | Prompt delivery setting |
-| `gemini` | `gemini {prompt}` | Prompt delivery setting |
-| `cursor-agent` | `cursor-agent {prompt}` | Prompt delivery setting |
-| `agy` | `agy {prompt}` | Prompt delivery setting |
+| `gemini` | `gemini --yolo {prompt}` | Prompt delivery setting |
+| `cursor-agent` | `cursor-agent --yolo {prompt}` | Prompt delivery setting |
+| `agy` | `agy --dangerously-skip-permissions {prompt}` | Prompt delivery setting |
 | `pi` | `pi {prompt}` | Prompt delivery setting |
+
+**Full access.** Every agent that has a flag for it starts without permission
+prompts, matching Orca's *Full access* mode. The flags appear in the table above,
+plus Aider `--yes-always`, Amp `--dangerously-allow-all`, Droid `--auto high`,
+and Crush `--yolo` for the discovered CLIs. opencode and pi have no such flag;
+Goose's is an environment variable (`GOOSE_MODE=auto`), which a Windows launch
+cannot set, so it is left out. The agent can then edit files, run commands, and
+post to GitHub without asking. To get the prompts back for one agent, delete the
+flag from its command in Settings. A saved agent whose command is still the
+pre-0.1.4 default (for example `codex {prompt}`) is upgraded on load; an edited
+command is kept. In paste and clipboard modes the flag stays when `{prompt}` is
+removed.
 
 **Find agents** in Settings scans the login environment for known CLIs (Claude
 Code, Codex, opencode, Gemini CLI, Cursor Agent, Antigravity, pi, Aider, Amp,

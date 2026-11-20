@@ -10,30 +10,53 @@ export const AGENT_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,31}$/
 export const MAX_AGENT_LABEL = 60
 export const MAX_AGENT_COMMAND = 300
 
-/** Agents that are safe to launch interactively with an initial prompt. */
+/**
+ * Agents that are safe to launch interactively with an initial prompt. Like
+ * Orca's "Full access" mode, each command carries the agent's own flag for
+ * skipping permission prompts (opencode and pi have none); remove it in
+ * Settings to get the agent's prompts back.
+ */
 export const AGENT_PRESETS = [
-  { id: 'claude', label: 'Claude Code', command: 'claude {prompt}', draftFlag: '--prefill' },
-  { id: 'codex', label: 'Codex', command: 'codex {prompt}' },
+  { id: 'claude', label: 'Claude Code', command: 'claude --dangerously-skip-permissions {prompt}', draftFlag: '--prefill' },
+  { id: 'codex', label: 'Codex', command: 'codex --dangerously-bypass-approvals-and-sandbox {prompt}' },
   { id: 'opencode', label: 'opencode', command: 'opencode --prompt {prompt}' },
-  { id: 'gemini', label: 'Gemini CLI', command: 'gemini {prompt}' },
-  { id: 'cursor-agent', label: 'Cursor Agent', command: 'cursor-agent {prompt}' },
-  { id: 'agy', label: 'Antigravity', command: 'agy {prompt}' },
+  { id: 'gemini', label: 'Gemini CLI', command: 'gemini --yolo {prompt}' },
+  { id: 'cursor-agent', label: 'Cursor Agent', command: 'cursor-agent --yolo {prompt}' },
+  { id: 'agy', label: 'Antigravity', command: 'agy --dangerously-skip-permissions {prompt}' },
   { id: 'pi', label: 'pi', command: 'pi {prompt}' },
 ]
 
 /**
  * Agents the "Find agents" scan looks for on the machine. Built-in presets are
- * included, plus a few common CLIs added with their plain interactive command;
- * discovered entries can be edited in Settings afterwards.
+ * included, plus a few common CLIs with their full-access flag (Goose takes it
+ * from an environment variable, which a Windows launch cannot set, so it has
+ * none); discovered entries can be edited in Settings afterwards.
  */
 export const DISCOVERABLE_AGENTS = [
   ...AGENT_PRESETS,
-  { id: 'aider', label: 'Aider', command: 'aider {prompt}' },
-  { id: 'amp', label: 'Amp', command: 'amp {prompt}' },
-  { id: 'droid', label: 'Droid', command: 'droid {prompt}' },
+  { id: 'aider', label: 'Aider', command: 'aider --yes-always {prompt}' },
+  { id: 'amp', label: 'Amp', command: 'amp --dangerously-allow-all {prompt}' },
+  { id: 'droid', label: 'Droid', command: 'droid --auto high {prompt}' },
   { id: 'goose', label: 'Goose', command: 'goose {prompt}' },
-  { id: 'crush', label: 'Crush', command: 'crush {prompt}' },
+  { id: 'crush', label: 'Crush', command: 'crush --yolo {prompt}' },
 ]
+
+/**
+ * Earlier default commands (0.1.0 – 0.1.3), by agent id. A saved agent whose
+ * command still equals its old default was never edited, so normalization
+ * upgrades it to the current one; edited commands are kept.
+ */
+export const LEGACY_AGENT_COMMANDS = {
+  claude: 'claude {prompt}',
+  codex: 'codex {prompt}',
+  gemini: 'gemini {prompt}',
+  'cursor-agent': 'cursor-agent {prompt}',
+  agy: 'agy {prompt}',
+  aider: 'aider {prompt}',
+  amp: 'amp {prompt}',
+  droid: 'droid {prompt}',
+  crush: 'crush {prompt}',
+}
 
 function normalizeAgentId(value, fallbackIndex) {
   const text = String(value || '')
@@ -106,8 +129,11 @@ export function normalizeAgentConfig(value) {
   for (let index = 0; index < source.length && agents.length < MAX_AGENTS; index += 1) {
     const entry = source[index]
     if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue
-    const command = typeof entry.command === 'string' ? entry.command.trim().slice(0, MAX_AGENT_COMMAND) : ''
     const rawId = normalizeAgentId(entry.id, index)
+    let command = typeof entry.command === 'string' ? entry.command.trim().slice(0, MAX_AGENT_COMMAND) : ''
+    if (Object.hasOwn(LEGACY_AGENT_COMMANDS, rawId) && command === LEGACY_AGENT_COMMANDS[rawId]) {
+      command = DISCOVERABLE_AGENTS.find((candidate) => candidate.id === rawId).command
+    }
     const labelFor = (id) =>
       (typeof entry.label === 'string' && entry.label.trim() !== '' ? entry.label.trim() : id).slice(0, MAX_AGENT_LABEL)
     if (!hasSafePromptPlaceholder(command)) {

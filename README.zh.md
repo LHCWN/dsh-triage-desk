@@ -90,6 +90,8 @@ Toast 提示会写明智能体和终端，例如*已在 Ghostty 中打开 Codex�
 
 **智能体。** 默认情况下，启动会打开一个带有提示的新 DSH 对话；菜单列出本机已安装的编码智能体：Claude Code、Codex、opencode、Gemini CLI、Cursor Agent、Antigravity（`agy`）、pi、Aider、Amp、Droid、Goose 和 Crush。可以在设置中选择其他默认目标，或添加自己的命令。命令必须恰好包含一个未加引号的 `{prompt}`，作为独立参数，或紧跟在 `--flag=` 之后。
 
+与 Orca 的默认设置一样，智能体以**完全访问**模式启动：每个内置命令都带有该智能体跳过权限确认的参数，例如 `codex --dangerously-bypass-approvals-and-sandbox` 或 `agy --dangerously-skip-permissions`。如需恢复确认，在设置中从该智能体的命令里删除这个参数（[各智能体的参数](docs/REFERENCE.md#agents)）。
+
 详情：[终端启动器参考](docs/REFERENCE.md#terminal-launcher)。
 
 ## 设置

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Changed
+
+- Agents start in full access, like Orca's default: Claude Code, Codex,
+  Antigravity, Gemini CLI, Cursor Agent, Aider, Amp, Droid, and Crush launch
+  with their own flag for skipping permission prompts (for example
+  `codex --dangerously-bypass-approvals-and-sandbox`). Saved agents still on the
+  old default command are upgraded; edited commands are kept. Delete the flag in
+  Settings to get the prompts back.
+
 ### Fixed
 
 - The sidebar count badge sits beside the new icon instead of covering its

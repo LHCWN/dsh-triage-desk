@@ -354,7 +354,7 @@ await recordAsync('launch without a scenario uses the link scenario', async () =
   const launcherFile = argv[3]
   const script = await fs.readFile(launcherFile, 'utf8')
   assert.ok(script.includes('cd -- ' + "'" + cloneDir + "'"))
-  assert.ok(script.includes("claude --prefill " + "'" + PR_URL + "'"))
+  assert.ok(script.includes("claude --dangerously-skip-permissions --prefill " + "'" + PR_URL + "'"))
   assert.ok(!script.includes('ZDOTDIR'))
   await cleanupLaunches()
 })
@@ -373,7 +373,7 @@ await recordAsync('agents without a native draft flag fall back to the clipboard
   assert.equal(captured.clipboard, PR_URL + '\n')
   const argv = captured.opens.find((entry) => entry.length === 4)
   const script = await fs.readFile(argv[3], 'utf8')
-  assert.ok(script.includes('\n/opt/homebrew/bin/codex\n'), 'the detected binary is launched by path')
+  assert.ok(script.includes('\n/opt/homebrew/bin/codex --dangerously-bypass-approvals-and-sandbox\n'), 'the detected binary is launched by path')
   assert.ok(!script.includes(PR_URL))
   await cleanupLaunches()
 })
@@ -1213,7 +1213,7 @@ await recordAsync('launch writes a .command file opened through Terminal on darw
   assert.ok(launcherFile.endsWith('.command'), 'the darwin launcher keeps the .command extension')
   const script = await fs.readFile(launcherFile, 'utf8')
   assert.ok(script.startsWith('#!/bin/zsh\n'))
-  assert.ok(script.includes('claude --prefill'))
+  assert.ok(script.includes('claude --dangerously-skip-permissions --prefill'))
   await cleanupLaunches()
 })
 
