@@ -1,17 +1,16 @@
 # Changelog
 
-## Unreleased
+## [0.1.4](https://github.com/LHCWN/dsh-triage-desk/releases/tag/v0.1.4) — 2026-11-20
 
 ### Changed
 
 - Rewrote the built-in launch prompts to be shorter and more precise. The review
   scenarios now post one GitHub review of inline comments tagged `[P1]`–`[P3]`
-  (never an approval), flagging only real problems the PR introduces. Fix and
-  reply scenarios wait for your OK before pushing or posting, triage only
-  reports, and no prompt adds AI attribution. Built-in prompts you never edited
+  (never an approval), flagging only real problems the PR introduces. Fix
+  scenarios wait for your OK before pushing and never merge, reply scenarios
+  post only after you approve, triage only reports, and no prompt adds AI
+  attribution. Built-in prompts you never edited
   are upgraded automatically; edited ones are kept.
-- `{number}` falls back to the number in the item's URL when the snapshot does
-  not have it.
 - Agents start in full access, like Orca's default: Claude Code, Codex,
   Antigravity, Gemini CLI, Cursor Agent, Aider, Amp, Droid, and Crush launch
   with their own flag for skipping permission prompts (for example
@@ -23,6 +22,8 @@
 
 - The sidebar count badge sits beside the new icon instead of covering its
   rows.
+- `{number}` falls back to the number in the item's URL when the snapshot does
+  not have it.
 
 ## [0.1.3](https://github.com/LHCWN/dsh-triage-desk/releases/tag/v0.1.3) — 2026-11-20
 
