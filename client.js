@@ -1059,13 +1059,15 @@ window.__ModuleLoader__.load({
                   color: var(--adx-ink-4); font-size: 12px; line-height: 18px; }
 
       .adx-icon-wrap { display: inline-flex; align-items: center; justify-content: center; position: relative; }
+      /* Outside the mark's top-right corner: the prompt-queue mark keeps its
+         rows on the right, which a badge over the corner would cover. */
       .adx-badge {
-        position: absolute; top: -5px; right: -7px;
+        position: absolute; top: -8px; right: -11px;
         display: inline-flex; align-items: center; justify-content: center;
-        min-width: 14px; height: 14px; padding: 0 3px; box-sizing: border-box;
+        min-width: 12px; height: 12px; padding: 0 3px; box-sizing: border-box;
         border-radius: 999px; corner-shape: round;
         background: var(--dsw-alias-brand-primary); color: var(--dsw-alias-bg-base);
-        font-size: 9px; line-height: 1; font-weight: 600; font-variant-numeric: tabular-nums;
+        font-size: 8px; line-height: 1; font-weight: 600; font-variant-numeric: tabular-nums;
       }
 
       .adx-auto { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -4px 0 12px;
