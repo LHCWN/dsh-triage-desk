@@ -6,6 +6,8 @@
 
 一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）插件，每天早上只回答一个问题：**现在有什么需要我处理？** 它把 GitHub 动态汇总成一个收件箱面板：等待你审核的 PR、可以合并的自己的 PR、需要答复的讨论、失败的 CI，以及新的或分配给你的议题。只需一次点击，就能针对任意条目打开编码智能体，并带好准备好的提示，由你检查后再发送。所有操作都通过 GitHub CLI 在本地完成；插件从不存储或转发访问令牌。
 
+<img src="docs/screenshots/inbox.png" width="900" alt="DSH 中的分诊面板：关注计数、分类标签、来源筛选，以及等待审核的拉取请求及其 CI 状态">
+
 [English](README.md) · [参考文档（英文）](docs/REFERENCE.md) · [架构](docs/ARCHITECTURE.md) · [更新日志](CHANGELOG.md)
 
 ## 显示内容
@@ -21,6 +23,10 @@
 - **智能体工具**：`triage_desk` 把同一份快照提供给 DSH 智能体，并可按要求打开终端。
 - **来源与语言**：个人仓库加最多 10 个组织；面板跟随 DSH 的界面语言（英文或中文）。
 - **大型组织**：像 `llvm` 这样大的组织会以精简模式加载，而不是直接失败（[详情](docs/REFERENCE.md#large-sources)）。
+
+*分诊* 旁的计数表示需要你处理的事项；将鼠标悬停或聚焦在计数上，可查看它未计入的内容。
+
+<img src="docs/screenshots/count-hint.png" width="697" alt="关注计数的提示：7 项需要你处理，未计入 13 个新议题和 2 个可选审核">
 
 每项功能的完整说明见[参考文档](docs/REFERENCE.md#inbox)。
 
@@ -63,6 +69,8 @@ dsh plugin --profile <profile> add dsh-triage-desk@latest
 
 行（或分类标题）上的终端按钮会打开启动菜单：先选择目标（**DSH — 本应用**或已安装的智能体），再选择场景。单行场景会在仓库的本地克隆中打开智能体；分类场景会用所有可见行的清单启动一个智能体。提示总是已准备好但**尚未发送**。智能体选择器下方的一行会说明在哪里打开以及提示如何送达，例如*在 Ghostty 中打开 · 提示自动填入输入框，尚未发送*。
 
+<img src="docs/screenshots/launch-menu.png" width="300" alt="行上的启动菜单：智能体选择器设为 DSH — 本应用，以及场景“仅链接”和“审核此 PR”">
+
 **终端。** 设置 → *终端与智能体* → **智能体打开位置**提供*自动*或本平台的某个终端；未安装的终端会显示为禁用。
 
 | 平台 | 终端 | 自动 |
@@ -94,11 +102,13 @@ Toast 提示会写明智能体和终端，例如*已在 Ghostty 中打开 Codex�
 | `includePersonal` | `true` | 包含你的个人仓库 |
 | `refreshSeconds` | `1200` | 自动刷新间隔，15–3600 秒 |
 | `requireGreenChecks` | `true` | 仅在检查通过或没有检查时列入*可以合并* |
-| `defaultAgent` | `claude` | 启动菜单中选中的智能体 |
+| `defaultAgent` | `dsh` | 启动菜单中选中的目标：`dsh`（新的 DSH 对话）或智能体 ID |
 | `terminal` | `auto` | 启动所用的终端：`auto` 或某个终端 ID |
 | `promptDelivery` | `paste` | `paste`（填入智能体）或 `clipboard`（复制到剪贴板） |
 
 所有字段（包括智能体、场景和克隆搜索）见[配置参考](docs/REFERENCE.md#configuration)。
+
+<img src="docs/screenshots/settings-launch.png" width="682" alt="设置中的终端与智能体：终端、提示传递方式、默认智能体 DSH — 本应用，以及智能体列表">
 
 ## 开发
 

@@ -12,6 +12,8 @@ issues. One click opens a coding agent on any item with a prepared prompt that
 you review before sending. Everything runs locally through the GitHub CLI; the
 plugin never stores or forwards a token.
 
+<img src="docs/screenshots/inbox.png" width="900" alt="The Triage panel in DSH: the attention count, section tabs, source filters, and pull requests waiting for review with their CI status">
+
 [简体中文](README.zh.md) · [Reference](docs/REFERENCE.md) · [Architecture](docs/ARCHITECTURE.md) · [Changelog](CHANGELOG.md)
 
 ## What it shows
@@ -27,6 +29,11 @@ plugin never stores or forwards a token.
 - **Agent tool**: `triage_desk` gives a DSH agent the same snapshot and can open a terminal on request.
 - **Sources and languages**: personal repositories plus up to 10 organizations; the panel follows the DSH language (English or Chinese).
 - **Large organizations**: organizations as big as `llvm` load in a lighter mode instead of failing ([details](docs/REFERENCE.md#large-sources)).
+
+The count next to *Triage* is what needs you; hover or focus it to see what it
+leaves out.
+
+<img src="docs/screenshots/count-hint.png" width="697" alt="The attention count's tooltip: 7 need your action, not counted 13 new issues and 2 optional reviews">
 
 Each feature is described in full in the [reference](docs/REFERENCE.md#inbox).
 
@@ -88,6 +95,8 @@ prepared but **not sent**. A line under the agent picker says where it opens and
 how the prompt arrives, for example *Opens in Ghostty · prompt typed into the
 input box, unsent*.
 
+<img src="docs/screenshots/launch-menu.png" width="300" alt="The launch menu on a row: the agent picker set to DSH — this app, and the scenarios Just the link and Review this PR">
+
 **Terminals.** Settings → *Terminal and agents* → **Open agents in** offers
 *Automatic* or one of this platform's terminals; terminals that are not installed
 are shown disabled.
@@ -143,12 +152,14 @@ available while you save. The most used fields:
 | `includePersonal` | `true` | Include your personal repositories |
 | `refreshSeconds` | `1200` | Auto-refresh interval, 15–3600 s |
 | `requireGreenChecks` | `true` | *Ready to merge* only with green or no checks |
-| `defaultAgent` | `claude` | Agent selected in the launch menu |
+| `defaultAgent` | `dsh` | Target selected in the launch menu: `dsh` (a new DSH chat) or an agent id |
 | `terminal` | `auto` | Terminal for launches: `auto` or a terminal id |
 | `promptDelivery` | `paste` | `paste` (type into the agent) or `clipboard` |
 
 All fields, including agents, scenarios, and clone search, are in the
 [configuration reference](docs/REFERENCE.md#configuration).
+
+<img src="docs/screenshots/settings-launch.png" width="682" alt="Settings, Terminal and agents: the terminal, prompt delivery, the default agent DSH — this app, and the agent list">
 
 ## Development
 
