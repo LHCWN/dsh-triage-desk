@@ -997,6 +997,30 @@ for (const readBack of ['first', 'retry']) {
   // Relative times advance with the Page minute tick through memoized Section/Row.
   const generated = Date.parse(snapshot.generatedAt)
   const clock = { now: generated + 5 * 60_000 }
+  // The header count explains itself: the fixture has 5 actionable items, one
+  // pull request in two sections, and one new issue left out.
+  {
+    const counter = settingsHarness({ snapshotPayload: snapshot })
+    await counter.flush()
+    const total = counter.nodes().find((node) => node.props?.className === 'adx-total')
+    const tip = counter.nodes().find((node) => node.props?.role === 'tooltip')
+    assert.ok(total && tip, 'the count has a tooltip')
+    assert.equal(total.props.tabIndex, 0, 'the count is reachable by keyboard')
+    assert.equal(total.props['aria-describedby'], tip.props.id, 'the tooltip describes the count')
+    const tipText = flattenTree(tip.props.children).filter((node) => typeof node === 'string').join(' ')
+    assert.ok(tipText.includes('count.title:5'), tipText)
+    assert.ok(tipText.includes('count.once'), 'a pull request in two sections is explained')
+    assert.ok(tipText.includes('count.excluded:count.issuesOne:1'), tipText)
+    const wrap = () => counter.nodes().find((node) => node.props?.className === 'adx-total-wrap')
+    total.props.onKeyDown({ key: 'Escape' })
+    await counter.flush()
+    assert.equal(wrap().props['data-dismissed'], 'true', 'Escape hides the tooltip')
+    counter.nodes().find((node) => node.props?.className === 'adx-total').props.onBlur()
+    await counter.flush()
+    assert.equal(wrap().props['data-dismissed'], 'false', 'leaving the count re-arms it')
+    counter.dispose()
+  }
+
   const harness = settingsHarness({ snapshotPayload: snapshot, clock })
   await harness.flush()
   const ages = () => harness.text().match(/time\.minutes:\d+/g) || []

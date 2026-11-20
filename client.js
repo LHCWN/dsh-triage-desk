@@ -118,6 +118,15 @@ window.__ModuleLoader__.load({
       'page.expand': 'Expand section',
       'page.stale': 'Showing the snapshot from {time}: the last refresh failed.',
       'page.partial': 'Some data couldn’t be loaded',
+      'count.title': '{n} need your action',
+      'count.titleOne': '1 needs your action',
+      'count.once': 'A pull request in several sections counts once.',
+      'count.excluded': 'Not counted: {list}',
+      'count.issues': '{n} new issues',
+      'count.issuesOne': '1 new issue',
+      'count.optional': '{n} optional reviews',
+      'count.optionalOne': '1 optional review',
+      'count.snoozed': '{n} snoozed',
       'page.partialMore': '+{n} more',
       'limits.title': 'Limited view of {sources}',
       'limits.titleGeneral': 'Some lists are shortened',
@@ -425,6 +434,15 @@ window.__ModuleLoader__.load({
       'page.expand': '展开分类',
       'page.stale': '显示的是 {time} 的快照：上次刷新失败。',
       'page.partial': '部分数据未能加载',
+      'count.title': '{n} 项需要你处理',
+      'count.titleOne': '1 项需要你处理',
+      'count.once': '同一拉取请求出现在多个分类中只计一次。',
+      'count.excluded': '未计入：{list}',
+      'count.issues': '{n} 个新议题',
+      'count.issuesOne': '1 个新议题',
+      'count.optional': '{n} 个可选审核',
+      'count.optionalOne': '1 个可选审核',
+      'count.snoozed': '{n} 个已延后',
       'page.partialMore': '另有 {n} 条',
       'limits.title': '{sources} 仅显示部分内容',
       'limits.titleGeneral': '部分列表已缩短',
@@ -725,6 +743,32 @@ window.__ModuleLoader__.load({
         border-radius: 999px; corner-shape: round;
         background: var(--adx-module); color: var(--adx-ink-2);
         font-size: 12px; line-height: 18px; font-weight: 500; font-variant-numeric: tabular-nums;
+      }
+      .adx-total-wrap { position: relative; display: inline-flex; }
+      .adx-total { cursor: default; }
+      .adx-total:focus-visible { outline: var(--adx-ring-w) solid var(--adx-ring); outline-offset: 2px; }
+      .adx-tooltip {
+        position: absolute; z-index: 40; top: calc(100% + 8px); left: -4px; transform: translateY(-2px);
+        display: flex; flex-direction: column; gap: 2px;
+        width: max-content; max-width: min(320px, 80vw); padding: 8px 10px; border-radius: 8px;
+        background: var(--dsw-alias-bg-elevated, var(--adx-module)); color: var(--adx-ink-2);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2), inset 0 0 0 0.5px var(--adx-hairline);
+        font-size: 12px; line-height: 18px; font-weight: 400; text-align: left; white-space: normal;
+        opacity: 0; visibility: hidden; pointer-events: none;
+        transition: opacity 120ms ease, transform 120ms ease, visibility 0s linear 120ms;
+      }
+      .adx-tooltip strong { color: var(--adx-ink); font-weight: 500; }
+      .adx-tooltip-quiet { color: var(--adx-ink-3); }
+      /* Hover waits a moment so a passing pointer does not flash it; focus
+         shows it at once; Escape (data-dismissed) hides it until leave/blur. */
+      .adx-total-wrap:hover .adx-tooltip { transition-delay: 300ms, 300ms, 0s; }
+      .adx-total-wrap:hover .adx-tooltip,
+      .adx-total:focus-visible + .adx-tooltip { opacity: 1; visibility: visible; transform: translateY(0); }
+      .adx-total-wrap[data-dismissed='true'] .adx-tooltip { opacity: 0; visibility: hidden; }
+      @media (prefers-reduced-motion: reduce) { .adx-tooltip { transition: none; } }
+      .adx-visually-hidden {
+        position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+        overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
       }
       .adx-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
                  margin: 4px 0 0; color: var(--adx-ink-2); font-size: 13px; line-height: 20px;
@@ -1627,17 +1671,85 @@ window.__ModuleLoader__.load({
      * (default: the current time) decides whether timed snoozes still hold.
      */
     function attentionCount(sections, snoozed, matches, now) {
-      const ids = new Set()
+      return attentionSummary(sections, snoozed, matches, now).total
+    }
+
+    /**
+     * The attention count and what it leaves out, for the count's hint:
+     * `repeats` rows of a pull request already counted in another section,
+     * `optional` review requests, `snoozed` items and new `issues` (not
+     * actionable). One pass, so the hint cannot disagree with the badge.
+     */
+    function attentionSummary(sections, snoozed, matches, now) {
+      const counted = new Set()
+      const optional = new Set()
+      const quiet = new Set()
+      const issues = new Set()
+      let rows = 0
       for (const section of Array.isArray(sections) ? sections : []) {
-        if (!section || ACTIONABLE_SECTIONS.indexOf(section.id) === -1 || !Array.isArray(section.items)) continue
+        if (!section || !Array.isArray(section.items)) continue
+        const actionable = ACTIONABLE_SECTIONS.indexOf(section.id) !== -1
+        if (!actionable && section.id !== 'issues') continue
         for (const item of section.items) {
           if (item === null || item === undefined) continue
-          if (section.id === 'review' && item.optional === true) continue
-          if (isSnoozed(snoozed, item, now) || (typeof matches === 'function' && !matches(item))) continue
-          ids.add(item.id)
+          if (typeof matches === 'function' && !matches(item)) continue
+          if (isSnoozed(snoozed, item, now)) {
+            quiet.add(item.id)
+          } else if (!actionable) {
+            issues.add(item.id)
+          } else if (section.id === 'review' && item.optional === true) {
+            optional.add(item.id)
+          } else {
+            rows += 1
+            counted.add(item.id)
+          }
         }
       }
-      return ids.size
+      return { total: counted.size, repeats: rows - counted.size, optional: optional.size, snoozed: quiet.size, issues: issues.size }
+    }
+
+    /**
+     * The attention count in the page header with its hint (WAI-ARIA tooltip
+     * pattern): focusable, described by the tooltip, shown on hover and focus,
+     * dismissed with Escape. The hint says what the number counts and what it
+     * leaves out, so it can be read against the section tabs.
+     */
+    function AttentionCount({ t, summary }) {
+      const [dismissed, setDismissed] = useState(false)
+      const id = 'adx-count-hint'
+      const label = summary.total > 99 ? '99+' : String(summary.total)
+      const left = []
+      if (summary.issues > 0) left.push(t(summary.issues === 1 ? 'count.issuesOne' : 'count.issues', { n: summary.issues }))
+      if (summary.optional > 0) left.push(t(summary.optional === 1 ? 'count.optionalOne' : 'count.optional', { n: summary.optional }))
+      if (summary.snoozed > 0) left.push(t('count.snoozed', { n: summary.snoozed }))
+      return h(
+        'span',
+        {
+          className: 'adx-total-wrap',
+          'data-dismissed': dismissed ? 'true' : 'false',
+          onMouseLeave: () => setDismissed(false),
+        },
+        h(
+          'span',
+          {
+            className: 'adx-total',
+            tabIndex: 0,
+            'aria-describedby': id,
+            onKeyDown: (event) => {
+              if (event.key === 'Escape') setDismissed(true)
+            },
+            onBlur: () => setDismissed(false),
+          },
+          label,
+        ),
+        h(
+          'span',
+          { role: 'tooltip', id, className: 'adx-tooltip' },
+          h('strong', null, t(summary.total === 1 ? 'count.titleOne' : 'count.title', { n: summary.total })),
+          summary.repeats > 0 ? h('span', null, t('count.once')) : null,
+          left.length > 0 ? h('span', { className: 'adx-tooltip-quiet' }, t('count.excluded', { list: left.join(' · ') })) : null,
+        ),
+      )
     }
 
     function parseRepoPathsText(text) {
@@ -5324,7 +5436,8 @@ window.__ModuleLoader__.load({
         return map
       }, [visible, snoozedView])
       // The header total is the attention badge for the selected source.
-      const total = attentionCount(sections, snoozed, (item) => itemMatchesSource(item, activeSource), now)
+      const attention = attentionSummary(sections, snoozed, (item) => itemMatchesSource(item, activeSource), now)
+      const total = attention.total
       const previousFilter = state.filterBeforeSnoozed && state.filterBeforeSnoozed !== 'snoozed' ? state.filterBeforeSnoozed : 'all'
       const toggleSnoozedView = () =>
         store.set(snoozedView ? { filter: previousFilter } : { filter: 'snoozed', filterBeforeSnoozed: activeFilter })
@@ -5464,7 +5577,7 @@ window.__ModuleLoader__.load({
                   'div',
                   { className: 'adx-title-row' },
                   h('h1', null, view === 'settings' ? t('settings.title') : t('page.title')),
-                  view === 'list' && total > 0 ? h('span', { className: 'adx-total' }, total > 99 ? '99+' : String(total)) : null,
+                  view === 'list' && total > 0 ? h(AttentionCount, { t, summary: attention }) : null,
                 ),
                 view === 'settings'
                   ? h('p', { className: 'adx-sub' }, t('settings.subtitle'))
@@ -5825,13 +5938,18 @@ window.__ModuleLoader__.load({
       const state = useStore(store)
       const total = attentionCount(state.data && state.data.sections, state.snoozed)
       const edge = typeof props.size === 'number' ? props.size : 18
+      // The sidebar is DSH's own chrome, where a layered hint would be
+      // clipped: the badge gets a native title and a screen-reader label.
+      const translate = runtime.t || ((key) => key)
+      const hint = total > 0 ? translate(total === 1 ? 'count.titleOne' : 'count.title', { n: total }) : undefined
       return h(
         'span',
-        { className: 'adx-icon-wrap' },
+        { className: 'adx-icon-wrap', title: hint },
         icon('inbox', edge, 1.3),
         total > 0
           ? h('span', { className: 'adx-badge', 'aria-hidden': 'true' }, total > 99 ? '99+' : String(total))
           : null,
+        hint ? h('span', { className: 'adx-visually-hidden' }, hint) : null,
       )
     }
 
@@ -5867,6 +5985,7 @@ window.__ModuleLoader__.load({
         })
       }
       const t = ctx.locale.bind(NS)
+      runtime.t = t
 
       ctx.effect(() => () => store.dispose(), 'triage-desk: store cleanup')
 
