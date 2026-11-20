@@ -787,6 +787,15 @@ npm publish          # unscoped public package
 ```
 
 Bump `version` in `package.json` and add a matching section to `CHANGELOG.md`.
+
+A release candidate (`X.Y.Z-rc.N`) is published under the `next` dist-tag so
+`latest` stays on the stable version: `npm publish --tag next`, with the GitHub
+release marked as a prerelease. Testers install it with
+`dsh plugin --profile <profile> add dsh-triage-desk@next` (`dsh plugin` passes
+its arguments to pnpm). The stable release is a new version `X.Y.Z` published
+to `latest`; then point `next` at it too
+(`npm dist-tag add dsh-triage-desk@X.Y.Z next`), so `@next` is never older
+than `@latest`.
 The package ships the host and client halves, launch presets, locale metadata,
 both READMEs, the changelog, the license, and `docs/REFERENCE.md`,
 `docs/ARCHITECTURE.md`, and `docs/DEV_LOCAL.md`; development smokes and the
