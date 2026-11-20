@@ -1218,7 +1218,7 @@ await check('a large source also checks the repositories of the viewer\'s own pu
   })
   const snapshot = await buildSnapshot(ctx, settings())
   assert.equal(calls.filter((call) => call === 'contributions').length, 2, 'one quiet retry, then the failure is kept for the next source')
-  assert.ok(!calls.includes('repo:llvm/lld'), 'without contributions the scan stops at the error')
+  assert.ok(calls.includes('repo:llvm/lld'), 'without contributions the repositories of the viewer\'s pull requests are still scanned')
   assert.deepEqual(snapshot.warnings.filter((entry) => entry.code === 'source-unavailable').map((entry) => entry.message.split(':').slice(0, 2).join(':')), ['org:llvm', 'org:clang'])
 
   const fixed = fakeCtx({

@@ -1063,12 +1063,13 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
         contributions = { error }
       }
     }
-    if (contributions.error) throw contributions.error
     const authored = [...state.pulls.values()]
       .filter((entry) => entry.found.has('authored'))
       .map((entry) => entry.repoName)
     const owner = state.source.login.toLowerCase()
-    return uniqueIgnoringCase([...authored, ...contributions.names]).filter((name) => name.split('/')[0].toLowerCase() === owner)
+    const names = uniqueIgnoringCase([...authored, ...(contributions.names || [])])
+      .filter((name) => name.split('/')[0].toLowerCase() === owner)
+    return { names, error: contributions.error || null }
   }
   const addRepo = (state, repo) => {
     if (!repo || typeof repo.nameWithOwner !== 'string' || state.seenRepos.has(repo.nameWithOwner)) return
@@ -1078,13 +1079,10 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
   // Branch CI of a large source: see BRANCH_SCAN_REPO_QUERY.
   const narrowBranchScan = async (state) => {
     state.repoNext = false
-    let contributed
-    try {
-      contributed = await contributedReposOf(state)
-    } catch (error) {
-      sourceUnavailable(state, 'branch scan (your contributed repositories)', error)
-      return
-    }
+    // Without contributions, the repositories of the viewer's own pull
+    // requests are still scanned.
+    const { names: contributed, error } = await contributedReposOf(state)
+    if (error !== null) sourceUnavailable(state, 'branch scan (your contributed repositories)', error)
     const names = contributed.slice(0, MAX_CONTRIBUTED_REPOS)
     let scanned = 0
     for (const name of names) {
