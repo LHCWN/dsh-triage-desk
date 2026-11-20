@@ -561,6 +561,9 @@ async function ghGraphql(ctx, settings, query, variables, options = {}) {
 /* Snapshot builder                                                           */
 /* -------------------------------------------------------------------------- */
 
+/** `n` with its noun, for English warning messages. */
+const counted = (n, one, many) => `${n} ${n === 1 ? one : many}`
+
 /**
  * A coverage limit: the snapshot is complete within a stated bound (fewer pull
  * requests, a narrower branch scan, a hidden list), not missing data that
@@ -1049,7 +1052,7 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
     if (state.profile.level === 0 || !state.pullsTried) continue
     const level = levelOf(state)
     const login = state.source.login
-    warnings.push(limitWarning('source-degraded', login, { max: pullBound(level), pageSize: level.pageSize },
+    warnings.push(limitWarning('source-degraded', login, { max: pullBound(level) },
       `${login}: too large for GitHub to search in full; each pull request list shows the ${pullBound(level)} most recently updated`))
   }
 
@@ -1113,7 +1116,9 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
       }
     }
     const login = state.source.login
-    const repos = `${scanned < contributed.length ? `${scanned} of the ${contributed.length}` : `the ${scanned}`} ${contributed.length === 1 ? 'repository' : 'repositories'}`
+    const repos = scanned < contributed.length
+      ? `${scanned} of the ${counted(contributed.length, 'repository', 'repositories')}`
+      : `the ${counted(scanned, 'repository', 'repositories')}`
     warnings.push(limitWarning('branch-scan-narrowed', login, { login: viewerLogin, scanned, total: contributed.length },
       `${login}: branch CI checks only branches with "${viewerLogin}" in their name, in ${repos} you work in`))
   }
@@ -1196,7 +1201,8 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
       warnings.push(limitWarning('repos-truncated', source.login, { scanned: state.repos.length, total: state.repoTotal },
         `${source.login}: branch CI checks the ${state.repos.length} most recently pushed of ${state.repoTotal} repositories`))
     }
-    sourceSummaries.push({ kind: source.kind, login: source.login, label: source.label, repos: state.repos.length })
+    // `large`: read in the lighter mode (see isLarge); the panel names it.
+    sourceSummaries.push({ kind: source.kind, login: source.login, label: source.label, repos: state.repos.length, large: isLarge(state) })
     // A large source lists no new unassigned issues. The warning says so only
     // when the list would have shown some: issues in repositories the viewer
     // maintains (classifySearch lists no others).
@@ -1656,13 +1662,12 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
 
   const truncatedTotal = truncated.reviews + truncated.comments + truncated.threads + truncated.search
   if (truncatedTotal > 0) {
-    const count = (n, one, many) => `${n} ${n === 1 ? one : many}`
     const parts = []
-    if (truncated.reviews > 0) parts.push(`older reviews on ${count(truncated.reviews, 'pull request', 'pull requests')}`)
-    if (truncated.comments > 0) parts.push(`older comments on ${count(truncated.comments, 'pull request', 'pull requests')}`)
-    if (truncated.threads > 0) parts.push(`older review threads on ${count(truncated.threads, 'pull request', 'pull requests')}`)
-    if (truncated.search > 0) parts.push(`more search results in ${count(truncated.search, 'source', 'sources')}`)
-    warnings.push(limitWarning('truncated-history', null, { ...truncated },
+    if (truncated.reviews > 0) parts.push(`older reviews on ${counted(truncated.reviews, 'pull request', 'pull requests')}`)
+    if (truncated.comments > 0) parts.push(`older comments on ${counted(truncated.comments, 'pull request', 'pull requests')}`)
+    if (truncated.threads > 0) parts.push(`older review threads on ${counted(truncated.threads, 'pull request', 'pull requests')}`)
+    if (truncated.search > 0) parts.push(`more search results in ${counted(truncated.search, 'source', 'sources')}`)
+    warnings.push(limitWarning('truncated-history', null, {},
       `Not read: ${parts.join(', ')}. Your own latest review is always read.`))
   }
 

@@ -699,8 +699,9 @@ window.__ModuleLoader__.load({
         font-size: 14px; line-height: 1.6;
       }
       .adx-root *, .adx-root *::before, .adx-root *::after { box-sizing: border-box; }
-      /* DSH marks its dark theme on <body>; native controls (select lists,
-         scrollbars) follow color-scheme, not the theme tokens. */
+      /* DSH marks its dark theme on <body>; native parts that ignore the
+         theme tokens (scrollbars, the select list's own chrome) follow
+         color-scheme. Option colors are set from the tokens below. */
       body[data-ds-dark-theme] .adx-root { color-scheme: dark; }
       .adx-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
       .adx-col { max-width: 960px; margin: 0 auto; padding: 0 clamp(24px, 4vw, 48px) 48px; }
@@ -885,6 +886,8 @@ window.__ModuleLoader__.load({
       }
       .adx-pill[data-tone='neutral'] { background: var(--adx-module); color: var(--adx-ink-2); }
       .adx-pill[data-tone='outline'] { box-shadow: inset 0 0 0 0.5px var(--adx-hairline); color: var(--adx-ink-3); }
+      /* Flex items take no text-overflow: a long label ellipsizes in its own span. */
+      .adx-pill-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
       .adx-pill[data-tone='info'] { background: color-mix(in srgb, var(--adx-info) 10%, transparent); color: var(--adx-info); }
       .adx-pill[data-tone='success'] { background: color-mix(in srgb, var(--adx-ok) 10%, transparent); color: var(--adx-ok); }
       .adx-pill[data-tone='warning'] { background: color-mix(in srgb, var(--adx-warn) 12%, transparent); color: var(--adx-warn); }
@@ -908,9 +911,9 @@ window.__ModuleLoader__.load({
       .adx-limits-toggle { color: var(--adx-info); white-space: nowrap; }
       .adx-limits-details[open] .adx-limits-toggle--show,
       .adx-limits-details:not([open]) .adx-limits-toggle--hide { display: none; }
-      .adx-limits-source { margin-right: 6px; padding: 0 5px; border-radius: 4px; background: var(--adx-hover); color: var(--adx-ink-2); font-size: 11px; }
       .adx-limits-link { display: inline-block; margin-top: 6px; color: var(--adx-info); font-size: 12px; text-decoration: none; }
       .adx-limits-link:hover { text-decoration: underline; }
+      .adx-limits-link:focus-visible { outline: var(--adx-ring-w) solid var(--adx-ring); outline-offset: 2px; border-radius: 4px; }
       .adx-notice .adx-btn { margin-left: auto; }
       .adx-notice[data-tone='warning'] {
         background: color-mix(in srgb, var(--adx-warn) 8%, transparent);
@@ -3577,18 +3580,23 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function Notice({ tone, title, detail, items, actionLabel, onAction }) {
+    /** A list of notice lines; each item is text or nodes. */
+    const noticeList = (items, key) => h('ul', { key, className: 'adx-notice-list' }, items.map((item, index) => h('li', { key: index }, item)))
+
+    /* `body` replaces the title/detail/items content (the limits notice puts
+       them in a <details>). */
+    function Notice({ className, tone, title, detail, items, body, actionLabel, onAction }) {
       return h(
         'div',
-        { className: 'adx-notice', 'data-tone': tone, role: tone === 'error' ? 'alert' : 'status' },
+        { className: 'adx-notice' + (className ? ' ' + className : ''), 'data-tone': tone, role: tone === 'error' ? 'alert' : 'status' },
         h(
           'div',
           { className: 'adx-notice-body' },
-          title ? h('strong', null, title) : null,
-          detail ? h('span', { className: 'adx-notice-detail' }, detail) : null,
-          items && items.length > 0
-            ? h('ul', { className: 'adx-notice-list' }, items.map((item, index) => h('li', { key: index }, item)))
-            : null,
+          body || [
+            title ? h('strong', { key: 'title' }, title) : null,
+            detail ? h('span', { key: 'detail', className: 'adx-notice-detail' }, detail) : null,
+            items && items.length > 0 ? noticeList(items, 'items') : null,
+          ],
         ),
         actionLabel ? h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: onAction }, actionLabel) : null,
       )
@@ -3597,11 +3605,9 @@ window.__ModuleLoader__.load({
     /* Coverage limits (warnings with kind 'limit'): what the snapshot left
        out on purpose, in plain words, apart from data that failed to load. */
     const LIMITS_DOC_URL = 'https://github.com/LHCWN/dsh-triage-desk/blob/main/docs/REFERENCE.md#large-sources'
-    const LARGE_LIMIT_CODES = ['source-degraded', 'branch-scan-narrowed', 'new-issues-skipped']
-    const formatCount = (value) => (typeof value === 'number' ? value.toLocaleString() : '…')
-
-    function limitText(t, warning) {
+    function limitText(t, warning, locale) {
       const p = warning.params || {}
+      const formatCount = (value) => (typeof value === 'number' ? value.toLocaleString(locale) : '…')
       switch (warning.code) {
         case 'source-degraded':
           return t('limit.sourceDegraded', { max: formatCount(p.max) })
@@ -3625,17 +3631,36 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /** Data that failed to load: the first three problems, one per line. */
+    function ProblemsNotice({ t, warnings }) {
+      const problems = warnings.filter((entry) => entry && entry.kind !== 'limit')
+      if (problems.length === 0) return null
+      const items = problems.slice(0, 3).map((entry) => String(entry.message || entry.code))
+      if (problems.length > 3) items.push(t('page.partialMore', { n: problems.length - 3 }))
+      return h(Notice, { tone: 'warning', title: t('page.partial'), items })
+    }
+
     /** The limits notice, or null when there is none worth showing. */
-    function LimitsNotice({ t, warnings }) {
+    function LimitsNotice({ t, warnings, sources: sourceRows }) {
       const limits = warnings.filter((entry) => entry && entry.kind === 'limit')
       // Old history on long pull requests is routine: listed only beside
       // other limits, never a notice of its own.
       if (!limits.some((entry) => entry.code !== 'truncated-history')) return null
       const sources = [...new Set(limits.map((entry) => entry.source).filter(Boolean))]
-      // A source's own per-list truncation says more than its generic bound.
-      const shown = limits.filter((entry) => !(entry.code === 'source-degraded' &&
-        limits.some((other) => other.code === 'prs-truncated' && other.source === entry.source)))
-      const large = [...new Set(limits.filter((entry) => LARGE_LIMIT_CODES.includes(entry.code)).map((entry) => entry.source).filter(Boolean))]
+      // The panel keeps one line per list: a source's per-list truncation says
+      // more than its generic bound (the agent tool keeps both).
+      const truncatedLists = new Set(limits.filter((entry) => entry.code === 'prs-truncated').map((entry) => entry.source))
+      // Grouped by source in first-seen order; limits of the whole refresh last.
+      const rank = (entry) => (entry.source ? sources.indexOf(entry.source) : sources.length)
+      const shown = limits
+        .filter((entry) => !(entry.code === 'source-degraded' && truncatedLists.has(entry.source)))
+        .sort((a, b) => rank(a) - rank(b))
+      // Only sources the notice lists: a source can stay large with no limit
+      // in this refresh (quota stopped before its branch scan).
+      const large = (sourceRows || [])
+        .filter((source) => source && source.large && sources.includes(source.login))
+        .map((source) => source.login)
+      const locale = uiLocale(t)
       const names = (list) => list.join(', ')
       const title = sources.length > 0 ? t('limits.title', { sources: names(sources) }) : t('limits.titleGeneral')
       // The lead gives the reason: a large source, or lists cut to their most
@@ -3645,10 +3670,10 @@ window.__ModuleLoader__.load({
         ? t(large.length === 1 ? 'limits.leadLarge' : 'limits.leadLargeMany', { sources: names(large) })
         : recent ? t('limits.lead') : null
       const prefix = sources.length > 1
-      return h(
-        'div',
-        { className: 'adx-notice adx-limits', 'data-tone': 'info', role: 'status' },
-        h(
+      return h(Notice, {
+        className: 'adx-limits',
+        tone: 'info',
+        body: h(
           'details',
           { className: 'adx-limits-details' },
           h(
@@ -3659,16 +3684,16 @@ window.__ModuleLoader__.load({
               h('span', { className: 'adx-limits-toggle adx-limits-toggle--show' }, t('limits.show')),
               h('span', { className: 'adx-limits-toggle adx-limits-toggle--hide' }, t('limits.hide'))),
           ),
-          h(
-            'ul',
-            { className: 'adx-notice-list' },
-            shown.map((entry, index) => h('li', { key: entry.code + ':' + (entry.source || '') + ':' + index },
-              prefix && entry.source ? h('span', { className: 'adx-limits-source' }, entry.source) : null,
-              limitText(t, entry))),
-          ),
+          noticeList(shown.map((entry) => [
+            prefix && entry.source
+              ? h(Pill, { key: 'source', tone: 'outline', title: entry.source }, h('span', { className: 'adx-pill-text' }, entry.source))
+              : null,
+            prefix && entry.source ? ' ' : null,
+            limitText(t, entry, locale),
+          ])),
           h('a', { className: 'adx-limits-link', href: LIMITS_DOC_URL, target: '_blank', rel: 'noreferrer noopener' }, t('limits.learnMore')),
         ),
-      )
+      })
     }
 
     function Switch({ checked, onChange, label }) {
@@ -4902,16 +4927,12 @@ window.__ModuleLoader__.load({
           'div',
           { className: 'adx-agents' },
           unusableAgents.length > 0
-            ? h(
-                'div',
-                { className: 'adx-notice adx-agents-unusable', 'data-tone': 'warning', role: 'status' },
-                h(
-                  'p',
-                  null,
-                  h('strong', null, t('settings.agentsUnusable', { n: unusableAgents.length })),
-                  h('span', { className: 'adx-notice-detail' }, t('settings.agentsUnusableHint')),
-                ),
-              )
+            ? h(Notice, {
+                className: 'adx-agents-unusable',
+                tone: 'warning',
+                title: t('settings.agentsUnusable', { n: unusableAgents.length }),
+                detail: t('settings.agentsUnusableHint'),
+              })
             : null,
           form.agents.map((agent, index) => {
             const flagged = agentRowUnusable(agent) || agent._key === invalidAgentKey
@@ -5706,16 +5727,9 @@ window.__ModuleLoader__.load({
                         onAction: () => void store.load(true),
                       })
                     : null,
-                  data && data.status === 'partial'
-                    ? (() => {
-                        const problems = (data.warnings || []).filter((entry) => entry && entry.kind !== 'limit')
-                        const items = problems.slice(0, 3).map((entry) => String(entry.message || entry.code))
-                        if (problems.length > 3) items.push(t('page.partialMore', { n: problems.length - 3 }))
-                        return h(Notice, { tone: 'warning', title: t('page.partial'), items })
-                      })()
-                    : null,
+                  data && data.status === 'partial' ? h(ProblemsNotice, { t, warnings: data.warnings || [] }) : null,
                   data && (data.status === 'ok' || data.status === 'partial')
-                    ? h(LimitsNotice, { t, warnings: data.warnings || [] })
+                    ? h(LimitsNotice, { t, warnings: data.warnings || [], sources: data.sources })
                     : null,
                   loading ? h(Skeleton, { t }) : null,
                   showEmpty

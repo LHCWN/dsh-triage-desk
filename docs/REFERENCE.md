@@ -615,37 +615,37 @@ This section was checked against DSH 0.2.2-rc.5; the plugin supports
 
 ## Large sources
 
-GitHub ends a GraphQL request after about 10 seconds of server time and answers
-HTTP 502 or 504 (or an empty response). In a very large organization, such as
-`llvm` with more than 12,000 open pull requests and bot comments that carry
-whole diffs, the full pull request search can take longer than that. A
-timed-out request is retried once; if it times out again (or its response is
-larger than 12 MB), Triage Desk reads that source lighter instead of failing:
+When GitHub can't serve an organization in full, Triage Desk reads it in a
+lighter mode instead of failing, and says so in a **Limited view** notice above
+the inbox.
 
-- **Smaller searches**: each of the three pull request searches runs on its
-  own, 10 pull requests per request and at most 50 per search. If GitHub still
-  times out, 5 per request and at most 25, with shorter comment windows (the
-  last 15 comments, 5 review threads with 3 comments each). The snapshot
-  carries a `source-degraded` warning, and the source keeps the lighter search
-  until the plugin restarts or the GitHub settings change. Searches are sorted
-  by last update, so the most recently updated pull requests are always read.
-- **Large source**: a source that needed a lighter search or whose branch scan
-  timed out counts as large until then too; a source with more than 500 new
-  unassigned issues in the last 30 days counts as large for that refresh. A
-  large source does not list new unassigned issues (`new-issues-skipped`, shown
-  when some are in repositories you maintain), and its branch CI covers only
-  the repositories of your open pull requests there and the ones you committed
-  to or opened pull requests in during the last year (at most 10), and in them
-  only the branches with your login in their name, such as llvm's
-  `users/<login>/...` branches (`branch-scan-narrowed`). Red default branches
-  are still checked in those repositories; a branch without your login in its
-  name, in a repository you have no pull request or contribution in, is not.
+**When it starts.** GitHub stops a GraphQL request after about 10 seconds and
+answers HTTP 502 or 504. A request that fails that way twice, or returns more
+than 12 MB, switches its source to the lighter mode. A source with more than
+500 new unassigned issues in the last 30 days gets the same issue and branch
+limits for that refresh.
 
-The panel shows these limits in a quiet **Limited view** notice, collapsed to
-one line, with the list of what is shortened and a link here. Limits do not
-make the snapshot partial: the warning banner (**Some data couldn't be
-loaded**) is only for data that failed to load, one line per problem. The agent
-tool reports limits on their own `Limits:` line.
+**What changes**
+
+| | Normal | Lighter mode |
+|---|---|---|
+| Pull requests per list | the 100 most recently updated | 50, or 25 if GitHub still times out |
+| History read per pull request | last 30 comments, 10 review threads × 5 | at 25: last 15 comments, 5 threads × 3 |
+| New unassigned issues | listed | not listed; the notice gives the count |
+| Branch CI | the 300 most recently pushed repositories | up to 10 repositories you work in, only branches with your login in the name (such as `users/<login>/…`) |
+
+"Repositories you work in" are those with your open pull requests and those you
+committed to or opened pull requests in during the last year. Their red default
+branches are still checked.
+
+**How long it lasts.** Until DSH restarts or the GitHub settings change. The
+issue count is checked on every refresh.
+
+**Where it shows.** Limits appear in the collapsed *Limited view* notice and do
+not mark the snapshot as partial. The amber *Some data couldn't be loaded*
+banner is only for requests that failed. The agent tool lists limits on a
+separate `Limits:` line. Warning codes: `source-degraded`,
+`new-issues-skipped`, `branch-scan-narrowed`.
 
 ## Limitations
 
@@ -669,8 +669,8 @@ tool reports limits on their own `Limits:` line.
   review, so the review window cannot hide it. Other PR history is read in
   bounded windows: the last 50 reviews, the last 30 comments, and the last 10
   review threads with their last 5 comments each (smaller for a [large
-  source](#large-sources)). An @-mention counts only outside code and quoted
-  lines. When GitHub reports more, the
+  source](#large-sources)). An @-mention counts only outside code, quoted
+  lines and HTML comments. When GitHub reports more, the
   snapshot carries a `truncated-history` warning instead of silently dropping
   them. New commits are always detected: the head commit id is compared with the
   commit your latest review was attached to.

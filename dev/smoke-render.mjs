@@ -262,14 +262,15 @@ const limit = (code, source, params) => ({ code, kind: 'limit', source, params, 
 state.data = {
   ...snapshot,
   status: 'ok',
+  sources: [...snapshot.sources, { kind: 'org', login: 'llvm', label: 'llvm', large: true }],
   warnings: [
-    limit('source-degraded', 'llvm', { max: 50, pageSize: 10 }),
+    limit('source-degraded', 'llvm', { max: 50 }),
     limit('branch-scan-narrowed', 'llvm', { login: 'tester', scanned: 1, total: 1 }),
-    limit('truncated-history', null, { reviews: 0, comments: 0, threads: 1, search: 0 }),
+    limit('truncated-history', null, {}),
   ],
 }
 const limitsHtml = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
-assert.ok(limitsHtml.includes('adx-limits') && limitsHtml.includes('limits.title') && limitsHtml.includes('limits.leadLarge'), 'limits get their own notice')
+assert.ok(limitsHtml.includes('adx-limits-details') && limitsHtml.includes('limits.title') && limitsHtml.includes('limits.leadLarge'), 'limits get their own notice')
 assert.ok(limitsHtml.includes('limit.sourceDegraded') && limitsHtml.includes('limit.branchNarrowedOne') && limitsHtml.includes('limit.history'))
 assert.ok(limitsHtml.includes('<details') && !limitsHtml.includes('<details open'), 'the limits list starts collapsed')
 assert.ok(limitsHtml.includes('REFERENCE.md#large-sources'), 'the notice links the explanation')
@@ -278,6 +279,26 @@ state.data = { ...snapshot, status: 'partial', warnings: [limit('branch-scan-nar
 const failedNarrow = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
 assert.ok(failedNarrow.includes('limit.branchNarrowedSome') && !failedNarrow.includes('limit.branchNarrowedNone'),
   'repositories that failed to load are not "no repositories"')
+state.data = {
+  ...snapshot,
+  status: 'ok',
+  sources: [{ kind: 'org', login: 'llvm', label: 'llvm', large: true }, { kind: 'org', login: 'acme', label: 'acme', large: false }],
+  warnings: [limit('prs-truncated', 'acme', { list: 'authored', read: 100, total: 140 })],
+}
+const unlistedLarge = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+assert.ok(!unlistedLarge.includes('limits.leadLarge') && unlistedLarge.includes('limits.lead'),
+  'a large source with no limit in this refresh is not named in the lead')
+state.data = { ...snapshot, status: 'partial', warnings: [limit('repos-truncated', 'acme', { scanned: 300, total: 900 })] }
+assert.ok(!renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store })).includes('page.partial'),
+  'no failure banner without a failure to list')
+state.data = {
+  ...snapshot,
+  status: 'ok',
+  warnings: [limit('prs-truncated', 'a-very-long-organization-login', { list: 'authored', read: 100, total: 140 }), limit('repos-truncated', 'acme', { scanned: 300, total: 900 })],
+}
+const tagged = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+assert.ok(tagged.includes('data-tone="info"') && tagged.includes('adx-limits'), 'the limits notice keeps its tone and class')
+assert.ok(tagged.includes('title="a-very-long-organization-login"') && tagged.includes('adx-pill-text'), 'a long source tag ellipsizes and has a tooltip')
 state.data = { ...snapshot, status: 'ok', warnings: [limit('orgs-truncated', null, { max: 10 })] }
 const orgsHtml = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
 assert.ok(orgsHtml.includes('limits.titleGeneral') && orgsHtml.includes('limit.orgsTruncated'), 'the organization cap is a limit')
@@ -285,7 +306,14 @@ assert.ok(!orgsHtml.includes('limits.lead'), 'the organization cap is not called
 state.data = { ...snapshot, status: 'ok', warnings: [limit('prs-truncated', 'acme', { list: 'authored', read: 100, total: 140 })] }
 assert.ok(renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store })).includes('limits.lead'),
   'a list cut to its most recent part says so')
-state.data = { ...snapshot, status: 'ok', warnings: [limit('truncated-history', null, { reviews: 1, comments: 0, threads: 0, search: 0 })] }
+state.data = {
+  ...snapshot,
+  status: 'ok',
+  warnings: [limit('source-degraded', 'llvm', { max: 50 }), limit('truncated-history', null, {}), limit('prs-truncated', 'acme', { list: 'authored', read: 100, total: 140 })],
+}
+const grouped = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+assert.ok(grouped.indexOf('limit.prsTruncated') < grouped.indexOf('limit.history'), 'limits are grouped by source, general ones last')
+state.data = { ...snapshot, status: 'ok', warnings: [limit('truncated-history', null, {})] }
 assert.ok(!renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store })).includes('adx-limits'),
   'old history on long pull requests alone is no notice')
 state.data = {
@@ -300,16 +328,15 @@ state.data = {
 const partialHtml = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
 assert.ok(partialHtml.includes('page.partial'), 'failures keep the warning banner')
 assert.ok(partialHtml.includes('<li>org:acme: pull request search failed: HTTP 500</li><li>acme: issue search failed: HTTP 500</li>'), 'one line per problem')
-assert.ok(!partialHtml.includes(';'.repeat(1) + ' acme'), 'problems are not glued with semicolons')
+assert.ok(!partialHtml.includes('; acme'), 'problems are not glued with semicolons')
 assert.ok(partialHtml.includes('limit.prsTruncated') && !partialHtml.includes('prs-truncated message'), 'limits stay out of the failure banner')
 state.data = snapshot
 
 // Windows draws select lists from the option styles: they must use the theme.
 // The stylesheet is injected into document.head, so check the client source.
-const clientCss = source
-assert.ok(/\.adx-select option, \.adx-select optgroup \{\s*background-color: var\(--dsw-alias-bg-elevated/.test(clientCss),
+assert.ok(/\.adx-select option, \.adx-select optgroup \{\s*background-color: var\(--dsw-alias-bg-elevated/.test(source),
   'select options take the theme surface, not the white default')
-assert.ok(clientCss.includes('body[data-ds-dark-theme] .adx-root { color-scheme: dark; }'), 'native controls follow the DSH dark theme')
+assert.ok(source.includes('body[data-ds-dark-theme] .adx-root { color-scheme: dark; }'), 'native controls follow the DSH dark theme')
 
 state.openMenu = 'review:pull:1'
 state.config.supportsPrompt = false

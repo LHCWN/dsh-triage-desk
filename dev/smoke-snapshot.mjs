@@ -976,7 +976,8 @@ await check('a search that still times out moves the source to the lightest leve
   const lost = snapshot.warnings.filter((entry) => entry.code === 'source-unavailable')
   assert.equal(lost.length, 1)
   assert.match(lost[0].message, /org:llvm: pull request search \(reviewed by you\) failed/)
-  assert.deepEqual(warningOf(snapshot, 'source-degraded').params, { max: 25, pageSize: 5 })
+  assert.deepEqual(warningOf(snapshot, 'source-degraded').params, { max: 25 })
+  assert.deepEqual(snapshot.sources.map((source) => [source.login, source.large]), [[ME, false], ['llvm', true]], 'the source summary says which source is large')
 })
 
 await check('follow-up pages of a large source keep their cursor on a lighter level and stay within its bound', async () => {
