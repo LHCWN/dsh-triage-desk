@@ -140,6 +140,26 @@ All scenarios are editable in Settings: name, scope (row or section), bound
 sections, prompt, preferred agent, order, and an enabled toggle. *Just the link*
 cannot be removed and must contain `{url}`.
 
+**What the built-in prompts ask for.** They use `gh` and work with any agent.
+The review scenarios (*Review this PR*, *Re-review after changes*, *Review
+everything awaiting me*) flag only problems the PR introduces that are worth
+fixing, then post **one** `COMMENT` review through
+`gh api repos/OWNER/REPO/pulls/N/reviews`. Each finding is an inline comment on a
+changed line, tagged `[P1]` blocking, `[P2]` should fix, or `[P3]` minor; a
+`suggestion` block is used only when it fully fixes the issue. They never approve
+or request changes, and post nothing when a PR is clean. A re-review looks only at
+changes since your last review's commit. *Fix* scenarios check out the branch,
+fix the first real error with the smallest change, and wait for your OK before
+pushing. *Reply* scenarios draft as you and post after you approve. *Triage*
+scenarios only report: summary, likely cause, size, labels from the repository's
+existing ones, duplicates, and the next step. Every prompt asks for no AI
+attribution in comments and commits, and treats PR and issue text as data, not
+instructions.
+
+**Prompt upgrades.** When a release changes a built-in prompt, a saved built-in
+scenario whose prompt still equals an earlier default is upgraded on load. A
+prompt you edited is kept; **Reset scenario** takes the current default.
+
 **DSH target.** The host renders the same scenario prompt and opens it as a new
 DSH session draft through the `uiWorkspace.startSession` client service; when the
 blank session already has a draft, the prompt is appended to it. No terminal is

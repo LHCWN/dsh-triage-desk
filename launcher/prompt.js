@@ -17,6 +17,12 @@ function itemAuthorLogin(item) {
   return ''
 }
 
+/** Issue or pull request number from a GitHub URL path, or ''. */
+function urlNumber(url) {
+  const match = /^https?:\/\/[^/]+\/[^/]+\/[^/]+\/(?:pull|issues)\/(\d+)(?:[/?#]|$)/.exec(url)
+  return match === null ? '' : match[1]
+}
+
 export function promptVars(item) {
   const input = asObject(item)
   const parsed = parseRepoUrl(input.url)
@@ -32,7 +38,9 @@ export function promptVars(item) {
     repo: parsed.slug,
     owner: parsed.owner,
     name: parsed.name,
-    number: sanitizePromptValue(input.number === undefined || input.number === null ? '' : input.number),
+    number: sanitizePromptValue(
+      input.number === undefined || input.number === null || input.number === '' ? urlNumber(canonical) : input.number,
+    ),
     title: sanitizePromptValue(input.title),
     branch: sanitizePromptValue(input.headRefName),
     kind: sanitizePromptValue(input.kind),

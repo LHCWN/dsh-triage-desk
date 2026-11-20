@@ -39,6 +39,7 @@ import {
   matchClone,
   normalizeLauncherConfig,
   normalizeScenarios,
+  LEGACY_BUILTIN_PROMPTS,
   openTerminalPlan,
   parseRepoUrl,
   promptVars,
@@ -228,10 +229,55 @@ check('builtin scenarios are complete and titled', () => {
     assert.ok(scenario.sections.length >= 1 && scenario.sections.length <= 6, scenario.id)
     assert.ok(typeof scenario.prompt === 'string' && scenario.prompt.trim() !== '', scenario.id)
   }
-  assert.ok(BUILTIN_SCENARIOS.find((scenario) => scenario.id === 'review-pr').prompt.includes('strict senior reviewer'))
   assert.ok(BUILTIN_SCENARIOS.find((scenario) => scenario.id === 'review-all').prompt.includes('{links}'))
-  for (const scenario of BUILTIN_SCENARIOS.filter((entry) => entry.scope === 'section')) {
-    assert.ok(/sub-agent/i.test(scenario.prompt), scenario.id + ' should delegate items to sub-agents')
+  for (const id of ['review-all', 'fix-mine', 'reply-mentions']) {
+    assert.ok(/sub-agent/i.test(BUILTIN_SCENARIOS.find((scenario) => scenario.id === id).prompt), id + ' should delegate items to sub-agents')
+  }
+})
+
+check('review scenarios post one COMMENT review with inline comments', () => {
+  for (const id of ['review-pr', 'rereview-pr', 'review-all']) {
+    const prompt = BUILTIN_SCENARIOS.find((scenario) => scenario.id === id).prompt
+    assert.match(prompt, /inline/, id)
+    assert.match(prompt, /pulls\/(\{number\}|N)\/reviews/, id)
+    assert.match(prompt, /event COMMENT/, id)
+    assert.match(prompt, /Never approve or request changes/, id)
+    assert.match(prompt, /\[P1\]/, id)
+  }
+})
+
+check('built-in prompts that write to GitHub or commit forbid AI attribution', () => {
+  for (const scenario of BUILTIN_SCENARIOS) {
+    if (scenario.id === 'link' || scenario.id.startsWith('triage-')) continue
+    assert.match(scenario.prompt, /no AI attribution/i, scenario.id)
+  }
+  for (const id of ['triage-issue', 'triage-new']) {
+    assert.match(BUILTIN_SCENARIOS.find((scenario) => scenario.id === id).prompt, /Don't change code or post anything/, id)
+  }
+})
+
+check('saved built-in prompts still equal to an old default are upgraded; edited ones are kept', () => {
+  const current = defaultScenarios()
+  const oldReview = 'Review the pull request {url}.\r\n\r\nAct as a strict senior reviewer: read the diff and the surrounding code, then report blocking issues first, then nitpicks. Check tests, error handling, edge cases, security, and consistency with the repository conventions. Do not change code, post comments, or approve anything; show me your findings so I can decide.\n'
+  const edited = 'Review the pull request {url} my way.'
+  const normalized = normalizeScenarios([
+    { id: 'link', scope: 'item', sections: SCENARIO_SECTION_IDS, prompt: '{url}', agent: 'default', enabled: true },
+    { id: 'review-pr', scope: 'item', sections: ['review'], prompt: oldReview, agent: 'codex', enabled: false },
+    { id: 'fix-pr', scope: 'item', sections: ['merge'], prompt: edited, agent: 'default', enabled: true },
+    { id: 'my-run', label: 'Mine', scope: 'item', sections: ['review'], prompt: oldReview, agent: 'default', enabled: true },
+  ])
+  const byId = new Map(normalized.map((entry) => [entry.id, entry]))
+  assert.equal(byId.get('review-pr').prompt, current.find((entry) => entry.id === 'review-pr').prompt)
+  assert.equal(byId.get('review-pr').agent, 'codex', 'only the prompt is upgraded')
+  assert.equal(byId.get('review-pr').enabled, false)
+  assert.equal(byId.get('fix-pr').prompt, edited)
+  assert.equal(byId.get('my-run').prompt, oldReview.replace(/\r\n/g, '\n').trim(), 'custom scenarios are never rewritten')
+  const everyOld = normalizeScenarios(LEGACY_BUILTIN_PROMPTS.map(([id, prompt]) => {
+    const builtin = BUILTIN_SCENARIOS.find((entry) => entry.id === id)
+    return { id, scope: builtin.scope, sections: builtin.sections, prompt, agent: 'default', enabled: true }
+  }))
+  for (const entry of everyOld) {
+    assert.equal(entry.prompt, BUILTIN_SCENARIOS.find((builtin) => builtin.id === entry.id).prompt, entry.id)
   }
 })
 
@@ -464,6 +510,14 @@ check('item scenario prompts replace known tokens and keep unknown braces', () =
   assert.ok(built.prompt.includes('{bogus}'))
   assert.ok(built.prompt.includes('feature-x'))
   assert.equal(built.trimmed, null)
+})
+
+check('the item number falls back to the number in the URL', () => {
+  assert.equal(promptVars({ url: 'https://github.com/acme/widgets/pull/288' }).number, '288')
+  assert.equal(promptVars({ url: 'https://github.com/acme/widgets/issues/7#issuecomment-1' }).number, '7')
+  assert.equal(promptVars({ url: 'https://github.com/acme/widgets/pull/288', number: 5 }).number, '5')
+  assert.equal(promptVars({ url: 'https://github.com/acme/widgets/commit/abc' }).number, '')
+  assert.equal(promptVars({ url: 'https://github.com/acme/widgets/pull/12x' }).number, '')
 })
 
 check('item scenarios append the block only when the template has no link token', () => {
