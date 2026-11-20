@@ -3608,7 +3608,8 @@ window.__ModuleLoader__.load({
         case 'prs-truncated':
           return t('limit.prsTruncated', { list: t('limit.list.' + p.list), read: formatCount(p.read), total: formatCount(p.total) })
         case 'branch-scan-narrowed':
-          if (p.scanned === 0) return t('limit.branchNarrowedNone', { login: p.login })
+          // No repository to check, not repositories that failed to load.
+          if (p.scanned === 0 && p.total === 0) return t('limit.branchNarrowedNone', { login: p.login })
           if (p.scanned < p.total) return t('limit.branchNarrowedSome', { login: p.login, scanned: formatCount(p.scanned), total: formatCount(p.total) })
           return p.scanned === 1 ? t('limit.branchNarrowedOne', { login: p.login }) : t('limit.branchNarrowed', { login: p.login, n: formatCount(p.scanned) })
         case 'new-issues-skipped':
