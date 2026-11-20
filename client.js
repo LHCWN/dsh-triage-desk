@@ -262,7 +262,7 @@ window.__ModuleLoader__.load({
       'settings.terminal': 'Terminal and agents',
       'settings.terminalHint': 'The terminal button on each row starts an agent in the local clone of the repository with a prepared initial prompt.',
       'settings.defaultAgent': 'Default agent',
-      'settings.defaultAgentFallback': '{missing} isn’t installed, so launches use {used}.',
+      'settings.defaultAgentFallback': '{missing} can’t be started ({reason}), so launches use {used}.',
       'settings.agentsHint': 'The name is shown in menus; each agent keeps an internal id automatically. Launch command; {prompt} is replaced with the initial prompt. The binary is resolved through the interactive login-shell PATH. Use {prompt} exactly once: as its own unquoted word (claude {prompt}) or after --flag= (aider --message={prompt}).',
       'settings.agentName': 'Label',
       'settings.agentCommand': 'Command',
@@ -570,7 +570,7 @@ window.__ModuleLoader__.load({
       'settings.terminal': '终端与智能体',
       'settings.terminalHint': '每行的终端按钮会在仓库的本地克隆中启动智能体，并带好初始提示。',
       'settings.defaultAgent': '默认智能体',
-      'settings.defaultAgentFallback': '{missing} 未安装，启动时改用 {used}。',
+      'settings.defaultAgentFallback': '{missing} 无法启动（{reason}），启动时改用 {used}。',
       'settings.agentsHint': '名称会显示在菜单中；内部 ID 自动保留。启动命令；{prompt} 会替换为初始提示。程序通过交互式登录 shell 的 PATH 查找。请仅使用一次 {prompt}：作为不带引号的独立单词（claude {prompt}）或位于 --flag= 之后（aider --message={prompt}）。',
       'settings.agentName': '名称',
       'settings.agentCommand': '命令',
@@ -4743,7 +4743,9 @@ window.__ModuleLoader__.load({
           return agent ? agent.label || agent.id : id
         }
         const fallback = typeof effective === 'string' && effective !== saved && form.defaultAgent === saved
-        const hint = fallback ? t('settings.defaultAgentFallback', { missing: labelOf(saved), used: labelOf(effective) }) : undefined
+        const hint = fallback
+          ? t('settings.defaultAgentFallback', { missing: labelOf(saved), reason: agentMissingLabel(t, detected[saved]), used: labelOf(effective) })
+          : undefined
         return h(
           Field,
           { label: t('settings.defaultAgent'), htmlFor: 'adx-default-agent', hint },

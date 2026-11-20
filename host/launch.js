@@ -187,14 +187,17 @@ export function createLaunch({
     const body = input !== null && typeof input === 'object' ? input : {}
     const rendered = renderScenarioPrompt(body)
     const scenario = rendered.scenario
-    const detected = await detectAgents()
-    const agent = resolveLauncherAgent(body, scenario, detected)
-    let status = detected[agent.id]
+    const cached = await detectAgents()
+    let agent = resolveLauncherAgent(body, scenario, cached)
+    let status = cached[agent.id]
     // Detection is cached and the launch runs the path it found: when that
-    // path is gone (the agent was moved or reinstalled), detect once more.
+    // path is gone (the agent was moved or reinstalled), detect once more,
+    // and resolve again so a "default" launch can fall back to another agent.
     if (status !== undefined && status.available === true && typeof status.path === 'string'
       && !(await isExecutableFile(status.path))) {
-      status = (await detectAgents(true))[agent.id]
+      const fresh = await detectAgents(true)
+      agent = resolveLauncherAgent(body, scenario, fresh)
+      status = fresh[agent.id]
     }
     if (status !== undefined && status.available === false) {
       const why = {

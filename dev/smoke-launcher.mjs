@@ -1322,6 +1322,45 @@ await checkAsync('a launch builds the bare command only for paste and clipboard,
   }
 })
 
+await checkAsync('a default agent that disappears since detection falls back after the re-detection', async () => {
+  // Cached as installed, gone at launch: the forced re-detection reports it
+  // missing, and a "default" launch then uses the agent that is installed.
+  const oldTerminal = process.env.TERMINAL
+  process.env.TERMINAL = '/usr/bin/gnome-terminal'
+  try {
+    let probes = 0
+    await withPlatformHost('linux', (spec, handle) => {
+      if (spec.argv[3] === 'triage-desk' && spec.argv.includes('claude')) {
+        probes += 1
+        return handle(0, probeOutput(['claude', 'codex'], (name) => (name === 'codex' ? '/usr/bin/codex' : probes === 1 ? '/old/bin/claude' : null)))
+      }
+      if (['wl-copy', '/usr/bin/gnome-terminal'].includes(spec.argv[0])) return handle()
+      throw new Error('unexpected subprocess: ' + spec.argv.join(' '))
+    }, async ({ request }) => {
+      assert.equal((await request('/triage-desk/config')).body.config.effectiveDefaultAgent, 'claude')
+      const access = fs.access
+      fs.access = async (file, mode) => {
+        if (file === '/old/bin/claude') throw Object.assign(new Error('ENOENT: ' + file), { code: 'ENOENT' })
+        return access(file, mode)
+      }
+      const result = await request('/triage-desk/launch', 'POST', { url: PR_URL })
+      assert.equal(result.status, 200, JSON.stringify(result.body))
+      assert.equal(result.body.agent.id, 'codex', 'the launch falls back after re-detecting')
+      assert.equal(probes, 2, 'one forced re-detection')
+    }, {
+      agents: [
+        { id: 'claude', label: 'Claude Code', command: 'claude {prompt}', draftFlag: '--prefill' },
+        { id: 'codex', label: 'Codex', command: 'codex {prompt}' },
+      ],
+      defaultAgent: 'claude',
+      promptDelivery: 'clipboard',
+    })
+  } finally {
+    if (oldTerminal === undefined) delete process.env.TERMINAL
+    else process.env.TERMINAL = oldTerminal
+  }
+})
+
 await checkAsync('a launch detects again once when the cached agent path is gone', async () => {
   // Detection is cached for 120 s and every launch runs the path it found, so
   // an agent moved or reinstalled meanwhile is looked up again (all platforms).
