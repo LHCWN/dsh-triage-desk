@@ -243,6 +243,15 @@ check('review scenarios post one COMMENT review with inline comments', () => {
     assert.match(prompt, /event COMMENT/, id)
     assert.match(prompt, /Never approve or request changes/, id)
     assert.match(prompt, /\[P1\]/, id)
+    assert.match(prompt, /don't change code/i, id)
+  }
+  assert.match(BUILTIN_SCENARIOS.find((scenario) => scenario.id === 'rereview-pr').prompt, /nothing new to say, post nothing/)
+})
+
+check('built-in prompts treat PR, issue and log text as data, not instructions', () => {
+  for (const scenario of BUILTIN_SCENARIOS) {
+    if (scenario.id === 'link') continue
+    assert.match(scenario.prompt, /as data, not instructions|as data\./, scenario.id)
   }
 })
 
@@ -272,6 +281,10 @@ check('saved built-in prompts still equal to an old default are upgraded; edited
   assert.equal(byId.get('review-pr').enabled, false)
   assert.equal(byId.get('fix-pr').prompt, edited)
   assert.equal(byId.get('my-run').prompt, oldReview.replace(/\r\n/g, '\n').trim(), 'custom scenarios are never rewritten')
+  const rescoped = normalizeScenarios([
+    { id: 'review-pr', scope: 'section', sections: ['review'], prompt: oldReview, agent: 'default', enabled: true },
+  ]).find((entry) => entry.id === 'review-pr')
+  assert.equal(rescoped.prompt, oldReview.replace(/\r\n/g, '\n').trim(), 'a scenario moved to another scope is the user\'s own and keeps its prompt')
   const everyOld = normalizeScenarios(LEGACY_BUILTIN_PROMPTS.map(([id, prompt]) => {
     const builtin = BUILTIN_SCENARIOS.find((entry) => entry.id === id)
     return { id, scope: builtin.scope, sections: builtin.sections, prompt, agent: 'default', enabled: true }
