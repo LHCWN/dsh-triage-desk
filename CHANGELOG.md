@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- Hover or focus the count next to *Triage* to see what it counts and what it
+  leaves out, such as new issues and optional reviews.
+
 ### Changed
 
 - A new profile launches into a new DSH chat by default, and the launch menu

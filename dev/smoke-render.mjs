@@ -439,6 +439,7 @@ function settingsHarness({
       queue().push(() => { entry.cleanup?.(); entry.cleanup = callback() })
     }
   }
+  let hookIds = 0
   const hooks = {
     createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
     // Without a comparator React compares props shallowly with Object.is.
@@ -452,6 +453,7 @@ function settingsHarness({
       }]
     },
     useRef(initial) { return hook(() => ({ current: initial })) },
+    useId() { return hook(() => ({ id: ':h' + String(++hookIds) + ':' })).id },
     useMemo(factory, dependencies) {
       const entry = hook(() => ({}))
       if (!entry.dependencies || dependencies.some((value, i) => !Object.is(value, entry.dependencies[i]))) {
@@ -583,9 +585,11 @@ function settingsHarness({
     visibilityState: 'visible',
     // Styles are outside this harness; report them as installed.
     querySelector: () => ({}),
-    addEventListener(type, callback) {
-      if (!documentListeners.has(type)) documentListeners.set(type, new Set())
-      documentListeners.get(type).add(callback)
+    // Listeners keep their capture flag: dispatch runs capture listeners
+    // first and stops at stopPropagation(), as a browser does for document.
+    addEventListener(type, callback, options) {
+      if (!documentListeners.has(type)) documentListeners.set(type, new Map())
+      documentListeners.get(type).set(callback, options === true || Boolean(options && options.capture))
     },
     removeEventListener(type, callback) { documentListeners.get(type)?.delete(callback) },
   }
@@ -680,7 +684,13 @@ function settingsHarness({
     click(node, extra) { assert.ok(node, 'expected an interactive control'); assert.ok(!node.props.disabled); node.props.onClick(event(node, extra)); render() },
     // Document-level events reach the listeners the menu effects registered.
     dispatch(type, node, extra) {
-      for (const listener of [...(documentListeners.get(type) || [])]) listener(event(node, extra))
+      const entries = [...(documentListeners.get(type) || new Map())]
+      let stopped = false
+      const shared = { ...event(node, extra), stopPropagation() { stopped = true } }
+      for (const [listener] of [...entries.filter(([, capture]) => capture), ...entries.filter(([, capture]) => !capture)]) {
+        if (stopped) break
+        listener(shared)
+      }
       render()
     },
     listeners: (type) => documentListeners.get(type)?.size || 0,
@@ -1050,6 +1060,57 @@ for (const readBack of ['first', 'retry']) {
   // Relative times advance with the Page minute tick through memoized Section/Row.
   const generated = Date.parse(snapshot.generatedAt)
   const clock = { now: generated + 5 * 60_000 }
+  // A pull request is in one category: counted wins over optional or snoozed
+  // when the same id is also listed elsewhere.
+  {
+    const review = snapshot.sections.find((entry) => entry.id === 'review')
+    const respond = snapshot.sections.find((entry) => entry.id === 'respond')
+    const both = { ...review.items[0], id: 'pull:77', number: 77, optional: true }
+    const sections = snapshot.sections.map((entry) =>
+      entry.id === 'review' ? { ...entry, items: [both] }
+        : entry.id === 'respond' ? { ...entry, items: [...respond.items, { ...both, section: 'respond', optional: undefined }] }
+          : entry)
+    const counter = settingsHarness({ snapshotPayload: { ...snapshot, sections } })
+    await counter.flush()
+    const tip = counter.nodes().find((node) => node.props?.role === 'tooltip')
+    const tipText = flattenTree(tip.props.children).filter((node) => typeof node === 'string').join(' ')
+    assert.ok(!tipText.includes('count.optional'), 'a counted pull request is not also "not counted": ' + tipText)
+    counter.dispose()
+  }
+
+  // The header count explains itself: the fixture has 5 actionable items, one
+  // pull request in two sections, and one new issue left out.
+  {
+    const counter = settingsHarness({ snapshotPayload: snapshot })
+    await counter.flush()
+    const total = counter.nodes().find((node) => node.props?.className === 'adx-total')
+    const tip = counter.nodes().find((node) => node.props?.role === 'tooltip')
+    assert.ok(total && tip, 'the count has a tooltip')
+    assert.equal(total.props.tabIndex, 0, 'the count is reachable by keyboard')
+    assert.equal(total.props['aria-describedby'], tip.props.id, 'the tooltip describes the count')
+    const tipText = flattenTree(tip.props.children).filter((node) => typeof node === 'string').join(' ')
+    assert.ok(tipText.includes('count.title:5'), tipText)
+    assert.ok(tipText.includes('count.once'), 'a pull request in two sections is explained')
+    assert.ok(tipText.includes('count.excluded:count.issuesOne:1'), tipText)
+    const wrap = () => counter.nodes().find((node) => node.props?.className === 'adx-total-wrap')
+    const count = () => counter.nodes().find((node) => node.props?.className === 'adx-total')
+    let stopped = 0
+    count().props.onFocus()
+    count().props.onKeyDown({ key: 'Escape', stopPropagation: () => { stopped += 1 } })
+    await counter.flush()
+    assert.equal(wrap().props['data-dismissed'], 'true', 'Escape hides the tooltip')
+    assert.equal(stopped, 1, 'the Escape that hides the tooltip does not also leave Select mode')
+    count().props.onKeyDown({ key: 'Escape', stopPropagation: () => { stopped += 1 } })
+    assert.equal(stopped, 1, 'a later Escape passes through once the tooltip is hidden')
+    wrap().props.onMouseLeave()
+    await counter.flush()
+    assert.equal(wrap().props['data-dismissed'], 'true', 'the pointer leaving keeps a focused count dismissed')
+    count().props.onBlur()
+    await counter.flush()
+    assert.equal(wrap().props['data-dismissed'], 'false', 'leaving the count re-arms it')
+    counter.dispose()
+  }
+
   const harness = settingsHarness({ snapshotPayload: snapshot, clock })
   await harness.flush()
   const ages = () => harness.text().match(/time\.minutes:\d+/g) || []
@@ -1460,6 +1521,7 @@ function inboxView(harness) {
   }
   return {
     badge: textOf('adx-badge'),
+    badgeHint: nodes.find((entry) => entry.props?.className === 'adx-icon-wrap' && 'title' in entry.props)?.props.title,
     total: textOf('adx-total'),
     all: chip('page.filterAll'),
     chip: (id) => chip('section.' + id),
@@ -1488,6 +1550,7 @@ const rowButton = (harness, title, label, nth = 0) => {
   let view = inboxView(harness)
   assert.equal(view.badge, '5', 'the badge counts #1, #3, #4 (respond + ci once), #5 and the branch; not the optional #2 or issues')
   assert.equal(view.total, '5', 'the header total matches the badge')
+  assert.equal(view.badgeHint, undefined, 'the sidebar badge adds no tooltip next to DSH\'s own panel tooltip')
   assert.equal(view.all, '8', 'All counts the rows the list shows')
   assert.equal(view.chip('review'), '3')
   assert.equal(view.chip('ci'), '2')
@@ -1723,6 +1786,23 @@ const itemLabel = (node) => flattenTree(node.props.children).find((child) => typ
   assert.deepEqual(Object.keys(JSON.parse(v2.data['triage-desk:snoozed:v2'])), ['acme/app#5'], 'the expired entry is pruned')
   reloaded.dispose()
 
+  {
+    // A timed snooze that ends while the panel is open returns the item to
+    // the sidebar badge on its next render, even with no store data change.
+    const clock = { now: snoozeNow }
+    const soon = memoryStorage({ 'triage-desk:snoozed:v2': JSON.stringify({
+      'acme/app#5': { fingerprint: '2026-01-01T09:00:00.000Z', until: new Date(snoozeNow + 60_000).toISOString(), at: '' },
+    }) })
+    const ticking = settingsHarness({ snapshotPayload: inbox(), withPanel: true, storage: soon, clock })
+    await ticking.flush()
+    const before = Number(inboxView(ticking).badge)
+    clock.now += 3 * 60_000
+    ticking.store.set({ toast: null, copied: 'x' })
+    await ticking.flush()
+    assert.equal(Number(inboxView(ticking).badge), before + 1, 'the expired snooze counts again in the badge')
+    ticking.dispose()
+  }
+
   for (const broken of [
     { getItem() { throw new Error('SecurityError') }, setItem() { throw new Error('QuotaExceededError') } },
     { getItem: () => '{not json', setItem() { throw new Error('QuotaExceededError') }, removeItem() {} },
@@ -1899,6 +1979,15 @@ const allRows = (harness) => harness.nodes().filter((node) => node.props?.classN
   assert.equal(harness.store.get().openMenu, null, 'Escape closes the bar popover first')
   assert.equal(harness.store.get().selectMode, true)
   assert.deepEqual(selectedTitles(harness), ['PR 3'])
+  // Escape with the pointer over the count closes its hint, not Select mode.
+  const countWrap = () => harness.nodes().find((node) => node.props?.className === 'adx-total-wrap')
+  countWrap().props.onMouseEnter()
+  await harness.flush()
+  harness.dispatch('keydown', null, { key: 'Escape' })
+  assert.equal(countWrap().props['data-dismissed'], 'true', 'Escape hides the hovered hint')
+  assert.equal(harness.store.get().selectMode, true, 'the hint Escape does not leave Select mode')
+  countWrap().props.onMouseLeave()
+  await harness.flush()
   harness.dispatch('keydown', null, { key: 'Escape' })
   assert.equal(harness.store.get().selectMode, false, 'Escape then leaves Select mode')
   assert.equal(harness.nodes().filter((node) => node.props?.role === 'checkbox').length, 0)
