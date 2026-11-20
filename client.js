@@ -1664,21 +1664,15 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * The attention badge: actionable items, each counted once (a PR in
-     * `respond` and `ci` is one item), without snoozed items and without review
-     * requests the host marks `optional` (an older host omits the field: counted).
-     * `matches` narrows the items further, e.g. to the selected source; `now`
-     * (default: the current time) decides whether timed snoozes still hold.
-     */
-    function attentionCount(sections, snoozed, matches, now) {
-      return attentionSummary(sections, snoozed, matches, now).total
-    }
-
-    /**
-     * The attention count and what it leaves out, for the count's hint:
+     * The attention badge (`total`): actionable items, each counted once (a
+     * PR in `respond` and `ci` is one item), without snoozed items and without
+     * review requests the host marks `optional` (an older host omits the
+     * field: counted). The rest says what the count leaves out, for its hint:
      * `repeats` rows of a pull request already counted in another section,
-     * `optional` review requests, `snoozed` items and new `issues` (not
-     * actionable). One pass, so the hint cannot disagree with the badge.
+     * `optional` review requests, `snoozed` items and new `issues`. One pass,
+     * so the hint cannot disagree with the badge. `matches` narrows the items,
+     * e.g. to the selected source; `now` (default: the current time) decides
+     * whether timed snoozes still hold.
      */
     function attentionSummary(sections, snoozed, matches, now) {
       const counted = new Set()
@@ -1717,13 +1711,16 @@ window.__ModuleLoader__.load({
      * dismissed with Escape. The hint says what the number counts and what it
      * leaves out, so it can be read against the section tabs.
      */
+    /** `key` for a count, or `key + 'One'` when it is 1 (English plurals). */
+    const plural = (t, key, n) => t(n === 1 ? key + 'One' : key, { n })
+
     function AttentionCount({ t, summary }) {
       const [dismissed, setDismissed] = useState(false)
       const id = 'adx-count-hint'
       const label = summary.total > 99 ? '99+' : String(summary.total)
       const left = []
-      if (summary.issues > 0) left.push(t(summary.issues === 1 ? 'count.issuesOne' : 'count.issues', { n: summary.issues }))
-      if (summary.optional > 0) left.push(t(summary.optional === 1 ? 'count.optionalOne' : 'count.optional', { n: summary.optional }))
+      if (summary.issues > 0) left.push(plural(t, 'count.issues', summary.issues))
+      if (summary.optional > 0) left.push(plural(t, 'count.optional', summary.optional))
       if (summary.snoozed > 0) left.push(t('count.snoozed', { n: summary.snoozed }))
       return h(
         'span',
@@ -1748,7 +1745,7 @@ window.__ModuleLoader__.load({
         h(
           'span',
           { role: 'tooltip', id, className: 'adx-tooltip' },
-          h('strong', null, t(summary.total === 1 ? 'count.titleOne' : 'count.title', { n: summary.total })),
+          h('strong', null, plural(t, 'count.title', summary.total)),
           summary.repeats > 0 ? h('span', null, t('count.once')) : null,
           left.length > 0 ? h('span', { className: 'adx-tooltip-quiet' }, t('count.excluded', { list: left.join(' · ') })) : null,
         ),
@@ -5439,7 +5436,10 @@ window.__ModuleLoader__.load({
         return map
       }, [visible, snoozedView])
       // The header total is the attention badge for the selected source.
-      const attention = attentionSummary(sections, snoozed, (item) => itemMatchesSource(item, activeSource), now)
+      const attention = useMemo(
+        () => attentionSummary(sections, snoozed, (item) => itemMatchesSource(item, activeSource), now),
+        [sections, snoozed, activeSource, now],
+      )
       const total = attention.total
       const previousFilter = state.filterBeforeSnoozed && state.filterBeforeSnoozed !== 'snoozed' ? state.filterBeforeSnoozed : 'all'
       const toggleSnoozedView = () =>
@@ -5939,12 +5939,14 @@ window.__ModuleLoader__.load({
     function PanelIcon(props) {
       const store = props.store || runtime.store
       const state = useStore(store)
-      const total = attentionCount(state.data && state.data.sections, state.snoozed)
+      const sections = state.data && state.data.sections
+      const total = useMemo(() => attentionSummary(sections, state.snoozed).total, [sections, state.snoozed])
       const edge = typeof props.size === 'number' ? props.size : 18
       // The sidebar is DSH's own chrome, where a layered hint would be
       // clipped: the badge gets a native title and a screen-reader label.
-      const translate = runtime.t || ((key) => key)
-      const hint = total > 0 ? translate(total === 1 ? 'count.titleOne' : 'count.title', { n: total }) : undefined
+      // The slot may pass `t`; else the one apply() bound before registering it.
+      const translate = props.t || runtime.t || ((key) => key)
+      const hint = total > 0 ? plural(translate, 'count.title', total) : undefined
       return h(
         'span',
         { className: 'adx-icon-wrap', title: hint },
