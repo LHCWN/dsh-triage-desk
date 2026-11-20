@@ -25,6 +25,7 @@ import {
   defaultScenarios,
   draftCommandForStatus,
   AGENT_PRESETS,
+  AGENTS_VERSION,
   defaultAgentCommand,
   DSH_TARGET,
   effectiveDefaultAgent,
@@ -279,7 +280,10 @@ export function sanitizePatch(input, currentLauncher) {
     }
     patch.promptDelivery = input.promptDelivery
   }
-  if (input.agents !== undefined) patch.agents = sanitizeAgents(input.agents)
+  if (input.agents !== undefined) {
+    patch.agents = sanitizeAgents(input.agents)
+    patch.agentsVersion = AGENTS_VERSION
+  }
   if (input.defaultAgent !== undefined) {
     if (typeof input.defaultAgent !== 'string' || input.defaultAgent.trim() === '') {
       throw new BadRequest('defaultAgent must be an agent id')

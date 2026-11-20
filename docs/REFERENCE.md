@@ -376,8 +376,10 @@ runs commands, and posts to GitHub without asking, so a step a scenario asks it
 to confirm first, such as pushing, rests on the agent following the prompt.
 Delete the flag from an agent's command in Settings to get the prompts back. An
 unedited command is saved empty, so it follows the default when a release
-changes it; a saved command still equal to its pre-0.1.4 default
-(`codex {prompt}`) is upgraded on load. An edited command is kept.
+changes it; a profile whose agents were last saved before 0.1.4 has its old
+defaults (`codex {prompt}`) upgraded on load. An edited command is kept, and so is
+a flag you removed: saving agents marks them `agentsVersion: 2`, which ends the
+upgrade.
 
 **Find agents** in Settings scans the login environment for known CLIs (Claude
 Code, Codex, opencode, Gemini CLI, Cursor Agent, Antigravity, pi, Aider, Amp,

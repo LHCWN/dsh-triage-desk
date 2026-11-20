@@ -40,6 +40,7 @@ import {
   normalizeLauncherConfig,
   normalizeScenarios,
   defaultAgentCommand,
+  AGENTS_VERSION,
   LEGACY_AGENT_COMMANDS,
   openTerminalPlan,
   parseRepoUrl,
@@ -255,6 +256,14 @@ check('saved agents still on an old default command are upgraded; edited command
   assert.equal(unedited.agents.find((agent) => agent.id === 'codex').command, defaultAgentCommand('codex'),
     'an empty command on a known agent is its current default')
   assert.deepEqual(unedited.invalidAgents.map((agent) => agent.id), ['mine'], 'an empty custom command stays broken')
+  // Once agents are saved by this version, the old default is a deliberate
+  // choice (the flag removed to get permission prompts back): never re-upgraded.
+  const optedOut = normalizeLauncherConfig({
+    agents: [{ id: 'codex', label: 'Codex', command: 'codex {prompt}' }, { id: 'agy', label: 'Antigravity', command: '' }],
+    agentsVersion: AGENTS_VERSION,
+  })
+  assert.equal(optedOut.agents.find((agent) => agent.id === 'codex').command, 'codex {prompt}')
+  assert.equal(optedOut.agents.find((agent) => agent.id === 'agy').command, defaultAgentCommand('agy'))
   for (const [id, command] of Object.entries(LEGACY_AGENT_COMMANDS)) {
     const [upgraded] = normalizeLauncherConfig({ agents: [{ id, label: id, command }] }).agents
     assert.equal(upgraded.command, DISCOVERABLE_AGENTS.find((agent) => agent.id === id).command, id)

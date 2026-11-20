@@ -26,6 +26,8 @@ const {
   SCENARIO_REASON_LABELS,
   MAX_SCENARIO_TEMPLATE,
   MAX_SCENARIOS,
+  AGENTS_VERSION,
+  normalizeLauncherConfig,
   defaultAgentCommand,
   defaultScenarios,
   openTerminalPlan,
@@ -1042,8 +1044,20 @@ await recordAsync('config POST saves an unedited known agent without its command
     { id: 'codex', label: 'Codex', command: '' },
     { id: 'claude', label: 'Claude Code', command: 'claude --model opus {prompt}' },
   ], 'the unedited command follows the default; the edited one is kept')
-  const reread = await json(await callHandler('/triage-desk/config', 'GET'))
-  assert.equal(reread.config.agents.find((agent) => agent.id === 'codex').command, defaultAgentCommand('codex'),
+  assert.equal(captured.edits.at(-1).agentsVersion, AGENTS_VERSION, 'saved agents are marked as already upgraded')
+  const optOut = await callHandler('/triage-desk/config', 'POST', {
+    agents: [{ id: 'codex', label: 'Codex', command: 'codex {prompt}' }],
+    defaultAgent: 'codex',
+  })
+  assert.equal(optOut.statusCode, 200, optOut.body)
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  const afterOptOut = normalizeLauncherConfig(captured.edits.at(-1))
+  assert.equal(afterOptOut.agents.find((agent) => agent.id === 'codex').command, 'codex {prompt}',
+    'removing the full-access flag sticks')
+  // The fake editor records saves without applying them: read the saved config
+  // back the way the host loads it.
+  const reread = normalizeLauncherConfig(captured.edits[0])
+  assert.equal(reread.agents.find((agent) => agent.id === 'codex').command, defaultAgentCommand('codex'),
     'the panel still sees the full command')
 })
 

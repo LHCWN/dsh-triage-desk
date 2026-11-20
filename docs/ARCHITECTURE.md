@@ -125,7 +125,8 @@ import the launcher layer only through `launcher.js` and the data layer through
     only implementation of this rule;
   - `agents.js` — presets and discoverable CLIs with their full-access flags
     (`defaultAgentCommand`; an empty command, which `host/config.js` saves for
-    an unedited known agent, and a pre-0.1.4 copy matching
+    an unedited known agent, and, in a list without `agentsVersion` (written
+    by `host/config.js` with every agents save), a pre-0.1.4 copy matching
     `LEGACY_AGENT_COMMANDS` both read as the current default),
     `DSH_TARGET` (`dsh`, the
     default launch target: a new DSH chat the panel opens; reserved as an agent

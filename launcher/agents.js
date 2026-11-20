@@ -46,6 +46,14 @@ export const DISCOVERABLE_AGENTS = [
  * command still equals its old default was never edited, so normalization
  * upgrades it to the current one; edited commands are kept.
  */
+/**
+ * Marks saved agents written by 0.1.4 or later (`agentsVersion` beside
+ * `agents`). Only an unmarked list gets the LEGACY_AGENT_COMMANDS upgrade, so
+ * an old default saved later is a deliberate choice, such as removing the
+ * full-access flag, and stays.
+ */
+export const AGENTS_VERSION = 2
+
 export const LEGACY_AGENT_COMMANDS = {
   claude: 'claude {prompt}',
   codex: 'codex {prompt}',
@@ -124,7 +132,7 @@ export function panelDefaultTarget(defaultAgent, detected = {}) {
  * so Settings can show it for repair. When no saved agent is usable the presets
  * are used; `invalidAgents` still lists every rejected entry.
  */
-export function normalizeAgentConfig(value) {
+export function normalizeAgentConfig(value, { upgradeLegacy = true } = {}) {
   const source = Array.isArray(value) ? value : AGENT_PRESETS
   const agents = []
   const invalidAgents = []
@@ -139,8 +147,9 @@ export function normalizeAgentConfig(value) {
     const rawId = normalizeAgentId(entry.id, index)
     let command = typeof entry.command === 'string' ? entry.command.trim().slice(0, MAX_AGENT_COMMAND) : ''
     // An empty command on a known agent is its current default (Settings saves
-    // an unedited one that way); a pre-0.1.4 default is upgraded the same way.
-    if (DISCOVERABLE_COMMANDS.has(rawId) && (command === '' || command === LEGACY_AGENT_COMMANDS[rawId])) {
+    // an unedited one that way); a pre-0.1.4 default is upgraded the same way,
+    // only in a list saved before AGENTS_VERSION.
+    if (DISCOVERABLE_COMMANDS.has(rawId) && (command === '' || (upgradeLegacy && command === LEGACY_AGENT_COMMANDS[rawId]))) {
       command = DISCOVERABLE_COMMANDS.get(rawId)
     }
     const labelFor = (id) =>

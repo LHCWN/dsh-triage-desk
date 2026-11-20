@@ -45,6 +45,7 @@ export {
   MAX_AGENTS,
   MAX_AGENT_COMMAND,
   MAX_AGENT_LABEL,
+  AGENTS_VERSION,
   DSH_TARGET,
   defaultAgentCommand,
   effectiveDefaultAgent,
