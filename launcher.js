@@ -44,6 +44,7 @@ export {
   MAX_AGENTS,
   MAX_AGENT_COMMAND,
   MAX_AGENT_LABEL,
+  DSH_TARGET,
   effectiveDefaultAgent,
 } from './launcher/agents.js'
 

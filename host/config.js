@@ -24,6 +24,8 @@ import {
   TERMINAL_IDS,
   defaultScenarios,
   draftCommandForStatus,
+  AGENT_PRESETS,
+  DSH_TARGET,
   effectiveDefaultAgent,
   expandHome,
   hasSafePromptPlaceholder,
@@ -66,6 +68,21 @@ function detectedAgentsView(detected, agents, platform) {
 }
 
 /**
+ * The agents the panel offers. A saved list is shown as saved. Without one
+ * (`agentsAuto`) the candidates are the discovery catalog and only the ones
+ * detection found are shown; before detection has answered, the presets.
+ */
+function shownAgents(launcher, detected) {
+  if (!launcher.agentsAuto) return launcher.agents
+  const found = launcher.agents.filter((agent) => detected[agent.id] && detected[agent.id].available === true)
+  if (found.length > 0) return found
+  const answered = launcher.agents.some((agent) => detected[agent.id] && detected[agent.id].available === false)
+  if (answered) return []
+  const presets = new Set(AGENT_PRESETS.map((agent) => agent.id))
+  return launcher.agents.filter((agent) => presets.has(agent.id))
+}
+
+/**
  * `detected` is the agent detection map; `environment` carries what the host
  * found on this machine: `terminals` (detectTerminals) and `promptPaste`
  * (whether the paste wrapper can run, and why not).
@@ -80,13 +97,15 @@ export function publicConfig(settings, runtime, launcher, detected, environment 
     refreshSeconds: settings.refreshSeconds,
     requireGreenChecks: settings.requireGreenChecks,
     includeBotReviews: settings.includeBotReviews,
-    agents: launcher.agents,
+    agents: shownAgents(launcher, detected || {}),
+    agentsAuto: launcher.agentsAuto,
     // Saved agents set aside because their command breaks the prompt rule:
     // [{ id, label, command, reason: 'placeholder' }], [] when none.
     invalidAgents: launcher.invalidAgents,
     defaultAgent: launcher.defaultAgent,
-    // What "default" launches with: the saved default, or the first installed
-    // agent when detection reports it missing (Settings keeps the saved one).
+    // `defaultAgent` may be DSH_TARGET (a new DSH chat, opened by the panel).
+    // What a launch the host runs uses for "default": the saved agent, or the
+    // first installed one when that is DSH or missing (Settings keeps the saved one).
     effectiveDefaultAgent: effectiveDefaultAgent(launcher.defaultAgent, launcher.agents, detected || {}),
     cloneDirs: launcher.cloneDirs,
     cloneDirsDefault: DEFAULT_CLONE_DIRS,
@@ -256,7 +275,7 @@ export function sanitizePatch(input, currentLauncher) {
     }
     const id = input.defaultAgent.trim().toLowerCase()
     const agents = patch.agents !== undefined ? patch.agents : currentLauncher.agents
-    if (!agents.some((agent) => agent.id === id)) throw new BadRequest(`unknown agent "${id}"`)
+    if (id !== DSH_TARGET && !agents.some((agent) => agent.id === id)) throw new BadRequest(`unknown agent "${id}"`)
     patch.defaultAgent = id
   }
   if (input.cloneDirs !== undefined) patch.cloneDirs = sanitizeCloneDirs(input.cloneDirs)

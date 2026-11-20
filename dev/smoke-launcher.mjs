@@ -67,6 +67,8 @@ import {
   sanitizePastePrompt,
   windowsQuote,
   effectiveDefaultAgent,
+  DSH_TARGET,
+  DISCOVERABLE_AGENTS,
 } from '../launcher.js'
 
 const checks = []
@@ -147,6 +149,9 @@ check('the default agent falls back to the first installed one', () => {
   assert.equal(effectiveDefaultAgent('claude', agents, {}), 'claude', 'unknown detection keeps the default')
   assert.equal(effectiveDefaultAgent('claude', agents, { claude: missing, codex: missing, opencode: missing }), 'claude',
     'with nothing installed the default stays, so the launch can say it is missing')
+  // A launch the host runs cannot open a DSH chat: it uses the first installed agent.
+  assert.equal(effectiveDefaultAgent(DSH_TARGET, agents, { claude: missing, codex: found }), 'codex')
+  assert.equal(effectiveDefaultAgent(DSH_TARGET, agents, { claude: missing }), DSH_TARGET, 'none installed: DSH stays, the launch explains')
 })
 
 check('presets cover the documented agents', () => {
@@ -160,7 +165,8 @@ check('presets cover the documented agents', () => {
 
 check('default config is neutral', () => {
   const config = normalizeLauncherConfig({})
-  assert.equal(config.defaultAgent, 'claude')
+  assert.equal(config.defaultAgent, DSH_TARGET, 'a new profile launches into DSH')
+  assert.equal(config.agentsAuto, true, 'no saved list: agents come from discovery')
   assert.equal(config.defaultScenario, 'link')
   assert.equal(config.scenarios.length, BUILTIN_SCENARIOS.length)
   const link = config.scenarios[0]
@@ -174,7 +180,13 @@ check('default config is neutral', () => {
   assert.equal(config.promptTemplate, undefined)
   assert.equal(config.agents.find((agent) => agent.id === 'claude').draftFlag, '--prefill')
   assert.equal(config.cloneDirs.length, 0)
-  assert.equal(config.agents.length, AGENT_PRESETS.length)
+  assert.deepEqual(config.agents.map((agent) => agent.id), DISCOVERABLE_AGENTS.map((agent) => agent.id),
+    'detection checks the whole discovery catalog')
+  const saved = normalizeLauncherConfig({ agents: [{ id: 'codex', label: 'Codex', command: 'codex {prompt}' }], defaultAgent: 'codex' })
+  assert.equal(saved.agentsAuto, false)
+  assert.equal(saved.defaultAgent, 'codex')
+  assert.equal(normalizeLauncherConfig({ defaultAgent: 'dsh' }).defaultAgent, DSH_TARGET)
+  assert.equal(normalizeLauncherConfig({ defaultAgent: 'gone' }).defaultAgent, DSH_TARGET, 'an unknown default opens DSH')
 })
 
 check('builtin scenarios are complete and titled', () => {
@@ -217,7 +229,7 @@ check('custom agents are normalized and validated', () => {
   })
   assert.equal(config.agents.length, 1)
   assert.equal(config.agents[0].id, 'my-agent')
-  assert.equal(config.defaultAgent, 'my-agent')
+  assert.equal(config.defaultAgent, DSH_TARGET, 'an unknown default opens DSH, not the first agent')
   assert.deepEqual(config.invalidAgents, [{ id: 'broken', label: 'Broken', command: 'no-placeholder', reason: 'placeholder' }])
   assert.deepEqual(normalizeLauncherConfig({}).invalidAgents, [])
 })
@@ -1555,7 +1567,7 @@ check('saved agents that break the rule are reported, valid ones kept', () => {
     defaultAgent: 'old',
   })
   assert.deepEqual(mixed.agents.map((agent) => agent.id), ['fine'])
-  assert.equal(mixed.defaultAgent, 'fine')
+  assert.equal(mixed.defaultAgent, DSH_TARGET)
   assert.deepEqual(mixed.invalidAgents, [{ id: 'old', label: 'Old quoted', command: 'claude "{prompt}"', reason: 'placeholder' }])
   const allInvalid = normalizeLauncherConfig({ agents: [{ id: 'old', label: 'Old', command: "claude '{prompt}'" }] })
   assert.deepEqual(allInvalid.agents.map((agent) => agent.id), AGENT_PRESETS.map((agent) => agent.id), 'presets fallback')

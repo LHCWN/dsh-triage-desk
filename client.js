@@ -1767,10 +1767,24 @@ window.__ModuleLoader__.load({
       return agents.length > 0 ? agents[0].id : ''
     }
 
-    function scenarioAgentHint(scenario, config) {
+    /* What the panel opens for "default": the saved agent while it can start;
+       otherwise (or when the saved default is DSH, a new profile's default) a
+       new DSH chat when the host supports it, else the host's effective agent. */
+    function panelDefaultTarget(config, agents, dsh) {
+      const saved = configValue(config, 'defaultAgent')
+      const detected = configValue(config, 'detectedAgents') || {}
+      const usable = typeof saved === 'string' && saved !== 'dsh' && agents.some((agent) => agent && agent.id === saved) &&
+        !(detected[saved] && detected[saved].available === false)
+      if (usable) return saved
+      if (dsh) return 'dsh'
+      return defaultAgentId(config, agents)
+    }
+
+    function scenarioAgentHint(scenario, config, t) {
       const agents = configList(config, 'agents')
       const pinned = scenarioPinnedAgent(scenario, agents)
       if (pinned !== null) return pinned.label
+      if (configValue(config, 'defaultAgent') === 'dsh') return t('launch.dshTarget')
       const wanted = defaultAgentId(config, agents)
       const agent = agents.find((entry) => entry !== null && entry !== undefined && entry.id === wanted)
       return agent !== undefined ? agent.label : wanted
@@ -2708,7 +2722,7 @@ window.__ModuleLoader__.load({
       const agents = configList(config, 'agents')
       const detected = configValue(config, 'detectedAgents') || {}
       const dsh = runtime.uiWorkspace !== null && runtime.uiWorkspace !== undefined && configValue(config, 'supportsPrompt') === true
-      const fallback = defaultAgentId(config, agents)
+      const fallback = panelDefaultTarget(config, agents, dsh)
       const rank = (agent) =>
         (agent.id === fallback ? 0 : 2) + (detected[agent.id] && detected[agent.id].available === false ? 1 : 0)
       const ordered = agents.slice().sort((left, right) => rank(left) - rank(right))
@@ -2717,8 +2731,8 @@ window.__ModuleLoader__.load({
           ? 'dsh'
           : ordered.some((agent) => agent.id === picked)
             ? picked
-            : ordered.length === 0 && dsh
-              ? 'dsh'
+            : fallback === 'dsh' && !dsh
+              ? defaultAgentId(config, agents)
               : fallback
       return { agents, detected, dsh, ordered, selected }
     }
@@ -4223,6 +4237,9 @@ window.__ModuleLoader__.load({
           setNotice({ tone: 'error', text: t('settings.invalidScenarios') })
           return
         }
+        const before = baseline.current || {}
+        const agentsEdited = JSON.stringify(form.agents) !== JSON.stringify(before.agents)
+        const defaultAgentEdited = form.defaultAgent !== before.defaultAgent
         const parsedRepoPaths = parseRepoPathsText(form.repoPaths)
         if (parsedRepoPaths.invalidLine !== null) {
           setNotice({ tone: 'error', text: t('settings.invalidRepoPaths', { line: parsedRepoPaths.invalidLine }) })
@@ -4238,12 +4255,18 @@ window.__ModuleLoader__.load({
             refreshSeconds: Number(form.refreshSeconds),
             requireGreenChecks: form.requireGreenChecks === true,
             includeBotReviews: form.includeBotReviews === true,
-            agents: form.agents.map((agent) => ({
-              id: String(agent.id || '').trim().toLowerCase(),
-              label: String(agent.label || '').trim(),
-              command: String(agent.command || '').trim(),
-            })),
-            defaultAgent: String(form.defaultAgent || '').trim(),
+            // Agents and the default are sent only when edited: a profile that
+            // never chose them keeps the discovered list and the DSH default.
+            ...(agentsEdited
+              ? {
+                  agents: form.agents.map((agent) => ({
+                    id: String(agent.id || '').trim().toLowerCase(),
+                    label: String(agent.label || '').trim(),
+                    command: String(agent.command || '').trim(),
+                  })),
+                }
+              : {}),
+            ...(defaultAgentEdited || agentsEdited ? { defaultAgent: String(form.defaultAgent || '').trim() } : {}),
             terminal: form.terminal || 'auto',
             promptDelivery: form.promptDelivery === 'clipboard' ? 'clipboard' : 'paste',
             cloneDirs: form.cloneDirs
@@ -4434,7 +4457,7 @@ window.__ModuleLoader__.load({
           const isBuiltin = builtinIds.has(scenario.id)
           const isOpen = openScenario === scenario._key
           const scopeLabel = t(scenario.scope === 'section' ? 'settings.scenarioScopeSection' : 'settings.scenarioScopeItem')
-          const agentLabel = scenarioAgentHint(scenario, { agents: form.agents, defaultAgent: form.defaultAgent })
+          const agentLabel = scenarioAgentHint(scenario, { agents: form.agents, defaultAgent: form.defaultAgent }, t)
           const meta = [scopeLabel, agentLabel].filter((entry) => entry !== '').join(' · ')
           const body = isOpen
             ? h(
@@ -4737,14 +4760,17 @@ window.__ModuleLoader__.load({
       function renderDefaultAgent() {
         const detected = (config && config.detectedAgents) || {}
         const saved = config && config.defaultAgent
-        const effective = config && config.effectiveDefaultAgent
+        const dsh = runtime.uiWorkspace !== null && runtime.uiWorkspace !== undefined && config && config.supportsPrompt === true
+        const used = panelDefaultTarget(config, form.agents, dsh)
         const labelOf = (id) => {
+          if (id === 'dsh') return t('launch.dshTarget')
           const agent = form.agents.find((entry) => entry.id === id)
           return agent ? agent.label || agent.id : id
         }
-        const fallback = typeof effective === 'string' && effective !== saved && form.defaultAgent === saved
+        // The saved agent cannot start: say what the panel opens instead.
+        const fallback = saved !== 'dsh' && used !== saved && form.defaultAgent === saved
         const hint = fallback
-          ? t('settings.defaultAgentFallback', { missing: labelOf(saved), reason: agentMissingLabel(t, detected[saved]), used: labelOf(effective) })
+          ? t('settings.defaultAgentFallback', { missing: labelOf(saved), reason: agentMissingLabel(t, detected[saved]), used: labelOf(used) })
           : undefined
         return h(
           Field,
@@ -4757,12 +4783,12 @@ window.__ModuleLoader__.load({
               value: form.defaultAgent,
               onChange: (event) => update({ defaultAgent: event.target.value }),
             },
-            form.agents.map((agent) => {
+            [h('option', { key: 'dsh', value: 'dsh' }, t('launch.dshTarget'))].concat(form.agents.map((agent) => {
               const detection = detected[agent.id]
               const missing = Boolean(detection && detection.available === false)
               return h('option', { key: agent.id, value: agent.id, 'data-missing': missing ? 'true' : undefined },
                 (agent.label || agent.id) + (missing ? ' · ' + agentMissingLabel(t, detection) : ''))
-            }),
+            })),
           ),
         )
       }

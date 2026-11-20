@@ -47,31 +47,39 @@ function normalizeAgentId(value, fallbackIndex) {
 }
 
 /**
+ * The default launch target meaning "a new DSH chat" (the panel opens it with
+ * the prompt); a new profile starts with it. Not an agent id: AGENT_ID_PATTERN
+ * allows "dsh", so normalizeAgentConfig keeps it out of the agent list.
+ */
+export const DSH_TARGET = 'dsh'
+
+/**
+ * The agent a launch the host runs uses for "default". The host cannot open a
+ * DSH chat, and a saved agent detection reports missing cannot start, so both
+ * use the first agent detection found. With nothing found the default stays,
+ * so the launch can say what is missing.
+ */
+export function effectiveDefaultAgent(defaultAgent, agents, detected = {}) {
+  const status = detected[defaultAgent]
+  if (defaultAgent !== DSH_TARGET && (!status || status.available !== false)) return defaultAgent
+  const found = agents.find((agent) => detected[agent.id] && detected[agent.id].available === true)
+  return found ? found.id : defaultAgent
+}
+
+/**
  * Effective agent list plus the saved agents that were set aside. A saved
  * agent whose command breaks the current prompt rule is never launched, but
  * it is reported (`invalidAgents`, reason `placeholder`) instead of vanishing,
  * so Settings can show it for repair. When no saved agent is usable the presets
  * are used; `invalidAgents` still lists every rejected entry.
  */
-/**
- * The agent a launch uses for "default": the saved default while detection
- * does not report it missing, else the first agent detection found. With
- * nothing found it stays, so the launch reports the default as missing. The
- * saved default is only ever the first preset unless the user picked one, so
- * this is what keeps a fresh profile without Claude Code launchable.
- */
-export function effectiveDefaultAgent(defaultAgent, agents, detected = {}) {
-  const status = detected[defaultAgent]
-  if (!status || status.available !== false) return defaultAgent
-  const found = agents.find((agent) => detected[agent.id] && detected[agent.id].available === true)
-  return found ? found.id : defaultAgent
-}
-
 export function normalizeAgentConfig(value) {
   const source = Array.isArray(value) ? value : AGENT_PRESETS
   const agents = []
   const invalidAgents = []
-  const seen = new Set()
+  // DSH_TARGET is reserved for the DSH launch target: an agent named "dsh"
+  // is renamed like a duplicate.
+  const seen = new Set([DSH_TARGET])
   for (let index = 0; index < source.length && agents.length < MAX_AGENTS; index += 1) {
     const entry = source[index]
     if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue

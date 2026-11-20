@@ -122,9 +122,10 @@ The toast names the agent and the terminal, for example *Codex opened in Ghostty
 (/path): the prompt will appear in its input box, not sent — review it and press
 Enter*.
 
-**Agents.** Built-in presets cover Claude Code, Codex, opencode, Gemini CLI,
-Cursor Agent, Antigravity (`agy`), and pi; **Find agents** in Settings also
-detects Aider, Amp, Droid, Goose, and Crush, and you can add your own command. A
+**Agents.** By default a launch opens a new DSH chat with the prompt, and the
+menu lists the coding agents installed on this machine: Claude Code, Codex,
+opencode, Gemini CLI, Cursor Agent, Antigravity (`agy`), pi, Aider, Amp, Droid,
+Goose, and Crush. Pick another default in Settings, or add your own command. A
 command must contain `{prompt}` exactly once, unquoted, as its own argument or
 right after a `--flag=`.
 

@@ -149,7 +149,9 @@ function fakeSpawn(spec) {
     const executables = argv.slice(4)
     let output = ''
     for (const executable of executables) {
-      const located = executable === 'missing-agent' ? '' : '/opt/homebrew/bin/' + executable
+      // `captured.installed`, when set, lists the only agent executables found.
+      const missing = executable === 'missing-agent' || (captured.installed && !captured.installed.includes(executable))
+      const located = missing ? '' : '/opt/homebrew/bin/' + executable
       output += ['__td__', executable, located, located].join('\t') + '\n'
     }
     return fakeHandle(0, output, '')
@@ -1368,6 +1370,23 @@ await recordAsync('a default agent that is not installed falls back to the first
   const explicit = await callHandler('/triage-desk/launch', 'POST', { url: PR_URL, agent: 'missing' })
   assert.equal(explicit.statusCode, 400, 'an explicitly chosen missing agent is still an error')
   assert.equal((await json(explicit)).error.code, 'agent-missing')
+  await cleanupLaunches()
+})
+
+// A fresh profile: nothing saved. The default opens DSH, and the agent list is
+// what detection finds on the machine (here Claude Code and Codex).
+captured.installed = ['claude', 'codex', 'python3', 'gh']
+apply(ctx, { cloneDirs: [path.join(fixture, 'Playground')], terminal: 'terminal' })
+
+await recordAsync('a fresh profile defaults to DSH and lists only installed agents', async () => {
+  const config = (await json(await callHandler('/triage-desk/config', 'GET'))).config
+  assert.equal(config.defaultAgent, 'dsh')
+  assert.equal(config.agentsAuto, true)
+  assert.deepEqual(config.agents.map((agent) => agent.id), ['claude', 'codex'], 'agents that are not installed are not offered')
+  assert.equal(config.effectiveDefaultAgent, 'claude', 'a launch the host runs uses the first installed agent')
+  const res = await callHandler('/triage-desk/launch', 'POST', { url: PR_URL, scenario: 'review-pr' })
+  assert.equal(res.statusCode, 200, res.body)
+  assert.equal((await json(res)).agent.id, 'claude')
   await cleanupLaunches()
 })
 

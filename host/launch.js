@@ -22,6 +22,7 @@ import {
   buildWindowsLoginLauncherScript,
   buildWindowsPasteLauncherScript,
   draftCommandForStatus,
+  DSH_TARGET,
   effectiveDefaultAgent,
   PASTE_WRAPPER_CS,
   PASTE_WRAPPER_PY,
@@ -101,6 +102,13 @@ export function createLaunch({
       wantedAgent = scenario.agent === 'default'
         ? effectiveDefaultAgent(launcherSettings.defaultAgent, launcherSettings.agents, detected)
         : scenario.agent
+    }
+    if (wantedAgent === DSH_TARGET) {
+      throw new LaunchError(
+        'agent-missing',
+        'the default opens a new DSH chat, which only the Triage panel can do, and no coding agent is installed; choose an agent in Settings',
+        { agent: DSH_TARGET },
+      )
     }
     const agent = launcherSettings.agents.find((entry) => entry.id === wantedAgent)
     if (agent === undefined) {

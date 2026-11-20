@@ -350,13 +350,23 @@ assert.ok(source.includes('body[data-ds-dark-theme] .adx-root { color-scheme: da
   }
   state.openMenu = 'review:pull:1'
   const menu = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
-  assert.ok(/<option value="codex" selected="">/.test(menu), 'the launch menu preselects the installed agent')
+  assert.ok(/<option value="dsh" selected="">/.test(menu), 'a default that cannot start opens a DSH chat')
+  state.config = { ...state.config, supportsPrompt: false }
+  const noDsh = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+  assert.ok(/<option value="codex" selected="">/.test(noDsh), 'without the DSH target, the installed agent')
+  state.config = { ...state.config, supportsPrompt: true }
   state.openMenu = null
   state.view = 'settings'
   const settings = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
-  assert.ok(settings.includes('settings.defaultAgentFallback'), 'Settings explains which agent launches use')
+  assert.ok(settings.includes('settings.defaultAgentFallback'), 'Settings explains what launches open instead')
   assert.ok(/<option value="claude" data-missing="true" selected="">/.test(settings), 'Settings keeps the saved choice, marked missing')
+  assert.ok(settings.includes('<option value="dsh">launch.dshTarget</option>'), 'DSH can be chosen as the default')
+  state.config = { ...state.config, defaultAgent: 'dsh' }
   state.view = 'list'
+  state.openMenu = 'review:pull:1'
+  assert.ok(/<option value="dsh" selected="">/.test(renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))),
+    'a DSH default preselects DSH')
+  state.openMenu = null
   state.config = saved
 }
 
@@ -695,6 +705,8 @@ async function editSettings(harness) {
   harness.click(save)
   assert.equal(harness.pending.length, 1, 'clicking Save sends one real store request')
   assert.deepEqual(harness.pending[0].body.orgs, ['edited-org'])
+  assert.ok(!('agents' in harness.pending[0].body) && !('defaultAgent' in harness.pending[0].body),
+    'agents and the default agent are not saved unless edited')
   assert.ok(harness.text().includes('settings.saving'), 'pending persistence shows Saving')
   assert.ok(!harness.text().includes('settings.saved'), 'pending persistence must never show Saved')
   assert.ok(!harness.text().includes('settings.done'), 'pending persistence must not mark the form clean')

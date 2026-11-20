@@ -2,10 +2,16 @@
 
 ## Unreleased
 
+### Changed
+
+- A new profile launches into a new DSH chat by default, and the launch menu
+  lists only the coding agents installed on the machine. Choose another default
+  in Settings; an agent that cannot start opens a DSH chat instead.
+- Settings saves the agent list and the default agent only when you change them.
+
 ### Fixed
 
-- Without Claude Code installed, launches no longer fail on the preset default:
-  they use the first installed agent, and Settings says which one.
+- Without Claude Code installed, launches no longer fail on the preset default.
 
 ## [0.1.2](https://github.com/LHCWN/dsh-triage-desk/releases/tag/v0.1.2) — 2026-11-20
 

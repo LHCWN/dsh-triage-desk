@@ -121,10 +121,11 @@ import the launcher layer only through `launcher.js` and the data layer through
     as a whole word or directly after `-x=`/`--flag=`; backticks, `$(`, `${`,
     unquoted `; & | < > ( )` and word-initial `#` are rejected. The host is the
     only implementation of this rule;
-  - `agents.js` — presets, discoverable CLIs, `effectiveDefaultAgent` (the
-    saved default, or the first installed agent when detection reports it
-    missing; used by launches and sent as `effectiveDefaultAgent` in the
-    public config), `normalizeAgentConfig` returning
+  - `agents.js` — presets, discoverable CLIs, `DSH_TARGET` (`dsh`, the
+    default launch target: a new DSH chat the panel opens; reserved as an agent
+    id), `effectiveDefaultAgent` (what a host-run launch uses for "default":
+    the saved agent, or the first installed one when that is DSH or missing;
+    sent as `effectiveDefaultAgent` in the public config), `normalizeAgentConfig` returning
     `{ agents, invalidAgents }` (rejected saved agents are reported, never
     launched; presets apply only when no saved agent is valid);
   - `executable-probe.js` — `buildExecutableProbe` / `parseExecutableProbe` /
