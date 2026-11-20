@@ -1705,7 +1705,10 @@ window.__ModuleLoader__.load({
           }
         }
       }
-      return { total: counted.size, repeats: rows - counted.size, optional: optional.size, snoozed: quiet.size, issues: issues.size }
+      // One category per pull request: an id counted in another section is
+      // not also reported as left out.
+      const leftOut = (set) => [...set].filter((id) => !counted.has(id)).length
+      return { total: counted.size, repeats: rows - counted.size, optional: leftOut(optional), snoozed: leftOut(quiet), issues: leftOut(issues) }
     }
 
     /**

@@ -997,6 +997,24 @@ for (const readBack of ['first', 'retry']) {
   // Relative times advance with the Page minute tick through memoized Section/Row.
   const generated = Date.parse(snapshot.generatedAt)
   const clock = { now: generated + 5 * 60_000 }
+  // A pull request is in one category: counted wins over optional or snoozed
+  // when the same id is also listed elsewhere.
+  {
+    const review = snapshot.sections.find((entry) => entry.id === 'review')
+    const respond = snapshot.sections.find((entry) => entry.id === 'respond')
+    const both = { ...review.items[0], id: 'pull:77', number: 77, optional: true }
+    const sections = snapshot.sections.map((entry) =>
+      entry.id === 'review' ? { ...entry, items: [both] }
+        : entry.id === 'respond' ? { ...entry, items: [...respond.items, { ...both, section: 'respond', optional: undefined }] }
+          : entry)
+    const counter = settingsHarness({ snapshotPayload: { ...snapshot, sections } })
+    await counter.flush()
+    const tip = counter.nodes().find((node) => node.props?.role === 'tooltip')
+    const tipText = flattenTree(tip.props.children).filter((node) => typeof node === 'string').join(' ')
+    assert.ok(!tipText.includes('count.optional'), 'a counted pull request is not also "not counted": ' + tipText)
+    counter.dispose()
+  }
+
   // The header count explains itself: the fixture has 5 actionable items, one
   // pull request in two sections, and one new issue left out.
   {
