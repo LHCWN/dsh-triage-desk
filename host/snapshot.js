@@ -1,6 +1,6 @@
 /**
  * Triage Desk — snapshot build wired to the cache: adaptive TTL from the
- * reported rate limit, a failed build served as the previous snapshot marked
+ * reported rate limit, per-source profiles kept between builds, a failed build served as the previous snapshot marked
  * `stale` (with `meta.lastError`), and lookups of cached rows by URL.
  */
 
@@ -18,11 +18,14 @@ export function createSnapshotStore({ ctx, settings, resolveGh, log: safeLog, pr
 
   let cache = null
   let adaptiveTtlMs = settings.ttlMs
+  // What builds learned about each source (its lighter pull level, whether it
+  // is large). Per store, so a settings save starts every source over.
+  const profiles = new Map()
 
   const build = async () => {
     await resolveGh()
     try {
-      const snapshot = await buildSnapshot(ctx, settings)
+      const snapshot = await buildSnapshot(ctx, settings, undefined, profiles)
       lastSnapshot = snapshot
       const remaining =
         snapshot && snapshot.meta && snapshot.meta.rateLimit ? snapshot.meta.rateLimit.remaining : null

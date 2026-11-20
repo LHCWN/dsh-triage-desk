@@ -26,6 +26,7 @@ plugin never stores or forwards a token.
 - **Launch scenarios**: named, editable prompts that open a coding agent in the local clone or a new DSH chat.
 - **Agent tool**: `triage_desk` gives a DSH agent the same snapshot and can open a terminal on request.
 - **Sources and languages**: personal repositories plus up to 10 organizations; the panel follows the DSH language (English or Chinese).
+- **Large organizations**: when GitHub times out on an organization as big as `llvm`, it is read with smaller searches and a narrower branch CI scan instead of failing ([large sources](docs/REFERENCE.md#large-sources)).
 
 Each feature is described in full in the [reference](docs/REFERENCE.md#inbox).
 

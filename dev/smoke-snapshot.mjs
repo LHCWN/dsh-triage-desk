@@ -158,7 +158,9 @@ function validateQuery(query, vars) {
 /**
  * `answers.search` (PullSearch), `answers.issues` (IssueSearch),
  * `answers.page` (PullSearchPage) and `answers.branches` (BranchScan) are
- * called with (login, vars, spec) and return handles; defaults answer with
+ * called with (login, vars, spec), `answers.contributions`
+ * (ContributedRepos) and `answers.repo` (BranchScanRepo) with (vars, spec);
+ * all return handles; defaults answer with
  * empty results. `answers.prs(login)` is a shortcut for routed search PRs.
  */
 function fakeCtx(answers = {}) {
@@ -198,6 +200,14 @@ function fakeCtx(answers = {}) {
     if (operation === 'BranchScan') {
       calls.push('branches:' + login)
       return answers.branches ? answers.branches(login, vars, spec) : ok(repoPage(login))
+    }
+    if (operation === 'ContributedRepos') {
+      calls.push('contributions')
+      return answers.contributions ? answers.contributions(vars, spec) : ok({ viewer: { contributionsCollection: {} }, rateLimit })
+    }
+    if (operation === 'BranchScanRepo') {
+      calls.push(`repo:${vars.owner}/${vars.name}`)
+      return answers.repo ? answers.repo(vars, spec) : ok({ repository: null, rateLimit })
     }
     return handle(1, '', 'unexpected command: ' + spec.argv.join(' '))
   }
@@ -291,7 +301,7 @@ await check('new inline reviewer replies need action until the author answers', 
     pr.reviewDecision = 'APPROVED'
     // An older approval must not suppress a newer inline follow-up.
     pr.reviews.nodes = [{ author: { login: 'reviewer' }, state: 'APPROVED', submittedAt: '2026-01-01T09:30:00Z' }]
-    const comment = (login, at) => ({ author: { login }, createdAt: `2026-01-01T${at}:00Z`, bodyText: 'Please check this' })
+    const comment = (login, at) => ({ author: { login }, createdAt: `2026-01-01T${at}:00Z`, body: 'Please check this' })
     const comments = [comment(ME, '10:00'), comment('reviewer', '11:00')]
     if (answered) comments.push(comment(ME, '12:00'))
     pr.reviewThreads.nodes = [{ comments: { nodes: comments } }]
@@ -303,6 +313,27 @@ await check('new inline reviewer replies need action until the author answers', 
   assert.deepEqual(ids(snapshot, 'respond'), [94])
   assert.equal(find(snapshot, 'respond', 94).reason, 'review-feedback')
   assert.equal(find(snapshot, 'respond', 94).lastActivity.at, '2026-01-01T11:00:00Z')
+})
+
+await check('an author mention in the comment markdown asks for re-review, but not inside code or a quote', async () => {
+  const reviewed = (number, body) => {
+    const pr = pull({ number, headOid: 'h' + number, headAt: '2026-01-01T09:00:00Z', review: { at: '2026-01-01T10:00:00Z', oid: 'h' + number } })
+    pr.comments.nodes = [{ author: { login: 'author' }, createdAt: '2026-01-01T11:00:00Z', body }]
+    return pr
+  }
+  const prs = [
+    reviewed(401, 'Thanks @me, fixed in the latest push.'),
+    reviewed(402, 'Bot diff:\n```diff\n- cc @me\n+ cc @someone\n```\nNo action needed.'),
+    reviewed(403, 'The helper `notify(@me)` is renamed.'),
+    reviewed(404, '> @me wrote: please rename this\nDone by the bot.'),
+    reviewed(405, '~~~\n@me\n~~~\nand then @me for real'),
+    reviewed(406, '<!-- template: cc @me -->\nThanks!'),
+    reviewed(407, '<!--\n@me\n-->'),
+  ]
+  const { ctx } = fakeCtx({ prs: () => prs })
+  const snapshot = await buildSnapshot(ctx, settings())
+  assert.deepEqual(ids(snapshot, 'rereview').sort(), [401, 405])
+  assert.equal(find(snapshot, 'rereview', 401).rereviewCause, 'author-reply')
 })
 
 await check('older review threads beyond the last window raise truncated-history', async () => {
@@ -802,7 +833,7 @@ await check('a build where every source scan fails throws instead of returning a
   assert.deepEqual(calls, ['viewer', 'search:me'], 'rate limits are final: no retry, no branch scan or later source')
 })
 
-await check('one failed source still yields a partial snapshot with the others', async () => {
+await check('a source whose pull request search fails still shows its issues and branch CI', async () => {
   const prs = [pull({ number: 7, headOid: 'h7', headAt: '2026-01-01T09:00:00Z', requested: true })]
   const assigned = (login) => ({
     number: 230,
@@ -822,9 +853,9 @@ await check('one failed source still yields a partial snapshot with the others',
   assert.deepEqual(ids(snapshot, 'review'), [7])
   assert.ok(hasWarning(snapshot, 'source-unavailable'))
   const respond = snapshot.sections.find((entry) => entry.id === 'respond').items
-  assert.deepEqual(respond.map((item) => item.id), ['me/app#230'], 'issues of other sources are unaffected')
-  assert.ok(!calls.includes('issues:acme') && !calls.includes('branches:acme'), 'a source without pull request discovery is skipped')
-  assert.deepEqual(snapshot.sources.map((source) => source.login), [ME])
+  assert.deepEqual(respond.map((item) => item.id).sort(), ['acme/app#230', 'me/app#230'], 'a failed search loses only its own results')
+  assert.ok(calls.includes('issues:acme') && calls.includes('branches:acme'))
+  assert.deepEqual(snapshot.sources.map((source) => source.login), [ME, 'acme'])
 })
 
 await check('a permission-denied HTTP 403 does not stop healthy later sources as quota exhaustion', async () => {
@@ -861,6 +892,263 @@ await check('an oversized response is not fetched twice', async () => {
   const { ctx } = fakeCtx({ search: lossy })
   await assert.rejects(buildSnapshot(ctx, settings()), (error) => error.code === 'too-large')
   assert.equal(searches, 1)
+})
+
+/* ------------------------------------- large sources: GitHub timeouts */
+
+// GitHub ends a GraphQL request after about 10 s of server time and answers
+// with these (measured on org:llvm): gh prints `gh: HTTP 502` / `gh: HTTP 504`
+// for an HTML body, and `unexpected end of JSON input` for an empty one.
+const gateway502 = () => handle(1, '<html>502 Bad Gateway</html>', 'gh: HTTP 502')
+const gateway504 = () => handle(1, '<html>504 Gateway Time-out</html>', 'gh: HTTP 504')
+const gatewayEmpty = () => handle(1, '', 'unexpected end of JSON input')
+const aliasOf = (q) => (q.includes('review-requested:') ? 'reviewRequested' : q.includes('reviewed-by:') ? 'reviewedBy' : 'authored')
+
+await check('a GitHub timeout on the combined pull search retries each search separately with smaller pages', async () => {
+  const pageCalls = []
+  const { ctx, calls } = fakeCtx({
+    orgs: ['llvm'],
+    search: (login) => (login === 'llvm' ? gateway502() : ok(searchData())),
+    page: (login, vars) => {
+      pageCalls.push({ alias: aliasOf(vars.q), pageSize: vars.pageSize, after: vars.after })
+      const prs = aliasOf(vars.q) === 'reviewRequested'
+        ? [pull({ number: 301, headOid: 'l301', requested: true, repo: 'llvm/llvm-project' })]
+        : []
+      return ok({ results: connection(prs), rateLimit })
+    },
+  })
+  const snapshot = await buildSnapshot(ctx, settings())
+  assert.equal(calls.filter((call) => call === 'search:llvm').length, 1, 'the timed-out combined query is not repeated as is')
+  assert.deepEqual(pageCalls.map((call) => call.alias), ['reviewRequested', 'reviewedBy', 'authored'])
+  for (const call of pageCalls) {
+    assert.equal(call.pageSize, '10')
+    assert.equal(call.after, undefined, 'a first page has no cursor')
+  }
+  assert.deepEqual(ids(snapshot, 'review'), [301])
+  const warning = snapshot.warnings.find((entry) => entry.code === 'source-degraded')
+  assert.ok(warning, 'the lighter search is reported')
+  assert.match(warning.message, /^llvm: /)
+  assert.ok(!hasWarning(snapshot, 'source-unavailable'))
+  assert.deepEqual(snapshot.sources.map((source) => source.login), [ME, 'llvm'])
+})
+
+await check('a search that still times out moves the source to the lightest level, and only a lost search is dropped', async () => {
+  const pageCalls = []
+  const { ctx } = fakeCtx({
+    orgs: ['llvm'],
+    search: (login) => (login === 'llvm' ? gateway504() : ok(searchData())),
+    page: (login, vars) => {
+      const alias = aliasOf(vars.q)
+      pageCalls.push(`${alias}:${vars.pageSize}:${vars.commentWindow}/${vars.threadWindow}/${vars.threadCommentWindow}`)
+      if (alias === 'reviewedBy') return gatewayEmpty()
+      if (alias === 'reviewRequested' && vars.pageSize === '10') return gateway502()
+      const own = pull({ number: 311, headOid: 'l311', author: ME, repo: 'llvm/llvm-project' })
+      own.commits.nodes[0].commit.statusCheckRollup = { state: 'FAILURE' }
+      const prs = alias === 'reviewRequested'
+        ? [pull({ number: 310, headOid: 'l310', requested: true, repo: 'llvm/llvm-project' })]
+        : [own]
+      return ok({ results: connection(prs), rateLimit })
+    },
+  })
+  const snapshot = await buildSnapshot(ctx, settings())
+  assert.deepEqual(pageCalls, [
+    'reviewRequested:10:30/10/5',
+    'reviewRequested:5:15/5/3',
+    // The lightest level retries a timeout once before giving the search up.
+    'reviewedBy:5:15/5/3',
+    'reviewedBy:5:15/5/3',
+    'authored:5:15/5/3',
+  ])
+  assert.deepEqual(ids(snapshot, 'review'), [310])
+  assert.ok(find(snapshot, 'ci', 311), 'the other searches of the source are kept')
+  const lost = snapshot.warnings.filter((entry) => entry.code === 'source-unavailable')
+  assert.equal(lost.length, 1)
+  assert.match(lost[0].message, /org:llvm: pull request search \(reviewed by you\) failed/)
+  assert.match(snapshot.warnings.find((entry) => entry.code === 'source-degraded').message, /at most 25 pull requests, 5 per request/)
+})
+
+await check('follow-up pages of a large source keep their cursor on a lighter level and stay within its bound', async () => {
+  const pageCalls = []
+  const { ctx } = fakeCtx({
+    orgs: ['llvm'],
+    search: (login) => ok(searchData(login === 'llvm'
+      ? { reviewRequested: { issueCount: 900, pageInfo: { hasNextPage: true, endCursor: 'c1' }, nodes: [pull({ number: 320, headOid: 'x', requested: true })] } }
+      : {})),
+    page: (_login, vars) => {
+      pageCalls.push(`${vars.pageSize}:${vars.after}`)
+      if (vars.pageSize === '25') return gateway502()
+      const next = Number(vars.after.slice(1)) + 1
+      return ok({ results: { issueCount: 900, pageInfo: { hasNextPage: true, endCursor: 'c' + next }, nodes: [pull({ number: 319 + next, headOid: 'x', requested: true })] }, rateLimit })
+    },
+  })
+  const snapshot = await buildSnapshot(ctx, settings())
+  assert.deepEqual(pageCalls, ['25:c1', '10:c1', '10:c2', '10:c3', '10:c4'], 'level 1 reads at most five pages')
+  assert.deepEqual(ids(snapshot, 'review').sort(), [320, 321, 322, 323, 324])
+  assert.ok(hasWarning(snapshot, 'prs-truncated'))
+  assert.ok(hasWarning(snapshot, 'source-degraded'))
+})
+
+await check('a search that steps down after its first page stays within the lighter level\'s bound', async () => {
+  const pageCalls = []
+  const prsFrom = (start, count) => Array.from({ length: count }, (_, index) => pull({ number: start + index, headOid: 'x', requested: true }))
+  const { ctx } = fakeCtx({
+    orgs: ['llvm'],
+    search: (login) => ok(searchData(login === 'llvm'
+      ? { reviewRequested: { issueCount: 900, pageInfo: { hasNextPage: true, endCursor: 'p25' }, nodes: prsFrom(1000, 25) } }
+      : {})),
+    page: (_login, vars) => {
+      pageCalls.push(`${vars.pageSize}:${vars.after}`)
+      if (vars.pageSize === '25') return gateway502()
+      const start = Number(vars.after.slice(1))
+      const size = Number(vars.pageSize)
+      return ok({ results: { issueCount: 900, pageInfo: { hasNextPage: true, endCursor: 'p' + (start + size) }, nodes: prsFrom(1000 + start, size) }, rateLimit })
+    },
+  })
+  const snapshot = await buildSnapshot(ctx, settings())
+  assert.deepEqual(pageCalls, ['25:p25', '10:p25', '10:p35', '5:p45'], 'the last page is cut to the level\'s bound of 50')
+  assert.equal(ids(snapshot, 'review').length, 50)
+  assert.match(snapshot.warnings.find((entry) => entry.code === 'prs-truncated').message, /only the 50 most recently updated of 900/)
+})
+
+await check('a source remembers its lighter level for the next build with the same profiles', async () => {
+  const { ctx, calls } = fakeCtx({
+    orgs: ['llvm'],
+    search: (login) => (login === 'llvm' ? gateway502() : ok(searchData())),
+  })
+  const profiles = new Map()
+  await buildSnapshot(ctx, settings(), undefined, profiles)
+  calls.length = 0
+  const again = await buildSnapshot(ctx, settings(), undefined, profiles)
+  assert.ok(!calls.includes('search:llvm'), 'the next build starts at the remembered level')
+  assert.ok(calls.includes('search:me'), 'other sources keep the combined search')
+  assert.ok(hasWarning(again, 'source-degraded'))
+  calls.length = 0
+  await buildSnapshot(ctx, settings(), undefined, new Map())
+  assert.ok(calls.includes('search:llvm'), 'new profiles start from the full search')
+})
+
+const newIssue = (repo, number) => ({
+  number,
+  title: `Issue ${number}`,
+  url: `https://github.com/${repo}/issues/${number}`,
+  createdAt: '2026-01-01T08:00:00Z',
+  repository: { nameWithOwner: repo, viewerPermission: 'ADMIN' },
+  author: { login: 'reporter' },
+  assignees: { nodes: [] },
+})
+
+await check('a source with more new unassigned issues than one page hides that list and says so', async () => {
+  const { ctx } = fakeCtx({
+    orgs: ['llvm'],
+    issues: (login) => ok(issueData({
+      newIssues: login === 'llvm'
+        ? { issueCount: 1334, pageInfo: { hasNextPage: true }, nodes: [newIssue('llvm/llvm-project', 501)] }
+        : { issueCount: 1, pageInfo: { hasNextPage: false }, nodes: [newIssue('me/app', 502)] },
+    })),
+  })
+  const profiles = new Map()
+  const snapshot = await buildSnapshot(ctx, settings(), undefined, profiles)
+  assert.deepEqual(ids(snapshot, 'issues'), [502], 'a small source keeps its new issues')
+  const warning = snapshot.warnings.find((entry) => entry.code === 'new-issues-skipped')
+  assert.ok(warning)
+  assert.match(warning.message, /^llvm: 1334 new unassigned issues/)
+  assert.ok(!hasWarning(snapshot, 'source-degraded'), 'a large source alone does not change the pull search')
+})
+
+await check('a source that needed a lighter pull search is large and hides its new issues', async () => {
+  const { ctx } = fakeCtx({
+    orgs: ['llvm'],
+    search: (login) => (login === 'llvm' ? gateway502() : ok(searchData())),
+    issues: (login) => ok(issueData({
+      newIssues: { issueCount: 3, pageInfo: { hasNextPage: false }, nodes: [newIssue(login === 'llvm' ? 'llvm/lld' : 'me/app', 503)] },
+    })),
+  })
+  const snapshot = await buildSnapshot(ctx, settings())
+  assert.deepEqual(snapshot.sections.find((entry) => entry.id === 'issues').items.map((item) => item.repo), ['me/app'])
+  assert.match(snapshot.warnings.find((entry) => entry.code === 'new-issues-skipped').message, /^llvm: 3 new unassigned issues/)
+})
+
+const busyIssues = () => ok(issueData({ newIssues: { issueCount: 900, pageInfo: { hasNextPage: true }, nodes: [] } }))
+const contributed = (...repos) => ok({
+  viewer: {
+    contributionsCollection: {
+      commitContributionsByRepository: repos.slice(0, 1).map((nameWithOwner) => ({ repository: { nameWithOwner } })),
+      pullRequestContributionsByRepository: repos.map((nameWithOwner) => ({ repository: { nameWithOwner } })),
+    },
+  },
+  rateLimit,
+})
+const myBranch = (name, state = 'FAILURE') => ({
+  name,
+  target: { __typename: 'Commit', oid: 'b-' + name, committedDate: new Date().toISOString(), author: { user: { login: ME } }, statusCheckRollup: { state } },
+})
+
+await check('a large source checks branch CI only in repositories the viewer contributed to, on branches named for the viewer', async () => {
+  const repoVars = []
+  const { ctx, calls } = fakeCtx({
+    orgs: ['llvm'],
+    issues: (login) => (login === 'llvm' ? busyIssues() : ok(issueData())),
+    contributions: () => contributed('llvm/llvm-project', 'me/app', 'LLVM/circt', 'llvm/llvm-project'),
+    repo: (vars) => {
+      repoVars.push(vars)
+      return ok({
+        repository: {
+          nameWithOwner: `${vars.owner}/${vars.name}`,
+          viewerPermission: 'WRITE',
+          defaultBranchRef: null,
+          branchRefs: { nodes: vars.name === 'llvm-project' ? [myBranch('users/me/fix-crash')] : [] },
+        },
+        rateLimit,
+      })
+    },
+  })
+  const snapshot = await buildSnapshot(ctx, settings())
+  assert.ok(!calls.includes('branches:llvm'), 'the organization-wide branch scan is not run')
+  assert.ok(calls.includes('branches:me'), 'small sources keep the full branch scan')
+  assert.equal(calls.filter((call) => call === 'contributions').length, 1)
+  assert.deepEqual(repoVars.map((vars) => `${vars.owner}/${vars.name}`), ['llvm/llvm-project', 'LLVM/circt'])
+  for (const vars of repoVars) assert.equal(vars.branchQuery, ME)
+  const ci = snapshot.sections.find((entry) => entry.id === 'ci').items
+  assert.deepEqual(ci.map((item) => item.id), ['llvm@llvm/llvm-project@users/me/fix-crash'])
+  const warning = snapshot.warnings.find((entry) => entry.code === 'branch-scan-narrowed')
+  assert.ok(warning)
+  assert.match(warning.message, /^llvm: .*2 repositories.*"me"/)
+  assert.ok(!hasWarning(snapshot, 'repos-truncated'))
+  assert.ok(!hasWarning(snapshot, 'truncated-history'), 'the hidden new-issue list is not also reported as truncated history')
+})
+
+await check('a large source names how many contributed repositories its branch CI left out', async () => {
+  const many = Array.from({ length: 13 }, (_, index) => `llvm/repo-${index}`)
+  const { ctx, calls } = fakeCtx({
+    orgs: ['llvm'],
+    issues: (login) => (login === 'llvm' ? busyIssues() : ok(issueData())),
+    contributions: () => contributed(...many),
+  })
+  const snapshot = await buildSnapshot(ctx, settings())
+  assert.equal(calls.filter((call) => call.startsWith('repo:')).length, 10)
+  assert.match(snapshot.warnings.find((entry) => entry.code === 'branch-scan-narrowed').message, /10 of the 13 repositories/)
+})
+
+await check('a GitHub timeout on the organization branch scan narrows it for that source', async () => {
+  const { ctx, calls } = fakeCtx({
+    orgs: ['llvm'],
+    branches: (login) => (login === 'llvm' ? gateway502() : ok(repoPage(login))),
+    contributions: () => contributed('llvm/llvm-project'),
+    repo: (vars) => ok({
+      repository: { nameWithOwner: `${vars.owner}/${vars.name}`, viewerPermission: 'WRITE', defaultBranchRef: null, branchRefs: { nodes: [myBranch('users/me/a')] } },
+      rateLimit,
+    }),
+  })
+  const profiles = new Map()
+  const snapshot = await buildSnapshot(ctx, settings(), undefined, profiles)
+  assert.equal(calls.filter((call) => call === 'branches:llvm').length, 1, 'the timed-out scan is not repeated as is')
+  assert.ok(calls.includes('repo:llvm/llvm-project'))
+  assert.deepEqual(snapshot.sections.find((entry) => entry.id === 'ci').items.map((item) => item.ref), ['users/me/a'])
+  assert.ok(hasWarning(snapshot, 'branch-scan-narrowed'))
+  assert.ok(!hasWarning(snapshot, 'source-unavailable'))
+  calls.length = 0
+  await buildSnapshot(ctx, settings(), undefined, profiles)
+  assert.ok(!calls.includes('branches:llvm'), 'the source stays large for the next build')
 })
 
 /* ------------------------------------------- host: stale fallback, abort */
@@ -945,6 +1233,21 @@ await check('a GitHub settings save whose first build fails serves the previous 
   failing = false
   const rebuilt = await captured.tool.execute({})
   assert.equal(rebuilt.status, 'ok', 'the first successful build replaces the fallback')
+})
+
+await check('the snapshot store keeps lighter pull levels across refreshes until a settings save', async () => {
+  const fake = fakeCtx({ orgs: ['llvm'], search: (login) => (login === 'llvm' ? gateway502() : ok(searchData())) })
+  const { ctx, captured } = hostCtx(fake)
+  apply(ctx, { cwd: process.cwd() })
+  await captured.tool.execute({})
+  assert.ok(fake.calls.includes('search:llvm'))
+  fake.calls.length = 0
+  await captured.tool.execute({ refresh: true })
+  assert.ok(!fake.calls.includes('search:llvm'), 'a refresh starts at the remembered level')
+  fake.calls.length = 0
+  captured.update({ cwd: process.cwd(), includeBotReviews: true }, () => assert.fail('the save must not restart'))
+  await captured.tool.execute({})
+  assert.ok(fake.calls.includes('search:llvm'), 'a settings save starts from the full search again')
 })
 
 await check('a cancelled tool call does not cancel the shared build', async () => {
