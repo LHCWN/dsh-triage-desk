@@ -83,8 +83,5 @@
     "eslint": "^10.14.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
-  },
-  "dependencies": {
-    "dsh-triage-desk": "^0.1.2"
   }
 }
