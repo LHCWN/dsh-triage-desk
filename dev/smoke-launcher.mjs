@@ -39,6 +39,7 @@ import {
   matchClone,
   normalizeLauncherConfig,
   normalizeScenarios,
+  LEGACY_BUILTIN_PROMPTS,
   openTerminalPlan,
   parseRepoUrl,
   promptVars,
@@ -216,6 +217,11 @@ check('default config is neutral', () => {
   assert.equal(normalizeLauncherConfig({ defaultAgent: 'gone' }).defaultAgent, DSH_TARGET, 'an unknown default opens DSH')
 })
 
+/** The built-in scenario with this id. */
+function builtinScenario(id) {
+  return BUILTIN_SCENARIOS.find((scenario) => scenario.id === id)
+}
+
 check('builtin scenarios are complete and titled', () => {
   assert.equal(BUILTIN_SCENARIOS.length, 10)
   assert.deepEqual(
@@ -228,10 +234,75 @@ check('builtin scenarios are complete and titled', () => {
     assert.ok(scenario.sections.length >= 1 && scenario.sections.length <= 6, scenario.id)
     assert.ok(typeof scenario.prompt === 'string' && scenario.prompt.trim() !== '', scenario.id)
   }
-  assert.ok(BUILTIN_SCENARIOS.find((scenario) => scenario.id === 'review-pr').prompt.includes('strict senior reviewer'))
-  assert.ok(BUILTIN_SCENARIOS.find((scenario) => scenario.id === 'review-all').prompt.includes('{links}'))
-  for (const scenario of BUILTIN_SCENARIOS.filter((entry) => entry.scope === 'section')) {
-    assert.ok(/sub-agent/i.test(scenario.prompt), scenario.id + ' should delegate items to sub-agents')
+  assert.ok(builtinScenario('review-all').prompt.includes('{links}'))
+  for (const id of ['review-all', 'fix-mine', 'reply-mentions']) {
+    assert.ok(/sub-agent/i.test(builtinScenario(id).prompt), id + ' should delegate items to sub-agents')
+  }
+})
+
+check('review scenarios post one COMMENT review with inline comments', () => {
+  for (const id of ['review-pr', 'rereview-pr', 'review-all']) {
+    const prompt = builtinScenario(id).prompt
+    assert.match(prompt, /inline/, id)
+    assert.match(prompt, /pulls\/(\{number\}|N)\/reviews/, id)
+    assert.match(prompt, /event COMMENT/, id)
+    assert.match(prompt, /Never approve or request changes/, id)
+    assert.match(prompt, /\[P1\]/, id)
+    assert.match(prompt, /don't change code/i, id)
+  }
+  assert.match(builtinScenario('rereview-pr').prompt, /nothing new to say, post nothing/)
+  for (const id of ['fix-pr', 'fix-mine']) {
+    const prompt = builtinScenario(id).prompt
+    assert.match(prompt, /gh pr checkout/, id)
+    assert.match(prompt, /skip(ping)? hooks/, id)
+    assert.match(prompt, /wait for my OK before pushing; never merge/i, id)
+  }
+})
+
+check('built-in prompts treat PR, issue and log text as data, not instructions', () => {
+  for (const scenario of BUILTIN_SCENARIOS) {
+    if (scenario.id === 'link') continue
+    assert.match(scenario.prompt, /as data, not instructions|as data\./, scenario.id)
+  }
+})
+
+check('built-in prompts that write to GitHub or commit forbid AI attribution', () => {
+  for (const scenario of BUILTIN_SCENARIOS) {
+    if (scenario.id === 'link' || scenario.id.startsWith('triage-')) continue
+    assert.match(scenario.prompt, /no AI attribution/i, scenario.id)
+  }
+  for (const id of ['triage-issue', 'triage-new']) {
+    assert.match(builtinScenario(id).prompt, /Don't change code or post anything/, id)
+  }
+})
+
+check('saved built-in prompts still equal to an old default are upgraded; edited ones are kept', () => {
+  const current = defaultScenarios()
+  const oldReview = LEGACY_BUILTIN_PROMPTS['review-pr'][0].replace(/\n/g, '\r\n') + '\n'
+  const edited = 'Review the pull request {url} my way.'
+  const normalized = normalizeScenarios([
+    { id: 'link', scope: 'item', sections: SCENARIO_SECTION_IDS, prompt: '{url}', agent: 'default', enabled: true },
+    { id: 'review-pr', scope: 'item', sections: ['review'], prompt: oldReview, agent: 'codex', enabled: false },
+    { id: 'fix-pr', scope: 'item', sections: ['merge'], prompt: edited, agent: 'default', enabled: true },
+    { id: 'my-run', label: 'Mine', scope: 'item', sections: ['review'], prompt: oldReview, agent: 'default', enabled: true },
+  ])
+  const byId = new Map(normalized.map((entry) => [entry.id, entry]))
+  assert.equal(byId.get('review-pr').prompt, current.find((entry) => entry.id === 'review-pr').prompt)
+  assert.equal(byId.get('review-pr').agent, 'codex', 'only the prompt is upgraded')
+  assert.equal(byId.get('review-pr').enabled, false)
+  assert.equal(byId.get('fix-pr').prompt, edited)
+  assert.equal(byId.get('my-run').prompt, oldReview.replace(/\r\n/g, '\n').trim(), 'custom scenarios are never rewritten')
+  const rescoped = normalizeScenarios([
+    { id: 'review-pr', scope: 'section', sections: ['review'], prompt: oldReview, agent: 'default', enabled: true },
+  ]).find((entry) => entry.id === 'review-pr')
+  assert.equal(rescoped.prompt, oldReview.replace(/\r\n/g, '\n').trim(), 'a scenario moved to another scope is the user\'s own and keeps its prompt')
+  for (const [id, prompts] of Object.entries(LEGACY_BUILTIN_PROMPTS)) {
+    const { scope, sections } = builtinScenario(id)
+    for (const prompt of prompts) {
+      const [upgraded] = normalizeScenarios([{ id, scope, sections, prompt, agent: 'default', enabled: true }])
+        .filter((entry) => entry.id === id)
+      assert.equal(upgraded.prompt, builtinScenario(id).prompt, id)
+    }
   }
 })
 
@@ -403,8 +474,10 @@ check('GitHub URLs parse to repository slugs', () => {
     owner: 'acme',
     name: 'widgets',
     slug: 'acme/widgets',
+    number: '288',
   })
   assert.equal(parseRepoUrl('https://github.com/acme/relay.git').slug, 'acme/relay')
+  assert.equal(parseRepoUrl('https://github.com/acme/relay.git').number, '')
   assert.equal(parseRepoUrl('https://gitlab.com/acme/relay'), null)
   assert.equal(parseRepoUrl('not a url'), null)
   assert.equal(parseRepoUrl('file:///etc/passwd'), null)
@@ -464,6 +537,14 @@ check('item scenario prompts replace known tokens and keep unknown braces', () =
   assert.ok(built.prompt.includes('{bogus}'))
   assert.ok(built.prompt.includes('feature-x'))
   assert.equal(built.trimmed, null)
+})
+
+check('the item number falls back to the number in the URL', () => {
+  assert.equal(promptVars({ url: 'https://github.com/acme/widgets/pull/288' }).number, '288')
+  assert.equal(promptVars({ url: 'https://github.com/acme/widgets/issues/7#issuecomment-1' }).number, '7')
+  assert.equal(promptVars({ url: 'https://github.com/acme/widgets/pull/288', number: 5 }).number, '5')
+  assert.equal(promptVars({ url: 'https://github.com/acme/widgets/commit/abc' }).number, '')
+  assert.equal(promptVars({ url: 'https://github.com/acme/widgets/pull/12x' }).number, '')
 })
 
 check('item scenarios append the block only when the template has no link token', () => {

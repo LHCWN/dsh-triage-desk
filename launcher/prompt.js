@@ -32,7 +32,7 @@ export function promptVars(item) {
     repo: parsed.slug,
     owner: parsed.owner,
     name: parsed.name,
-    number: sanitizePromptValue(input.number === undefined || input.number === null ? '' : input.number),
+    number: sanitizePromptValue(input.number) || parsed.number,
     title: sanitizePromptValue(input.title),
     branch: sanitizePromptValue(input.headRefName),
     kind: sanitizePromptValue(input.kind),

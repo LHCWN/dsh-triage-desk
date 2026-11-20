@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Changed
+
+- Rewrote the built-in launch prompts to be shorter and more precise. The review
+  scenarios now post one GitHub review of inline comments tagged `[P1]`–`[P3]`
+  (never an approval), flagging only real problems the PR introduces. Fix and
+  reply scenarios wait for your OK before pushing or posting, triage only
+  reports, and no prompt adds AI attribution. Built-in prompts you never edited
+  are upgraded automatically; edited ones are kept.
+- `{number}` falls back to the number in the item's URL when the snapshot does
+  not have it.
+
 ### Fixed
 
 - The sidebar count badge sits beside the new icon instead of covering its

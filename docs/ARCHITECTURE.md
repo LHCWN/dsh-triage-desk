@@ -141,8 +141,11 @@ import the launcher layer only through `launcher.js` and the data layer through
     checked; such an `.exe` gets no native draft. A best effort over the listed
     managers;
   - `scenarios.js` and `prompt.js` — built-in scenarios, normalization and
-    validation, section/reason labels, and prompt rendering (item tokens,
-    section `{links}` block, safe trimming);
+    validation (an empty built-in prompt, which `host/config.js` saves for an
+    unedited one, and pre-0.1.4 copies matching `LEGACY_BUILTIN_PROMPTS` both
+    read as the current default), section/reason labels, and prompt rendering
+    (item tokens, `{number}` from `parseRepoUrl` when absent, section `{links}`
+    block, safe trimming);
   - `settings.js` — `normalizeLauncherConfig` (also `terminal`, via
     `normalizeTerminalChoice`, and `promptDelivery`: `paste` | `clipboard`);
   - `terminals.js` — `TERMINAL_CATALOG` per platform (`id`, `label`, whether a
