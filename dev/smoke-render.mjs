@@ -279,6 +279,26 @@ state.data = { ...snapshot, status: 'partial', warnings: [limit('branch-scan-nar
 const failedNarrow = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
 assert.ok(failedNarrow.includes('limit.branchNarrowedSome') && !failedNarrow.includes('limit.branchNarrowedNone'),
   'repositories that failed to load are not "no repositories"')
+state.data = {
+  ...snapshot,
+  status: 'ok',
+  sources: [{ kind: 'org', login: 'llvm', label: 'llvm', large: true }, { kind: 'org', login: 'acme', label: 'acme', large: false }],
+  warnings: [limit('prs-truncated', 'acme', { list: 'authored', read: 100, total: 140 })],
+}
+const unlistedLarge = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+assert.ok(!unlistedLarge.includes('limits.leadLarge') && unlistedLarge.includes('limits.lead'),
+  'a large source with no limit in this refresh is not named in the lead')
+state.data = { ...snapshot, status: 'partial', warnings: [limit('repos-truncated', 'acme', { scanned: 300, total: 900 })] }
+assert.ok(!renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store })).includes('page.partial'),
+  'no failure banner without a failure to list')
+state.data = {
+  ...snapshot,
+  status: 'ok',
+  warnings: [limit('prs-truncated', 'a-very-long-organization-login', { list: 'authored', read: 100, total: 140 }), limit('repos-truncated', 'acme', { scanned: 300, total: 900 })],
+}
+const tagged = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+assert.ok(tagged.includes('data-tone="info"') && tagged.includes('adx-limits'), 'the limits notice keeps its tone and class')
+assert.ok(tagged.includes('title="a-very-long-organization-login"') && tagged.includes('adx-pill-text'), 'a long source tag ellipsizes and has a tooltip')
 state.data = { ...snapshot, status: 'ok', warnings: [limit('orgs-truncated', null, { max: 10 })] }
 const orgsHtml = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
 assert.ok(orgsHtml.includes('limits.titleGeneral') && orgsHtml.includes('limit.orgsTruncated'), 'the organization cap is a limit')

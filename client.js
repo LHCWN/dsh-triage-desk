@@ -886,6 +886,8 @@ window.__ModuleLoader__.load({
       }
       .adx-pill[data-tone='neutral'] { background: var(--adx-module); color: var(--adx-ink-2); }
       .adx-pill[data-tone='outline'] { box-shadow: inset 0 0 0 0.5px var(--adx-hairline); color: var(--adx-ink-3); }
+      /* Flex items take no text-overflow: a long label ellipsizes in its own span. */
+      .adx-pill-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
       .adx-pill[data-tone='info'] { background: color-mix(in srgb, var(--adx-info) 10%, transparent); color: var(--adx-info); }
       .adx-pill[data-tone='success'] { background: color-mix(in srgb, var(--adx-ok) 10%, transparent); color: var(--adx-ok); }
       .adx-pill[data-tone='warning'] { background: color-mix(in srgb, var(--adx-warn) 12%, transparent); color: var(--adx-warn); }
@@ -3603,9 +3605,9 @@ window.__ModuleLoader__.load({
     /* Coverage limits (warnings with kind 'limit'): what the snapshot left
        out on purpose, in plain words, apart from data that failed to load. */
     const LIMITS_DOC_URL = 'https://github.com/LHCWN/dsh-triage-desk/blob/main/docs/REFERENCE.md#large-sources'
-    function limitText(t, warning) {
+    function limitText(t, warning, locale) {
       const p = warning.params || {}
-      const formatCount = (value) => (typeof value === 'number' ? value.toLocaleString(uiLocale(t)) : '…')
+      const formatCount = (value) => (typeof value === 'number' ? value.toLocaleString(locale) : '…')
       switch (warning.code) {
         case 'source-degraded':
           return t('limit.sourceDegraded', { max: formatCount(p.max) })
@@ -3632,6 +3634,7 @@ window.__ModuleLoader__.load({
     /** Data that failed to load: the first three problems, one per line. */
     function ProblemsNotice({ t, warnings }) {
       const problems = warnings.filter((entry) => entry && entry.kind !== 'limit')
+      if (problems.length === 0) return null
       const items = problems.slice(0, 3).map((entry) => String(entry.message || entry.code))
       if (problems.length > 3) items.push(t('page.partialMore', { n: problems.length - 3 }))
       return h(Notice, { tone: 'warning', title: t('page.partial'), items })
@@ -3652,7 +3655,12 @@ window.__ModuleLoader__.load({
       const shown = limits
         .filter((entry) => !(entry.code === 'source-degraded' && truncatedLists.has(entry.source)))
         .sort((a, b) => rank(a) - rank(b))
-      const large = (sourceRows || []).filter((source) => source && source.large).map((source) => source.login)
+      // Only sources the notice lists: a source can stay large with no limit
+      // in this refresh (quota stopped before its branch scan).
+      const large = (sourceRows || [])
+        .filter((source) => source && source.large && sources.includes(source.login))
+        .map((source) => source.login)
+      const locale = uiLocale(t)
       const names = (list) => list.join(', ')
       const title = sources.length > 0 ? t('limits.title', { sources: names(sources) }) : t('limits.titleGeneral')
       // The lead gives the reason: a large source, or lists cut to their most
@@ -3663,6 +3671,8 @@ window.__ModuleLoader__.load({
         : recent ? t('limits.lead') : null
       const prefix = sources.length > 1
       return h(Notice, {
+        className: 'adx-limits',
+        tone: 'info',
         body: h(
           'details',
           { className: 'adx-limits-details' },
@@ -3675,9 +3685,11 @@ window.__ModuleLoader__.load({
               h('span', { className: 'adx-limits-toggle adx-limits-toggle--hide' }, t('limits.hide'))),
           ),
           noticeList(shown.map((entry) => [
-            prefix && entry.source ? h(Pill, { key: 'source', tone: 'neutral' }, entry.source) : null,
+            prefix && entry.source
+              ? h(Pill, { key: 'source', tone: 'outline', title: entry.source }, h('span', { className: 'adx-pill-text' }, entry.source))
+              : null,
             prefix && entry.source ? ' ' : null,
-            limitText(t, entry),
+            limitText(t, entry, locale),
           ])),
           h('a', { className: 'adx-limits-link', href: LIMITS_DOC_URL, target: '_blank', rel: 'noreferrer noopener' }, t('limits.learnMore')),
         ),
