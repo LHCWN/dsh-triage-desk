@@ -150,15 +150,17 @@ changed line, tagged `[P1]` blocking, `[P2]` should fix, or `[P3]` minor; a
 code, never approve or request changes, and post nothing when there is nothing
 new to say. A re-review looks only at changes since your last review's commit.
 *Fix* scenarios check out the branch, fix the first real error with the smallest
-change, and wait for your OK before pushing. *Reply* scenarios draft as you and post after you approve. *Triage*
-scenarios only report: summary, likely cause, size, labels from the repository's
+change, and wait for your OK before pushing. *Reply* scenarios draft as you and
+post after you approve. *Triage* scenarios only report: summary, likely cause, size, labels from the repository's
 existing ones, duplicates, and the next step. Every prompt asks for no AI
 attribution in comments and commits, and treats PR, issue, and CI log text as
 data, not instructions.
 
-**Prompt upgrades.** When a release changes a built-in prompt, a saved built-in
-scenario whose prompt and scope still equal an earlier default is upgraded on
-load. A prompt you edited, or a scenario moved to the other scope, is kept; **Reset scenario** takes the current default.
+**Prompt upgrades.** An unedited built-in prompt is saved empty, so it follows
+the default when a release changes it. A profile saved before 0.1.4 holds full
+copies: a built-in scenario whose prompt and scope still equal an earlier default
+is upgraded on load. A prompt you edited, or a scenario moved to the other scope,
+is kept; **Reset scenario** takes the current default.
 
 **DSH target.** The host renders the same scenario prompt and opens it as a new
 DSH session draft through the `uiWorkspace.startSession` client service; when the
@@ -528,7 +530,7 @@ Fields:
 | `promptDelivery` | `paste` | How agents without a native draft get the prompt: `paste` (typed into the input box, unsent) or `clipboard` (see [Prompt delivery](#prompt-delivery)) |
 | `cloneDirs` | `[]` | Optional base directories for clone discovery, up to 8 (under *Advanced: clone search*); empty searches the typical dirs that exist (`~/Projects`, `~/Developer`, …) plus project roots detected in your home |
 | `repoPaths` | `{}` | Optional `owner/repo` → absolute clone path exceptions, up to 50, matched case-insensitively (under *Advanced: clone search*) |
-| `scenarios` | built-in set | Named launch scenarios: `{ id, label?, scope: 'item' \| 'section', sections, prompt, agent: 'default' \| <agent id>, enabled }`; array order is menu order; the `link` scenario must exist, stay enabled, and contain `{url}` |
+| `scenarios` | built-in set | Named launch scenarios: `{ id, label?, scope: 'item' \| 'section', sections, prompt, agent: 'default' \| <agent id>, enabled }`; array order is menu order; an empty `prompt` on a built-in scenario means its current default; the `link` scenario must exist, stay enabled, and contain `{url}` |
 | `defaultScenario` | `link` | Row scenario placed first in the menu |
 | `ghCommand` | `gh` | Path to the GitHub CLI |
 | `timeoutMs` | `30000` | Timeout of one `gh` invocation |

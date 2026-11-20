@@ -1058,6 +1058,15 @@ await recordAsync('config POST accepts scenarios and a default scenario', async 
   assert.equal(captured.edits.length, 1)
   assert.equal(captured.edits[0].defaultScenario, 'review-pr')
   assert.equal(captured.edits[0].scenarios.length, defaultScenarios().length + 1)
+  const stored = new Map(captured.edits[0].scenarios.map((scenario) => [scenario.id, scenario.prompt]))
+  assert.equal(stored.get('review-pr'), '', 'an unedited built-in prompt is stored empty and follows the default')
+  assert.equal(stored.get('custom-test'), 'Do {links}\nnow')
+  const reread = await json(await callHandler('/triage-desk/config', 'GET'))
+  assert.equal(
+    reread.config.scenarios.find((scenario) => scenario.id === 'review-pr').prompt,
+    defaultScenarios().find((scenario) => scenario.id === 'review-pr').prompt,
+    'the panel still sees the full prompt',
+  )
 })
 
 await recordAsync('config POST accepts a body larger than the launch limit', async () => {
