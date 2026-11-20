@@ -274,6 +274,10 @@ assert.ok(limitsHtml.includes('limit.sourceDegraded') && limitsHtml.includes('li
 assert.ok(limitsHtml.includes('<details') && !limitsHtml.includes('<details open'), 'the limits list starts collapsed')
 assert.ok(limitsHtml.includes('REFERENCE.md#large-sources'), 'the notice links the explanation')
 assert.ok(!limitsHtml.includes('page.partial') && !limitsHtml.includes('source-degraded message'), 'limits are not shown as failures or raw messages')
+state.data = { ...snapshot, status: 'partial', warnings: [limit('branch-scan-narrowed', 'llvm', { login: 'tester', scanned: 0, total: 2 })] }
+const failedNarrow = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+assert.ok(failedNarrow.includes('limit.branchNarrowedSome') && !failedNarrow.includes('limit.branchNarrowedNone'),
+  'repositories that failed to load are not "no repositories"')
 state.data = { ...snapshot, status: 'ok', warnings: [limit('orgs-truncated', null, { max: 10 })] }
 const orgsHtml = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
 assert.ok(orgsHtml.includes('limits.titleGeneral') && orgsHtml.includes('limit.orgsTruncated'), 'the organization cap is a limit')

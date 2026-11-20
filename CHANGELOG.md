@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [0.1.2-rc.1](https://github.com/LHCWN/dsh-triage-desk/releases/tag/v0.1.2-rc.1) — 2026-11-20
 
 - **Windows: readable agent and settings lists.** Dropdowns such as the agent
   picker opened as a white list with light text. Their options now use the DSH
