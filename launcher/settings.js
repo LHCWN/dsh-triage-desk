@@ -63,7 +63,8 @@ export function normalizeLauncherConfig(config) {
   // No saved agent list: the candidates are the whole discovery catalog, and
   // the panel shows the ones detection finds (`agentsAuto`). Saving agents in
   // Settings fixes the list.
-  const agentsAuto = !Array.isArray(input.agents)
+  // An empty saved list (every agent removed in Settings) means the same.
+  const agentsAuto = !Array.isArray(input.agents) || input.agents.length === 0
   const { agents, invalidAgents, renamed } = normalizeAgentConfig(agentsAuto ? DISCOVERABLE_AGENTS : input.agents)
   const ids = new Set(agents.map((agent) => agent.id))
   // A saved agent named "dsh" was renamed: its references follow it, since
