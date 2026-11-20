@@ -14,7 +14,7 @@ window.__ModuleLoader__.load({
   factory(require) {
     const React = require('react')
     const h = React.createElement
-    const { useState, useEffect, useLayoutEffect, useRef, useMemo } = React
+    const { useState, useEffect, useLayoutEffect, useRef, useMemo, useId } = React
 
     const PACKAGE_ID = 'dsh-triage-desk'
     const NS = 'triage-desk'
@@ -757,19 +757,18 @@ window.__ModuleLoader__.load({
         opacity: 0; visibility: hidden; pointer-events: none;
         transition: opacity 120ms ease, transform 120ms ease, visibility 0s linear 120ms;
       }
+      /* Bridges the gap above the hint, so the pointer can move onto it
+         without leaving the hover (WCAG 1.4.13, hoverable). */
+      .adx-tooltip::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: 8px; }
       .adx-tooltip strong { color: var(--adx-ink); font-weight: 500; }
       .adx-tooltip-quiet { color: var(--adx-ink-3); }
       /* Hover waits a moment so a passing pointer does not flash it; focus
          shows it at once; Escape (data-dismissed) hides it until leave/blur. */
       .adx-total-wrap:hover .adx-tooltip { transition-delay: 300ms, 300ms, 0s; }
       .adx-total-wrap:hover .adx-tooltip,
-      .adx-total:focus-visible + .adx-tooltip { opacity: 1; visibility: visible; transform: translateY(0); }
-      .adx-total-wrap[data-dismissed='true'] .adx-tooltip { opacity: 0; visibility: hidden; }
+      .adx-total:focus-visible + .adx-tooltip { opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto; }
+      .adx-total-wrap[data-dismissed='true'] .adx-tooltip { opacity: 0; visibility: hidden; pointer-events: none; }
       @media (prefers-reduced-motion: reduce) { .adx-tooltip { transition: none; } }
-      .adx-visually-hidden {
-        position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-        overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
-      }
       .adx-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
                  margin: 4px 0 0; color: var(--adx-ink-2); font-size: 13px; line-height: 20px;
                  font-variant-numeric: tabular-nums; }
@@ -1705,18 +1704,35 @@ window.__ModuleLoader__.load({
       return { total: counted.size, repeats: rows - counted.size, optional: leftOut(optional), snoozed: leftOut(quiet), issues: leftOut(issues) }
     }
 
+    /** `key` for a count, or `key + 'One'` when it is 1 (English plurals). */
+    const plural = (t, key, n) => t(n === 1 ? key + 'One' : key, { n })
+
     /**
      * The attention count in the page header with its hint (WAI-ARIA tooltip
      * pattern): focusable, described by the tooltip, shown on hover and focus,
      * dismissed with Escape. The hint says what the number counts and what it
      * leaves out, so it can be read against the section tabs.
      */
-    /** `key` for a count, or `key + 'One'` when it is 1 (English plurals). */
-    const plural = (t, key, n) => t(n === 1 ? key + 'One' : key, { n })
-
     function AttentionCount({ t, summary }) {
       const [dismissed, setDismissed] = useState(false)
-      const id = 'adx-count-hint'
+      // While the count has focus, a dismissal holds until blur: the pointer
+      // leaving must not bring the focus-shown hint back.
+      const focusedRef = useRef(false)
+      const [hovered, setHovered] = useState(false)
+      const id = 'adx-count-hint' + useId().replace(/:/g, '')
+      // A hint shown by hover closes with Escape too, wherever focus is. The
+      // listener runs in the capture phase and stops the event, so this Escape
+      // does not also leave Select mode (a document listener) or reach the host.
+      useEffect(() => {
+        if (!hovered || dismissed) return undefined
+        const onKeyDown = (event) => {
+          if (event.key !== 'Escape') return
+          event.stopPropagation()
+          setDismissed(true)
+        }
+        document.addEventListener('keydown', onKeyDown, true)
+        return () => document.removeEventListener('keydown', onKeyDown, true)
+      }, [hovered, dismissed])
       const label = summary.total > 99 ? '99+' : String(summary.total)
       const left = []
       if (summary.issues > 0) left.push(plural(t, 'count.issues', summary.issues))
@@ -1727,7 +1743,11 @@ window.__ModuleLoader__.load({
         {
           className: 'adx-total-wrap',
           'data-dismissed': dismissed ? 'true' : 'false',
-          onMouseLeave: () => setDismissed(false),
+          onMouseEnter: () => setHovered(true),
+          onMouseLeave: () => {
+            setHovered(false)
+            if (!focusedRef.current) setDismissed(false)
+          },
         },
         h(
           'span',
@@ -1736,9 +1756,19 @@ window.__ModuleLoader__.load({
             tabIndex: 0,
             'aria-describedby': id,
             onKeyDown: (event) => {
-              if (event.key === 'Escape') setDismissed(true)
+              if (event.key !== 'Escape' || dismissed) return
+              // This Escape only closes the hint; it must not also leave
+              // Select mode or reach the host's Escape handlers.
+              event.stopPropagation()
+              setDismissed(true)
             },
-            onBlur: () => setDismissed(false),
+            onFocus: () => {
+              focusedRef.current = true
+            },
+            onBlur: () => {
+              focusedRef.current = false
+              setDismissed(false)
+            },
           },
           label,
         ),
@@ -5942,19 +5972,19 @@ window.__ModuleLoader__.load({
       const sections = state.data && state.data.sections
       const total = useMemo(() => attentionSummary(sections, state.snoozed).total, [sections, state.snoozed])
       const edge = typeof props.size === 'number' ? props.size : 18
-      // The sidebar is DSH's own chrome, where a layered hint would be
-      // clipped: the badge gets a native title and a screen-reader label.
-      // The slot may pass `t`; else the one apply() bound before registering it.
-      const translate = props.t || runtime.t || ((key) => key)
-      const hint = total > 0 ? plural(translate, 'count.title', total) : undefined
+      // No hint here: DSH renders this slot inside its own panel button
+      // (verified in the DSH sidebar: PanelRow), which carries the slot label
+      // as aria-label, shows its own Tooltip when the sidebar is collapsed, and
+      // wraps this icon in an aria-hidden span. A title would add a second
+      // tooltip and a hidden label would never be read; the header count
+      // carries the explanation.
       return h(
         'span',
-        { className: 'adx-icon-wrap', title: hint },
+        { className: 'adx-icon-wrap' },
         icon('inbox', edge, 1.3),
         total > 0
           ? h('span', { className: 'adx-badge', 'aria-hidden': 'true' }, total > 99 ? '99+' : String(total))
           : null,
-        hint ? h('span', { className: 'adx-visually-hidden' }, hint) : null,
       )
     }
 
@@ -5990,7 +6020,6 @@ window.__ModuleLoader__.load({
         })
       }
       const t = ctx.locale.bind(NS)
-      runtime.t = t
 
       ctx.effect(() => () => store.dispose(), 'triage-desk: store cleanup')
 

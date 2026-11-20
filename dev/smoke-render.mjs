@@ -387,6 +387,7 @@ function settingsHarness({
       queue().push(() => { entry.cleanup?.(); entry.cleanup = callback() })
     }
   }
+  let hookIds = 0
   const hooks = {
     createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
     // Without a comparator React compares props shallowly with Object.is.
@@ -400,6 +401,7 @@ function settingsHarness({
       }]
     },
     useRef(initial) { return hook(() => ({ current: initial })) },
+    useId() { return hook(() => ({ id: ':h' + String(++hookIds) + ':' })).id },
     useMemo(factory, dependencies) {
       const entry = hook(() => ({}))
       if (!entry.dependencies || dependencies.some((value, i) => !Object.is(value, entry.dependencies[i]))) {
@@ -531,9 +533,11 @@ function settingsHarness({
     visibilityState: 'visible',
     // Styles are outside this harness; report them as installed.
     querySelector: () => ({}),
-    addEventListener(type, callback) {
-      if (!documentListeners.has(type)) documentListeners.set(type, new Set())
-      documentListeners.get(type).add(callback)
+    // Listeners keep their capture flag: dispatch runs capture listeners
+    // first and stops at stopPropagation(), as a browser does for document.
+    addEventListener(type, callback, options) {
+      if (!documentListeners.has(type)) documentListeners.set(type, new Map())
+      documentListeners.get(type).set(callback, options === true || Boolean(options && options.capture))
     },
     removeEventListener(type, callback) { documentListeners.get(type)?.delete(callback) },
   }
@@ -628,7 +632,13 @@ function settingsHarness({
     click(node, extra) { assert.ok(node, 'expected an interactive control'); assert.ok(!node.props.disabled); node.props.onClick(event(node, extra)); render() },
     // Document-level events reach the listeners the menu effects registered.
     dispatch(type, node, extra) {
-      for (const listener of [...(documentListeners.get(type) || [])]) listener(event(node, extra))
+      const entries = [...(documentListeners.get(type) || new Map())]
+      let stopped = false
+      const shared = { ...event(node, extra), stopPropagation() { stopped = true } }
+      for (const [listener] of [...entries.filter(([, capture]) => capture), ...entries.filter(([, capture]) => !capture)]) {
+        if (stopped) break
+        listener(shared)
+      }
       render()
     },
     listeners: (type) => documentListeners.get(type)?.size || 0,
@@ -1030,10 +1040,19 @@ for (const readBack of ['first', 'retry']) {
     assert.ok(tipText.includes('count.once'), 'a pull request in two sections is explained')
     assert.ok(tipText.includes('count.excluded:count.issuesOne:1'), tipText)
     const wrap = () => counter.nodes().find((node) => node.props?.className === 'adx-total-wrap')
-    total.props.onKeyDown({ key: 'Escape' })
+    const count = () => counter.nodes().find((node) => node.props?.className === 'adx-total')
+    let stopped = 0
+    count().props.onFocus()
+    count().props.onKeyDown({ key: 'Escape', stopPropagation: () => { stopped += 1 } })
     await counter.flush()
     assert.equal(wrap().props['data-dismissed'], 'true', 'Escape hides the tooltip')
-    counter.nodes().find((node) => node.props?.className === 'adx-total').props.onBlur()
+    assert.equal(stopped, 1, 'the Escape that hides the tooltip does not also leave Select mode')
+    count().props.onKeyDown({ key: 'Escape', stopPropagation: () => { stopped += 1 } })
+    assert.equal(stopped, 1, 'a later Escape passes through once the tooltip is hidden')
+    wrap().props.onMouseLeave()
+    await counter.flush()
+    assert.equal(wrap().props['data-dismissed'], 'true', 'the pointer leaving keeps a focused count dismissed')
+    count().props.onBlur()
     await counter.flush()
     assert.equal(wrap().props['data-dismissed'], 'false', 'leaving the count re-arms it')
     counter.dispose()
@@ -1416,6 +1435,7 @@ function inboxView(harness) {
   }
   return {
     badge: textOf('adx-badge'),
+    badgeHint: nodes.find((entry) => entry.props?.className === 'adx-icon-wrap' && 'title' in entry.props)?.props.title,
     total: textOf('adx-total'),
     all: chip('page.filterAll'),
     chip: (id) => chip('section.' + id),
@@ -1444,6 +1464,7 @@ const rowButton = (harness, title, label, nth = 0) => {
   let view = inboxView(harness)
   assert.equal(view.badge, '5', 'the badge counts #1, #3, #4 (respond + ci once), #5 and the branch; not the optional #2 or issues')
   assert.equal(view.total, '5', 'the header total matches the badge')
+  assert.equal(view.badgeHint, undefined, 'the sidebar badge adds no tooltip next to DSH\'s own panel tooltip')
   assert.equal(view.all, '8', 'All counts the rows the list shows')
   assert.equal(view.chip('review'), '3')
   assert.equal(view.chip('ci'), '2')
@@ -1855,6 +1876,15 @@ const allRows = (harness) => harness.nodes().filter((node) => node.props?.classN
   assert.equal(harness.store.get().openMenu, null, 'Escape closes the bar popover first')
   assert.equal(harness.store.get().selectMode, true)
   assert.deepEqual(selectedTitles(harness), ['PR 3'])
+  // Escape with the pointer over the count closes its hint, not Select mode.
+  const countWrap = () => harness.nodes().find((node) => node.props?.className === 'adx-total-wrap')
+  countWrap().props.onMouseEnter()
+  await harness.flush()
+  harness.dispatch('keydown', null, { key: 'Escape' })
+  assert.equal(countWrap().props['data-dismissed'], 'true', 'Escape hides the hovered hint')
+  assert.equal(harness.store.get().selectMode, true, 'the hint Escape does not leave Select mode')
+  countWrap().props.onMouseLeave()
+  await harness.flush()
   harness.dispatch('keydown', null, { key: 'Escape' })
   assert.equal(harness.store.get().selectMode, false, 'Escape then leaves Select mode')
   assert.equal(harness.nodes().filter((node) => node.props?.role === 'checkbox').length, 0)
