@@ -1,19 +1,6 @@
 # Changelog
 
-## [0.1.2-rc.1](https://github.com/LHCWN/dsh-triage-desk/releases/tag/v0.1.2-rc.1) — 2026-11-20
-
-- **Windows: readable agent and settings lists.** Dropdowns such as the agent
-  picker opened as a white list with light text. Their options now use the DSH
-  theme colors, and native controls follow the DSH dark theme
-  (`color-scheme`). Agents that are not installed are dimmed.
-- **Clearer notices.** Coverage limits (a large organization read lighter, long
-  lists shortened) no longer show as "Some data is unavailable": they get a
-  quiet **Limited view** notice that lists them in plain words, in English or
-  Chinese, with a link to the explanation. The warning banner is only for data
-  that failed to load, one line per problem, and the agent tool reports limits
-  on their own line.
-
-## [0.1.2-rc.0](https://github.com/LHCWN/dsh-triage-desk/releases/tag/v0.1.2-rc.0) — 2026-11-20
+## [0.1.2](https://github.com/LHCWN/dsh-triage-desk/releases/tag/v0.1.2) — 2026-11-20
 
 ### Large organizations
 
@@ -37,6 +24,19 @@
   comment markdown, which GitHub serves much faster than rendered text; an
   @-mention inside code, an HTML comment or a quoted line no longer counts as a
   reply to you.
+
+### Windows and notices
+
+- **Windows: readable agent and settings lists.** Dropdowns such as the agent
+  picker opened as a white list with light text. Their options now use the DSH
+  theme colors, and native controls follow the DSH dark theme
+  (`color-scheme`). Agents that are not installed are dimmed.
+- **Clearer notices.** Coverage limits (a large organization read lighter, long
+  lists shortened) no longer show as "Some data is unavailable": they get a
+  quiet **Limited view** notice that lists them in plain words, in English or
+  Chinese, with a link to the explanation. The warning banner is only for data
+  that failed to load, one line per problem, and the agent tool reports limits
+  on their own line.
 
 ## [0.1.1](https://github.com/LHCWN/dsh-triage-desk/releases/tag/v0.1.1) — 2026-11-20
 
