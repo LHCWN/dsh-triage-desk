@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- The sidebar count badge sits beside the new icon instead of covering its
+  rows.
+
 ## [0.1.3](https://github.com/LHCWN/dsh-triage-desk/releases/tag/v0.1.3) — 2026-11-20
 
 ### Added
