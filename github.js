@@ -559,6 +559,17 @@ function latestReview(reviews) {
   )
 }
 
+/** `values` without later entries that equal an earlier one ignoring case, in order. */
+function uniqueIgnoringCase(values) {
+  const seen = new Set()
+  return values.filter((value) => {
+    const key = value.toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 function time(value) {
   const parsed = Date.parse(value === null || value === undefined ? '' : String(value))
   return Number.isFinite(parsed) ? parsed : 0
@@ -652,9 +663,10 @@ function snapshotSettings(settings) {
  * failures are collected as warnings so one bad query does not blank the page.
  * `profiles` maps a source key to what earlier builds learned about that
  * source (`level`: its pull level, `large`); the snapshot store keeps one Map
- * for its lifetime, so a settings save starts over.
+ * for its lifetime, so a settings save starts over. `signal` cancels the
+ * build's gh calls.
  */
-async function buildSnapshot(ctx, settings, signal, profiles = new Map()) {
+async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {}) {
   const startedAt = Date.now()
   const warnings = []
   const truncated = { reviews: 0, comments: 0, threads: 0, search: 0 }
@@ -679,9 +691,7 @@ async function buildSnapshot(ctx, settings, signal, profiles = new Map()) {
   // Configured organizations win; auto-detection shares their quota bound.
   // Ask for one extra membership so truncation is explicit even at the limit.
   const selectedOrgs = settings.orgs.length > 0 ? settings.orgs : memberOrgs
-  const uniqueOrgs = selectedOrgs.filter((login, index) =>
-    selectedOrgs.findIndex((other) => other.toLowerCase() === login.toLowerCase()) === index,
-  )
+  const uniqueOrgs = uniqueIgnoringCase(selectedOrgs)
   const orgLogins = uniqueOrgs.slice(0, MAX_ORGS)
   if (uniqueOrgs.length > MAX_ORGS ||
       (settings.orgs.length === 0 && viewerNode.organizations?.pageInfo?.hasNextPage)) {
@@ -793,6 +803,8 @@ async function buildSnapshot(ctx, settings, signal, profiles = new Map()) {
     `${prefixOf(source)} is:pr is:open archived:false ${search.qualifier} sort:updated-desc`
 
   const levelOf = (state) => PULL_LEVELS[state.profile.level]
+  // Any query of the source succeeded, so its results are shown.
+  const reached = (state) => state.scanned || state.issueData !== null
   // The most pull requests one search reads at a level, over all its pages.
   const pullBound = (level) => level.pageSize * level.maxPages
   const isGatewayTimeout = (error) => error instanceof GhError && error.code === 'gateway-timeout'
@@ -802,17 +814,15 @@ async function buildSnapshot(ctx, settings, signal, profiles = new Map()) {
     state.profile.large = true
   }
   const profileOf = (source) => {
-    const key = `${source.kind}:${source.login.toLowerCase()}`
+    const key = sourceName(source).toLowerCase()
     if (!profiles.has(key)) profiles.set(key, { level: 0, large: false })
     return profiles.get(key)
   }
   const states = sources.map((source) => ({
     source,
     profile: profileOf(source),
-    // `scanned`: a pull request search succeeded (the inbox guard below);
-    // `reached`: any query of the source succeeded, so its results are shown.
+    // A pull request search succeeded (the inbox guard below).
     scanned: false,
-    reached: false,
     teams: settings.teams,
     issueData: null,
     pulls: new Map(),
@@ -825,7 +835,6 @@ async function buildSnapshot(ctx, settings, signal, profiles = new Map()) {
     repoNext: true,
     repoMore: false,
     repoPages: 0,
-    branchNarrowed: false,
   }))
 
   const pullsTruncated = (state, search, connection, read) => {
@@ -914,8 +923,8 @@ async function buildSnapshot(ctx, settings, signal, profiles = new Map()) {
   for (const state of states) {
     if (!canStartQuery()) break
     const { source } = state
-    if (levelOf(state).combined) {
-      const level = levelOf(state)
+    const level = levelOf(state)
+    if (level.combined) {
       const pullVariables = { login: source.login, viewerLogin, pullPageSize: level.pageSize, ...windowsOf(level) }
       for (const search of PULL_SEARCHES) pullVariables[`${search.alias}Q`] = pullQuery(source, search)
       try {
@@ -932,6 +941,7 @@ async function buildSnapshot(ctx, settings, signal, profiles = new Map()) {
     }
     // Split levels read each search on its own. Team membership is not read
     // there: a team request found by `review-requested:` is still trusted.
+    // Re-read the level: a timeout above may have stepped the source down.
     if (!levelOf(state).combined) {
       for (const search of PULL_SEARCHES) {
         if (!canStartQuery()) break
@@ -944,7 +954,6 @@ async function buildSnapshot(ctx, settings, signal, profiles = new Map()) {
         }
       }
     }
-    if (state.scanned) state.reached = true
 
     if (!canStartQuery()) break
     const prefix = prefixOf(source)
@@ -960,7 +969,6 @@ async function buildSnapshot(ctx, settings, signal, profiles = new Map()) {
         'issues',
         'graphql-search',
       )
-      state.reached = true
       // More new unassigned issues in 30 days than one page (50) is a source
       // too busy for that list to be triage material: it is large.
       const newIssues = state.issueData && state.issueData.newIssues
@@ -1013,7 +1021,7 @@ async function buildSnapshot(ctx, settings, signal, profiles = new Map()) {
         ...(collection.commitContributionsByRepository || []),
         ...(collection.pullRequestContributionsByRepository || []),
       ].map((entry) => entry && entry.repository && entry.repository.nameWithOwner).filter((name) => typeof name === 'string')
-      contributedRepos = names.filter((name, index) => names.findIndex((other) => other.toLowerCase() === name.toLowerCase()) === index)
+      contributedRepos = uniqueIgnoringCase(names)
     }
     const owner = state.source.login.toLowerCase()
     return contributedRepos.filter((name) => name.split('/')[0].toLowerCase() === owner)
@@ -1026,7 +1034,6 @@ async function buildSnapshot(ctx, settings, signal, profiles = new Map()) {
   // Branch CI of a large source: see BRANCH_SCAN_REPO_QUERY.
   const narrowBranchScan = async (state) => {
     state.repoNext = false
-    state.branchNarrowed = true
     let contributed
     try {
       contributed = await contributedReposOf(state)
@@ -1061,7 +1068,7 @@ async function buildSnapshot(ctx, settings, signal, profiles = new Map()) {
   //    large source, or one whose scan GitHub times out, is scanned narrowly.
   for (let page = 0; page < MAX_REPO_PAGES; page += 1) {
     for (const state of states) {
-      if (!state.reached || !state.repoNext) continue
+      if (!reached(state) || !state.repoNext) continue
       if (!canStartQuery()) break
       if (state.profile.large) {
         await narrowBranchScan(state)
@@ -1128,15 +1135,29 @@ async function buildSnapshot(ctx, settings, signal, profiles = new Map()) {
   }
 
   for (const state of states) {
-    if (!state.reached) continue
+    if (!reached(state)) continue
     const { source } = state
-    if (!state.branchNarrowed && state.repoPages > 0 && (state.repoTotal > state.repos.length || state.repoMore)) {
+    // A large source's branch scan is narrowed (it never pages repositories
+    // after it is large), so repository coverage does not apply to it.
+    if (!state.profile.large && state.repoPages > 0 && (state.repoTotal > state.repos.length || state.repoMore)) {
       warnings.push({
         code: 'repos-truncated',
         message: `${source.login}: only ${state.repos.length} of ${state.repoTotal} repositories were scanned for branch CI`,
       })
     }
     sourceSummaries.push({ kind: source.kind, login: source.login, label: source.label, repos: state.repos.length })
+    // A large source lists no new unassigned issues, only how many there are.
+    const newIssues = state.issueData && state.issueData.newIssues
+    if (state.profile.large && newIssues) {
+      const count = typeof newIssues.issueCount === 'number' ? newIssues.issueCount : (newIssues.nodes || []).length
+      if (count > 0) {
+        warnings.push({
+          code: 'new-issues-skipped',
+          message: `${source.login}: ${count} new unassigned issues in the last ${NEW_ISSUE_WINDOW_DAYS} days; the list is not shown for a source this large`,
+        })
+      }
+      state.issueData = { ...state.issueData, newIssues: null }
+    }
     for (const { pr, repoName, found } of state.pulls.values()) classifyPull(state, pr, repoName, found)
     for (const repo of state.repos) classifyBranches(state, repo)
     if (state.issueData) classifySearch(state, state.issueData)
@@ -1490,8 +1511,7 @@ async function buildSnapshot(ctx, settings, signal, profiles = new Map()) {
     const { source } = state
     if (
       (data.assignedIssues && data.assignedIssues.pageInfo && data.assignedIssues.pageInfo.hasNextPage) ||
-      // A large source does not list new issues, so their pages are not history.
-      (!state.profile.large && data.newIssues && data.newIssues.pageInfo && data.newIssues.pageInfo.hasNextPage) ||
+      (data.newIssues && data.newIssues.pageInfo && data.newIssues.pageInfo.hasNextPage) ||
       (data.mentions && data.mentions.pageInfo && data.mentions.pageInfo.hasNextPage)
     ) {
       truncated.search += 1
@@ -1558,16 +1578,6 @@ async function buildSnapshot(ctx, settings, signal, profiles = new Map()) {
       sections.respond.push(item)
     }
     const newIssues = (data.newIssues && data.newIssues.nodes) || []
-    if (state.profile.large) {
-      const count = data.newIssues && typeof data.newIssues.issueCount === 'number' ? data.newIssues.issueCount : newIssues.length
-      if (count > 0) {
-        warnings.push({
-          code: 'new-issues-skipped',
-          message: `${source.login}: ${count} new unassigned issues in the last ${NEW_ISSUE_WINDOW_DAYS} days; the list is not shown for a source this large`,
-        })
-      }
-      return
-    }
     for (const node of newIssues) {
       if (node === null || node === undefined) continue
       const repoName = node.repository && node.repository.nameWithOwner
@@ -1703,7 +1713,7 @@ function commentProse(body) {
 
 /** True when a comment's markdown body @-mentions one of the viewer logins outside code and quotes. */
 function commentMentionsViewer(body, meLogins) {
-  if (typeof body !== 'string' || body === '') return false
+  if (typeof body !== 'string' || !body.includes('@')) return false
   const prose = commentProse(body)
   for (const login of meLogins) {
     if (mentionPattern(login).test(prose)) return true

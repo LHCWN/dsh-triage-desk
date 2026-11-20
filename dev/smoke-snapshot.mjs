@@ -116,6 +116,9 @@ const issueData = (aliases = {}) => ({
   ...aliases,
 })
 
+/** One BranchScan/BranchScanRepo repository node with empty branch data. */
+const repoNode = (repo) => ({ viewerPermission: 'WRITE', defaultBranchRef: null, branchRefs: { nodes: [] }, ...repo })
+
 function repoPage(login, repos = [{ nameWithOwner: `${login}/app` }], pageInfo = { hasNextPage: false, endCursor: null }) {
   return {
     repositoryOwner: {
@@ -124,7 +127,7 @@ function repoPage(login, repos = [{ nameWithOwner: `${login}/app` }], pageInfo =
       repositories: {
         totalCount: repos.length,
         pageInfo,
-        nodes: repos.map((repo) => ({ viewerPermission: 'WRITE', defaultBranchRef: null, branchRefs: { nodes: [] }, ...repo })),
+        nodes: repos.map(repoNode),
       },
     },
     rateLimit,
@@ -222,7 +225,8 @@ const ids = (snapshot, section) =>
   snapshot.sections.find((entry) => entry.id === section).items.map((item) => item.number)
 const find = (snapshot, section, number) =>
   snapshot.sections.find((entry) => entry.id === section).items.find((item) => item.number === number)
-const hasWarning = (snapshot, code) => snapshot.warnings.some((warning) => warning.code === code)
+const warningOf = (snapshot, code) => snapshot.warnings.find((warning) => warning.code === code)
+const hasWarning = (snapshot, code) => warningOf(snapshot, code) !== undefined
 
 /* ---------------------------------------------------- new-issue window */
 
@@ -341,7 +345,7 @@ await check('older review threads beyond the last window raise truncated-history
   pr.reviewThreads.pageInfo = { hasPreviousPage: true }
   const { ctx } = fakeCtx({ prs: () => [pr] })
   const snapshot = await buildSnapshot(ctx, settings())
-  const warning = snapshot.warnings.find((entry) => entry.code === 'truncated-history')
+  const warning = warningOf(snapshot, 'truncated-history')
   assert.ok(warning, 'a last: window reports older threads through hasPreviousPage')
   assert.match(warning.message, /older review threads/)
   assert.equal(snapshot.status, 'ok', 'history truncation alone is informational')
@@ -589,7 +593,7 @@ await check('pull search pages are followed to a bounded depth and report trunca
   assert.equal(calls.filter((call) => call.startsWith('page:')).length, 4)
   assert.deepEqual(ids(snapshot, 'review').sort(), [171, 172, 173, 174])
   assert.ok(find(snapshot, 'ci', 181), 'PRs from later pages are classified')
-  const warning = snapshot.warnings.find((entry) => entry.code === 'prs-truncated')
+  const warning = warningOf(snapshot, 'prs-truncated')
   assert.ok(warning, 'a search with more matches than the bound is reported')
   assert.match(warning.message, /4 most recently updated of 140 open pull requests review requests/)
   assert.equal(snapshot.warnings.filter((entry) => entry.code === 'prs-truncated').length, 1, 'the exhausted alias is not reported')
@@ -732,7 +736,7 @@ await check('the remaining-quota floor stops further queries with scan-budget', 
   const snapshot = await buildSnapshot(ctx, settings())
   assert.deepEqual(calls, ['viewer', 'search:me'], 'no organization, page or branch query starts below the floor')
   assert.deepEqual(ids(snapshot, 'review'), [211], 'fetched results are kept')
-  const warning = snapshot.warnings.find((entry) => entry.code === 'scan-budget')
+  const warning = warningOf(snapshot, 'scan-budget')
   assert.ok(warning)
   assert.match(warning.message, /90 points remaining/)
   assert.equal(snapshot.warnings.filter((entry) => entry.code === 'scan-budget').length, 1, 'the warning is recorded once')
@@ -925,7 +929,7 @@ await check('a GitHub timeout on the combined pull search retries each search se
     assert.equal(call.after, undefined, 'a first page has no cursor')
   }
   assert.deepEqual(ids(snapshot, 'review'), [301])
-  const warning = snapshot.warnings.find((entry) => entry.code === 'source-degraded')
+  const warning = warningOf(snapshot, 'source-degraded')
   assert.ok(warning, 'the lighter search is reported')
   assert.match(warning.message, /^llvm: /)
   assert.ok(!hasWarning(snapshot, 'source-unavailable'))
@@ -964,7 +968,7 @@ await check('a search that still times out moves the source to the lightest leve
   const lost = snapshot.warnings.filter((entry) => entry.code === 'source-unavailable')
   assert.equal(lost.length, 1)
   assert.match(lost[0].message, /org:llvm: pull request search \(reviewed by you\) failed/)
-  assert.match(snapshot.warnings.find((entry) => entry.code === 'source-degraded').message, /at most 25 pull requests, 5 per request/)
+  assert.match(warningOf(snapshot, 'source-degraded').message, /at most 25 pull requests, 5 per request/)
 })
 
 await check('follow-up pages of a large source keep their cursor on a lighter level and stay within its bound', async () => {
@@ -1007,7 +1011,7 @@ await check('a search that steps down after its first page stays within the ligh
   const snapshot = await buildSnapshot(ctx, settings())
   assert.deepEqual(pageCalls, ['25:p25', '10:p25', '10:p35', '5:p45'], 'the last page is cut to the level\'s bound of 50')
   assert.equal(ids(snapshot, 'review').length, 50)
-  assert.match(snapshot.warnings.find((entry) => entry.code === 'prs-truncated').message, /only the 50 most recently updated of 900/)
+  assert.match(warningOf(snapshot, 'prs-truncated').message, /only the 50 most recently updated of 900/)
 })
 
 await check('a source remembers its lighter level for the next build with the same profiles', async () => {
@@ -1016,14 +1020,14 @@ await check('a source remembers its lighter level for the next build with the sa
     search: (login) => (login === 'llvm' ? gateway502() : ok(searchData())),
   })
   const profiles = new Map()
-  await buildSnapshot(ctx, settings(), undefined, profiles)
+  await buildSnapshot(ctx, settings(), { profiles })
   calls.length = 0
-  const again = await buildSnapshot(ctx, settings(), undefined, profiles)
+  const again = await buildSnapshot(ctx, settings(), { profiles })
   assert.ok(!calls.includes('search:llvm'), 'the next build starts at the remembered level')
   assert.ok(calls.includes('search:me'), 'other sources keep the combined search')
   assert.ok(hasWarning(again, 'source-degraded'))
   calls.length = 0
-  await buildSnapshot(ctx, settings(), undefined, new Map())
+  await buildSnapshot(ctx, settings(), { profiles: new Map() })
   assert.ok(calls.includes('search:llvm'), 'new profiles start from the full search')
 })
 
@@ -1047,9 +1051,9 @@ await check('a source with more new unassigned issues than one page hides that l
     })),
   })
   const profiles = new Map()
-  const snapshot = await buildSnapshot(ctx, settings(), undefined, profiles)
+  const snapshot = await buildSnapshot(ctx, settings(), { profiles })
   assert.deepEqual(ids(snapshot, 'issues'), [502], 'a small source keeps its new issues')
-  const warning = snapshot.warnings.find((entry) => entry.code === 'new-issues-skipped')
+  const warning = warningOf(snapshot, 'new-issues-skipped')
   assert.ok(warning)
   assert.match(warning.message, /^llvm: 1334 new unassigned issues/)
   assert.ok(!hasWarning(snapshot, 'source-degraded'), 'a large source alone does not change the pull search')
@@ -1065,7 +1069,7 @@ await check('a source that needed a lighter pull search is large and hides its n
   })
   const snapshot = await buildSnapshot(ctx, settings())
   assert.deepEqual(snapshot.sections.find((entry) => entry.id === 'issues').items.map((item) => item.repo), ['me/app'])
-  assert.match(snapshot.warnings.find((entry) => entry.code === 'new-issues-skipped').message, /^llvm: 3 new unassigned issues/)
+  assert.match(warningOf(snapshot, 'new-issues-skipped').message, /^llvm: 3 new unassigned issues/)
 })
 
 const busyIssues = () => ok(issueData({ newIssues: { issueCount: 900, pageInfo: { hasNextPage: true }, nodes: [] } }))
@@ -1092,12 +1096,10 @@ await check('a large source checks branch CI only in repositories the viewer con
     repo: (vars) => {
       repoVars.push(vars)
       return ok({
-        repository: {
+        repository: repoNode({
           nameWithOwner: `${vars.owner}/${vars.name}`,
-          viewerPermission: 'WRITE',
-          defaultBranchRef: null,
           branchRefs: { nodes: vars.name === 'llvm-project' ? [myBranch('users/me/fix-crash')] : [] },
-        },
+        }),
         rateLimit,
       })
     },
@@ -1110,7 +1112,7 @@ await check('a large source checks branch CI only in repositories the viewer con
   for (const vars of repoVars) assert.equal(vars.branchQuery, ME)
   const ci = snapshot.sections.find((entry) => entry.id === 'ci').items
   assert.deepEqual(ci.map((item) => item.id), ['llvm@llvm/llvm-project@users/me/fix-crash'])
-  const warning = snapshot.warnings.find((entry) => entry.code === 'branch-scan-narrowed')
+  const warning = warningOf(snapshot, 'branch-scan-narrowed')
   assert.ok(warning)
   assert.match(warning.message, /^llvm: .*2 repositories.*"me"/)
   assert.ok(!hasWarning(snapshot, 'repos-truncated'))
@@ -1126,7 +1128,7 @@ await check('a large source names how many contributed repositories its branch C
   })
   const snapshot = await buildSnapshot(ctx, settings())
   assert.equal(calls.filter((call) => call.startsWith('repo:')).length, 10)
-  assert.match(snapshot.warnings.find((entry) => entry.code === 'branch-scan-narrowed').message, /10 of the 13 repositories/)
+  assert.match(warningOf(snapshot, 'branch-scan-narrowed').message, /10 of the 13 repositories/)
 })
 
 await check('a GitHub timeout on the organization branch scan narrows it for that source', async () => {
@@ -1135,19 +1137,19 @@ await check('a GitHub timeout on the organization branch scan narrows it for tha
     branches: (login) => (login === 'llvm' ? gateway502() : ok(repoPage(login))),
     contributions: () => contributed('llvm/llvm-project'),
     repo: (vars) => ok({
-      repository: { nameWithOwner: `${vars.owner}/${vars.name}`, viewerPermission: 'WRITE', defaultBranchRef: null, branchRefs: { nodes: [myBranch('users/me/a')] } },
+      repository: repoNode({ nameWithOwner: `${vars.owner}/${vars.name}`, branchRefs: { nodes: [myBranch('users/me/a')] } }),
       rateLimit,
     }),
   })
   const profiles = new Map()
-  const snapshot = await buildSnapshot(ctx, settings(), undefined, profiles)
+  const snapshot = await buildSnapshot(ctx, settings(), { profiles })
   assert.equal(calls.filter((call) => call === 'branches:llvm').length, 1, 'the timed-out scan is not repeated as is')
   assert.ok(calls.includes('repo:llvm/llvm-project'))
   assert.deepEqual(snapshot.sections.find((entry) => entry.id === 'ci').items.map((item) => item.ref), ['users/me/a'])
   assert.ok(hasWarning(snapshot, 'branch-scan-narrowed'))
   assert.ok(!hasWarning(snapshot, 'source-unavailable'))
   calls.length = 0
-  await buildSnapshot(ctx, settings(), undefined, profiles)
+  await buildSnapshot(ctx, settings(), { profiles })
   assert.ok(!calls.includes('branches:llvm'), 'the source stays large for the next build')
 })
 
