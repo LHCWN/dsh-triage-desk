@@ -765,6 +765,8 @@ window.__ModuleLoader__.load({
       /* Hover waits a moment so a passing pointer does not flash it; focus
          shows it at once; Escape (data-dismissed) hides it until leave/blur. */
       .adx-total-wrap:hover .adx-tooltip { transition-delay: 300ms, 300ms, 0s; }
+      /* Shown at once on focus: the base 120 ms visibility delay is for hiding. */
+      .adx-total:focus-visible + .adx-tooltip { transition-delay: 0s; }
       .adx-total-wrap:hover .adx-tooltip,
       .adx-total:focus-visible + .adx-tooltip { opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto; }
       .adx-total-wrap[data-dismissed='true'] .adx-tooltip { opacity: 0; visibility: hidden; pointer-events: none; }
