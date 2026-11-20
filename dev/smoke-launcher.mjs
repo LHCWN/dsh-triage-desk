@@ -39,6 +39,7 @@ import {
   matchClone,
   normalizeLauncherConfig,
   normalizeScenarios,
+  defaultAgentCommand,
   LEGACY_AGENT_COMMANDS,
   openTerminalPlan,
   parseRepoUrl,
@@ -247,6 +248,13 @@ check('saved agents still on an old default command are upgraded; edited command
   assert.equal(byId.claude, 'claude --model opus {prompt}', 'an edited command is kept')
   assert.equal(byId.gemini, 'gemini --yolo {prompt}')
   assert.equal(byId.mine, 'codex {prompt}', 'only the agent the old default belonged to is upgraded')
+  const unedited = normalizeLauncherConfig({ agents: [
+    { id: 'codex', label: 'Codex', command: '' },
+    { id: 'mine', label: 'Mine', command: '' },
+  ] })
+  assert.equal(unedited.agents.find((agent) => agent.id === 'codex').command, defaultAgentCommand('codex'),
+    'an empty command on a known agent is its current default')
+  assert.deepEqual(unedited.invalidAgents.map((agent) => agent.id), ['mine'], 'an empty custom command stays broken')
   for (const [id, command] of Object.entries(LEGACY_AGENT_COMMANDS)) {
     const [upgraded] = normalizeLauncherConfig({ agents: [{ id, label: id, command }] }).agents
     assert.equal(upgraded.command, DISCOVERABLE_AGENTS.find((agent) => agent.id === id).command, id)

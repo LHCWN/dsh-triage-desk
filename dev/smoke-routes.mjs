@@ -26,6 +26,7 @@ const {
   SCENARIO_REASON_LABELS,
   MAX_SCENARIO_TEMPLATE,
   MAX_SCENARIOS,
+  defaultAgentCommand,
   defaultScenarios,
   openTerminalPlan,
   PASTE_WRAPPER_PY,
@@ -1026,6 +1027,24 @@ await recordAsync('an agents-only patch cannot orphan a saved scenario agent', a
   const payload = await json(res)
   assert.equal(payload.error.code, 'invalid-config')
   assert.ok(payload.error.message.includes('codex-review'), payload.error.message)
+})
+
+await recordAsync('config POST saves an unedited known agent without its command', async () => {
+  captured.edits.length = 0
+  const agents = [
+    { id: 'codex', label: 'Codex', command: defaultAgentCommand('codex') },
+    { id: 'claude', label: 'Claude Code', command: 'claude --model opus {prompt}' },
+  ]
+  const res = await callHandler('/triage-desk/config', 'POST', { agents, defaultAgent: 'codex' })
+  assert.equal(res.statusCode, 200, res.body)
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  assert.deepEqual(captured.edits.at(-1).agents, [
+    { id: 'codex', label: 'Codex', command: '' },
+    { id: 'claude', label: 'Claude Code', command: 'claude --model opus {prompt}' },
+  ], 'the unedited command follows the default; the edited one is kept')
+  const reread = await json(await callHandler('/triage-desk/config', 'GET'))
+  assert.equal(reread.config.agents.find((agent) => agent.id === 'codex').command, defaultAgentCommand('codex'),
+    'the panel still sees the full command')
 })
 
 await recordAsync('config POST accepts scenarios and a default scenario', async () => {

@@ -25,6 +25,7 @@ import {
   defaultScenarios,
   draftCommandForStatus,
   AGENT_PRESETS,
+  defaultAgentCommand,
   DSH_TARGET,
   effectiveDefaultAgent,
   expandHome,
@@ -159,7 +160,9 @@ function sanitizeAgents(input) {
     }
     if (seen.has(id)) throw new BadRequest(`duplicate agent id "${id}"`)
     seen.add(id)
-    agents.push({ id, label, command })
+    // An unedited known agent is saved without its command, so it follows the
+    // default when a release changes it (normalizeAgentConfig fills it back in).
+    agents.push({ id, label, command: command === defaultAgentCommand(id) ? '' : command })
   }
   if (agents.length === 0) throw new BadRequest('at least one agent is required')
   if (agents.length > MAX_AGENTS) throw new BadRequest(`at most ${MAX_AGENTS} agents are supported`)

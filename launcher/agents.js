@@ -60,6 +60,11 @@ export const LEGACY_AGENT_COMMANDS = {
 
 const DISCOVERABLE_COMMANDS = new Map(DISCOVERABLE_AGENTS.map((agent) => [agent.id, agent.command]))
 
+/** The current default command of a known agent id, or undefined. */
+export function defaultAgentCommand(id) {
+  return DISCOVERABLE_COMMANDS.get(id)
+}
+
 function normalizeAgentId(value, fallbackIndex) {
   const text = String(value || '')
     .trim()
@@ -133,7 +138,9 @@ export function normalizeAgentConfig(value) {
     if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue
     const rawId = normalizeAgentId(entry.id, index)
     let command = typeof entry.command === 'string' ? entry.command.trim().slice(0, MAX_AGENT_COMMAND) : ''
-    if (Object.hasOwn(LEGACY_AGENT_COMMANDS, rawId) && command === LEGACY_AGENT_COMMANDS[rawId]) {
+    // An empty command on a known agent is its current default (Settings saves
+    // an unedited one that way); a pre-0.1.4 default is upgraded the same way.
+    if (DISCOVERABLE_COMMANDS.has(rawId) && (command === '' || command === LEGACY_AGENT_COMMANDS[rawId])) {
       command = DISCOVERABLE_COMMANDS.get(rawId)
     }
     const labelFor = (id) =>

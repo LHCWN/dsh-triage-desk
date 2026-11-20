@@ -124,7 +124,9 @@ import the launcher layer only through `launcher.js` and the data layer through
     unquoted `; & | < > ( )` and word-initial `#` are rejected. The host is the
     only implementation of this rule;
   - `agents.js` — presets and discoverable CLIs with their full-access flags
-    (unedited saved commands matching `LEGACY_AGENT_COMMANDS` are upgraded),
+    (`defaultAgentCommand`; an empty command, which `host/config.js` saves for
+    an unedited known agent, and a pre-0.1.4 copy matching
+    `LEGACY_AGENT_COMMANDS` both read as the current default),
     `DSH_TARGET` (`dsh`, the
     default launch target: a new DSH chat the panel opens; reserved as an agent
     id), `installedAgents`, and the two meanings of "default", both sent in

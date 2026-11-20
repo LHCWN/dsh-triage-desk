@@ -374,9 +374,10 @@ starts without permission prompts: the flags in the table above, plus Aider
 (`GOOSE_MODE=auto`) that a Windows launch cannot set. The agent then edits files,
 runs commands, and posts to GitHub without asking, so a step a scenario asks it
 to confirm first, such as pushing, rests on the agent following the prompt.
-Delete the flag from an agent's command in Settings to get the prompts back. A
-saved command still equal to its pre-0.1.4 default (`codex {prompt}`) is
-upgraded on load; an edited one is kept.
+Delete the flag from an agent's command in Settings to get the prompts back. An
+unedited command is saved empty, so it follows the default when a release
+changes it; a saved command still equal to its pre-0.1.4 default
+(`codex {prompt}`) is upgraded on load. An edited command is kept.
 
 **Find agents** in Settings scans the login environment for known CLIs (Claude
 Code, Codex, opencode, Gemini CLI, Cursor Agent, Antigravity, pi, Aider, Amp,
@@ -513,7 +514,7 @@ Fields:
 | `ttlMs` | `max(refreshSeconds, 600)` s, capped at 1 h | Host snapshot cache lifetime |
 | `requireGreenChecks` | `true` | List under "Ready to merge" only with green checks or no checks (pending/red are excluded) |
 | `includeBotReviews` | `false` | Count reviews from bot accounts as yours on the PRs your searches return |
-| `agents` | installed agents | Agent list (up to 12): `{ id, label, command }`; `command` contains exactly one unquoted `{prompt}` after the executable, as its own word or after `--flag=` (see [Agents](#agents)). Unset, the menu shows the known CLIs that are installed; editing the list in Settings saves it |
+| `agents` | installed agents | Agent list (up to 12): `{ id, label, command }`; an empty `command` on a known agent id means its current default; otherwise `command` contains exactly one unquoted `{prompt}` after the executable, as its own word or after `--flag=` (see [Agents](#agents)). Unset, the menu shows the known CLIs that are installed; editing the list in Settings saves it |
 | `defaultAgent` | `dsh` | What a launch opens unless another target is picked: `dsh` (a new DSH chat) or an agent id. An agent that cannot start opens a DSH chat instead, and Settings says so. Launches the host runs (the agent tool) cannot open DSH and use the first installed agent |
 | `terminal` | `auto` | Terminal for launches: `auto` or one of `terminal`, `iterm`, `ghostty`, `gnome-terminal`, `konsole`, `xfce4-terminal`, `kitty`, `alacritty`, `xterm`, `windows-terminal`, `console` (see [Choosing a terminal](#choosing-a-terminal)) |
 | `promptDelivery` | `paste` | How agents without a native draft get the prompt: `paste` (typed into the input box, unsent) or `clipboard` (see [Prompt delivery](#prompt-delivery)) |
