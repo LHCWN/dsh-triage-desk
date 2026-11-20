@@ -1706,6 +1706,16 @@ window.__ModuleLoader__.load({
       return { total: counted.size, repeats: rows - counted.size, optional: leftOut(optional), snoozed: leftOut(quiet), issues: leftOut(issues) }
     }
 
+    /* A per-instance id: React's useId (18+), else one fixed for the instance. */
+    let instanceIds = 0
+    const useInstanceId = typeof useId === 'function'
+      ? () => useId().replace(/[^a-zA-Z0-9_-]/g, '')
+      : () => {
+          const ref = useRef(null)
+          if (ref.current === null) ref.current = String(++instanceIds)
+          return ref.current
+        }
+
     /** `key` for a count, or `key + 'One'` when it is 1 (English plurals). */
     const plural = (t, key, n) => t(n === 1 ? key + 'One' : key, { n })
 
@@ -1721,7 +1731,7 @@ window.__ModuleLoader__.load({
       // leaving must not bring the focus-shown hint back.
       const focusedRef = useRef(false)
       const [hovered, setHovered] = useState(false)
-      const id = 'adx-count-hint' + useId().replace(/:/g, '')
+      const id = 'adx-count-hint' + useInstanceId()
       // A hint shown by hover closes with Escape too, wherever focus is. The
       // listener runs in the capture phase and stops the event, so this Escape
       // does not also leave Select mode (a document listener) or reach the host.
@@ -5972,7 +5982,9 @@ window.__ModuleLoader__.load({
       const store = props.store || runtime.store
       const state = useStore(store)
       const sections = state.data && state.data.sections
-      const total = useMemo(() => attentionSummary(sections, state.snoozed).total, [sections, state.snoozed])
+      // Timed snoozes end with the clock: the minute is part of the memo key.
+      const minute = Math.floor(Date.now() / 60_000)
+      const total = useMemo(() => attentionSummary(sections, state.snoozed).total, [sections, state.snoozed, minute])
       const edge = typeof props.size === 'number' ? props.size : 18
       // No hint here: DSH renders this slot inside its own panel button
       // (verified in the DSH sidebar: PanelRow), which carries the slot label

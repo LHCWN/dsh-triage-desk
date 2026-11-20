@@ -1700,6 +1700,23 @@ const itemLabel = (node) => flattenTree(node.props.children).find((child) => typ
   assert.deepEqual(Object.keys(JSON.parse(v2.data['triage-desk:snoozed:v2'])), ['acme/app#5'], 'the expired entry is pruned')
   reloaded.dispose()
 
+  {
+    // A timed snooze that ends while the panel is open returns the item to
+    // the sidebar badge on its next render, even with no store data change.
+    const clock = { now: snoozeNow }
+    const soon = memoryStorage({ 'triage-desk:snoozed:v2': JSON.stringify({
+      'acme/app#5': { fingerprint: '2026-01-01T09:00:00.000Z', until: new Date(snoozeNow + 60_000).toISOString(), at: '' },
+    }) })
+    const ticking = settingsHarness({ snapshotPayload: inbox(), withPanel: true, storage: soon, clock })
+    await ticking.flush()
+    const before = Number(inboxView(ticking).badge)
+    clock.now += 3 * 60_000
+    ticking.store.set({ toast: null, copied: 'x' })
+    await ticking.flush()
+    assert.equal(Number(inboxView(ticking).badge), before + 1, 'the expired snooze counts again in the badge')
+    ticking.dispose()
+  }
+
   for (const broken of [
     { getItem() { throw new Error('SecurityError') }, setItem() { throw new Error('QuotaExceededError') } },
     { getItem: () => '{not json', setItem() { throw new Error('QuotaExceededError') }, removeItem() {} },
