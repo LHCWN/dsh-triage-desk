@@ -1551,6 +1551,8 @@ const rowButton = (harness, title, label, nth = 0) => {
   assert.equal(view.badge, '5', 'the badge counts #1, #3, #4 (respond + ci once), #5 and the branch; not the optional #2 or issues')
   assert.equal(view.total, '5', 'the header total matches the badge')
   assert.equal(view.badgeHint, undefined, 'the sidebar badge adds no tooltip next to DSH\'s own panel tooltip')
+  assert.ok(harness.nodes().some((node) => node.type === 'path' && node.props.d === 'M9 7H15V9H9L10 8Z'),
+    'the sidebar shows the Triage Desk mark (the selected row of the prompt queue)')
   assert.equal(view.all, '8', 'All counts the rows the list shows')
   assert.equal(view.chip('review'), '3')
   assert.equal(view.chip('ci'), '2')
