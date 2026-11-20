@@ -1232,6 +1232,28 @@ await check('a large source also checks the repositories of the viewer\'s own pu
   assert.deepEqual(fixed.calls.filter((call) => call.startsWith('repo:')), ['repo:llvm/lld', 'repo:llvm/llvm-project'])
 })
 
+await check('the narrowed warning counts only the repositories whose branches were read', async () => {
+  const { ctx } = fakeCtx({
+    orgs: ['llvm'],
+    issues: (login) => (login === 'llvm' ? busyIssues() : ok(issueData())),
+    contributions: () => contributed('llvm/llvm-project', 'llvm/gone'),
+    repo: (vars) => (vars.name === 'gone'
+      ? handle(1, '', 'gh: Could not resolve to a Repository')
+      : ok({ repository: repoNode({ nameWithOwner: `${vars.owner}/${vars.name}` }), rateLimit })),
+  })
+  const snapshot = await buildSnapshot(ctx, settings())
+  assert.match(warningOf(snapshot, 'branch-scan-narrowed').message, /only 1 of the 2 repositories/)
+  assert.ok(hasWarning(snapshot, 'source-unavailable'))
+})
+
+await check('a remembered lighter level is reported only when this build searched the source', async () => {
+  const { ctx } = fakeCtx({ orgs: ['llvm'], search: () => ok({ ...searchData(), rateLimit: { ...rateLimit, remaining: 50 } }) })
+  const profiles = new Map([['org:llvm', { level: 1, large: true }]])
+  const snapshot = await buildSnapshot(ctx, settings(), { profiles })
+  assert.ok(hasWarning(snapshot, 'scan-budget'), 'the quota floor stopped before llvm')
+  assert.ok(!hasWarning(snapshot, 'source-degraded'))
+})
+
 await check('a GitHub timeout on the organization branch scan narrows it for that source', async () => {
   const { ctx, calls } = fakeCtx({
     orgs: ['llvm'],

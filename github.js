@@ -841,6 +841,8 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
     profile: profileOf(source),
     // A pull request search succeeded (the inbox guard below).
     scanned: false,
+    // This build ran the source's pull searches (quota may stop it earlier).
+    pullsTried: false,
     // More new unassigned issues in this build than LARGE_NEW_ISSUES.
     busy: false,
     teams: settings.teams,
@@ -956,6 +958,7 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
   for (const state of states) {
     if (!canStartQuery()) break
     const { source } = state
+    state.pullsTried = true
     const level = levelOf(state)
     if (level.combined) {
       const pullVariables = { login: source.login, viewerLogin, pullPageSize: level.pageSize, ...windowsOf(level) }
@@ -1032,7 +1035,7 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
   }
 
   for (const state of states) {
-    if (state.profile.level === 0) continue
+    if (state.profile.level === 0 || !state.pullsTried) continue
     const level = levelOf(state)
     warnings.push({
       code: 'source-degraded',
@@ -1086,7 +1089,6 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
     let scanned = 0
     for (const name of names) {
       if (!canStartQuery()) break
-      scanned += 1
       const [owner, repoName] = name.split('/')
       try {
         const data = await runQuery(
@@ -1097,6 +1099,7 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
           'graphql-source',
         )
         addRepo(state, data.repository)
+        scanned += 1
       } catch (error) {
         sourceUnavailable(state, `branch scan (${name})`, error)
       }
