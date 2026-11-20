@@ -1,13 +1,6 @@
 # Changelog
 
-## Unreleased
-
-### Changed
-
-- New icon: a shell prompt that picks the one waiting item that needs you. The
-  sidebar shows it in the DSH text colour.
-
-## [0.1.3-rc.0](https://github.com/LHCWN/dsh-triage-desk/releases/tag/v0.1.3-rc.0) — 2026-11-20
+## [0.1.3](https://github.com/LHCWN/dsh-triage-desk/releases/tag/v0.1.3) — 2026-11-20
 
 ### Added
 
@@ -16,6 +9,8 @@
 
 ### Changed
 
+- New icon: a shell prompt that picks the one waiting item that needs you. The
+  sidebar shows it in the DSH text colour.
 - A new profile launches into a new DSH chat by default, and the launch menu
   lists only the coding agents installed on the machine. Choose another default
   in Settings; an agent that cannot start opens a DSH chat instead.
