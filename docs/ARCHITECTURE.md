@@ -112,8 +112,8 @@ import the launcher layer only through `launcher.js` and the data layer through
     wording `AGENT_COMMAND_RULE`, `shellQuote`, and the command variants
     (`bareAgentCommand`, which drops `{prompt}` and a flag carrying it but
     keeps known value-less switches such as `--yolo`, `buildDraftCommand`, and
-    `withAgentExecutable`, the
-    one pin of the detected executable; Windows uses `windowsPin`, see
+    `withAgentExecutable`, the one pin of the detected executable; Windows uses
+    `windowsPin`, see
     [REFERENCE.md](REFERENCE.md#agents)), and `draftCommandForStatus`, the one
     decision whether a launch uses the native draft, taken from a detection
     status for both the launch and the launch menu (on Windows only for a

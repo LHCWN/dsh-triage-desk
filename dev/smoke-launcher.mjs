@@ -225,7 +225,10 @@ check('agents launch in full access by default, with the flags Orca uses', () =>
     "claude --dangerously-skip-permissions --prefill 'hi'",
     'the native draft keeps the permission flag',
   )
-  assert.equal(bareAgentCommand(commands.codex), 'codex --dangerously-bypass-approvals-and-sandbox')
+  for (const agent of DISCOVERABLE_AGENTS) {
+    if (agent.id === 'opencode') continue // `--prompt` carries the prompt and goes with it
+    assert.equal(bareAgentCommand(agent.command), agent.command.replace(/ \{prompt\}$/, ''), agent.id + ' keeps its flags without the prompt')
+  }
 })
 
 check('saved agents still on an old default command are upgraded; edited commands are kept', () => {

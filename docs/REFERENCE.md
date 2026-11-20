@@ -367,19 +367,16 @@ launch command, while the internal agent id stays stable and is not shown):
 | `agy` | `agy --dangerously-skip-permissions {prompt}` | Prompt delivery setting |
 | `pi` | `pi {prompt}` | Prompt delivery setting |
 
-**Full access.** Every agent that has a flag for it starts without permission
-prompts, matching Orca's *Full access* mode. The flags appear in the table above,
-plus Aider `--yes-always`, Amp `--dangerously-allow-all`, Droid `--auto high`,
-and Crush `--yolo` for the discovered CLIs. opencode and pi have no such flag;
-Goose's is an environment variable (`GOOSE_MODE=auto`), which a Windows launch
-cannot set, so it is left out. The agent can then edit files, run commands, and
-post to GitHub without asking: a step a scenario prompt asks it to confirm first,
-such as pushing a fix, is held back only by the agent following that prompt. To
-get the permission prompts back for one agent, delete the flag from its command
-in Settings. A saved agent whose command is still the
-pre-0.1.4 default (for example `codex {prompt}`) is upgraded on load; an edited
-command is kept. In paste and clipboard modes the flag stays when `{prompt}` is
-removed.
+**Full access.** Like Orca's *Full access* mode, every agent with such a flag
+starts without permission prompts: the flags in the table above, plus Aider
+`--yes-always`, Amp `--dangerously-allow-all`, Droid `--auto high`, and Crush
+`--yolo`. opencode and pi have none; Goose's is an environment variable
+(`GOOSE_MODE=auto`) that a Windows launch cannot set. The agent then edits files,
+runs commands, and posts to GitHub without asking, so a step a scenario asks it
+to confirm first, such as pushing, rests on the agent following the prompt.
+Delete the flag from an agent's command in Settings to get the prompts back. A
+saved command still equal to its pre-0.1.4 default (`codex {prompt}`) is
+upgraded on load; an edited one is kept.
 
 **Find agents** in Settings scans the login environment for known CLIs (Claude
 Code, Codex, opencode, Gemini CLI, Cursor Agent, Antigravity, pi, Aider, Amp,

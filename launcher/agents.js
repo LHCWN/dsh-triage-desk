@@ -58,6 +58,8 @@ export const LEGACY_AGENT_COMMANDS = {
   crush: 'crush {prompt}',
 }
 
+const DISCOVERABLE_COMMANDS = new Map(DISCOVERABLE_AGENTS.map((agent) => [agent.id, agent.command]))
+
 function normalizeAgentId(value, fallbackIndex) {
   const text = String(value || '')
     .trim()
@@ -132,7 +134,7 @@ export function normalizeAgentConfig(value) {
     const rawId = normalizeAgentId(entry.id, index)
     let command = typeof entry.command === 'string' ? entry.command.trim().slice(0, MAX_AGENT_COMMAND) : ''
     if (Object.hasOwn(LEGACY_AGENT_COMMANDS, rawId) && command === LEGACY_AGENT_COMMANDS[rawId]) {
-      command = DISCOVERABLE_AGENTS.find((candidate) => candidate.id === rawId).command
+      command = DISCOVERABLE_COMMANDS.get(rawId)
     }
     const labelFor = (id) =>
       (typeof entry.label === 'string' && entry.label.trim() !== '' ? entry.label.trim() : id).slice(0, MAX_AGENT_LABEL)

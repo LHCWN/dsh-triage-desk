@@ -207,8 +207,9 @@ export function assertDraftFlag(draftFlag) {
 
 /**
  * Switches that never take a value: the full-access flags of the built-in
- * agents. A `{prompt}` right after one of them is a positional prompt, so the
- * switch stays when the prompt is removed.
+ * agents in `agents.js` (a smoke check keeps the two in step). A `{prompt}`
+ * right after one of them is a positional prompt, so the switch stays when the
+ * prompt is removed.
  */
 const VALUELESS_SWITCHES = new Set([
   '--dangerously-skip-permissions',
