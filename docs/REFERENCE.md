@@ -373,8 +373,10 @@ plus Aider `--yes-always`, Amp `--dangerously-allow-all`, Droid `--auto high`,
 and Crush `--yolo` for the discovered CLIs. opencode and pi have no such flag;
 Goose's is an environment variable (`GOOSE_MODE=auto`), which a Windows launch
 cannot set, so it is left out. The agent can then edit files, run commands, and
-post to GitHub without asking. To get the prompts back for one agent, delete the
-flag from its command in Settings. A saved agent whose command is still the
+post to GitHub without asking: a step a scenario prompt asks it to confirm first,
+such as pushing a fix, is held back only by the agent following that prompt. To
+get the permission prompts back for one agent, delete the flag from its command
+in Settings. A saved agent whose command is still the
 pre-0.1.4 default (for example `codex {prompt}`) is upgraded on load; an edited
 command is kept. In paste and clipboard modes the flag stays when `{prompt}` is
 removed.
