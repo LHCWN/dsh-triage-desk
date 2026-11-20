@@ -20,7 +20,8 @@ export function createSnapshotStore({ ctx, settings, resolveGh, log: safeLog, pr
   let cache = null
   let adaptiveTtlMs = settings.ttlMs
   // What builds learned about each source (its lighter pull level, whether it
-  // is large). Per store, so a settings save starts every source over.
+  // is large). Per store, so a change of the GitHub settings (a new store)
+  // starts every source over.
   const profiles = new Map()
 
   const build = async () => {

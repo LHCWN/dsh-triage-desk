@@ -28,7 +28,7 @@ import the launcher layer only through `launcher.js` and the data layer through
     `hasTransientWarnings`;
   - `snapshot.js` — `createSnapshotStore`: build, adaptive TTL on low quota,
     the per-source `profiles` Map passed to every build (pull level and
-    `large`; a new store on a save starts empty), and the stale fallback (a
+    `large`; the new store of a GitHub settings change starts empty), and the stale fallback (a
     failed build serves the previous snapshot as `stale` with
     `meta.lastError`; a store a save replaced hands over its snapshot as that
     fallback until the new store caches a build);
@@ -82,16 +82,20 @@ import the launcher layer only through `launcher.js` and the data layer through
   name contains the viewer login; `branch-scan-narrowed`). Phases run
   round-robin across sources: every source's pull searches and `IssueSearch`,
   then PR pages by page number, then branch pages.
-  `PULL_LEVELS` is the ladder for sources GitHub times out on: a GraphQL
+  `PULL_LEVELS` is the ladder for sources GitHub cannot serve: a GraphQL
   request past GitHub's ~10 s server limit answers `HTTP 502`/`504` or an
-  empty body, classified as the `gateway-timeout` GhError. A pull search with
-  that error is not repeated as is; the source steps one level down (level 1:
-  each search on its own, 10 × 5 pages; level 2: 5 × 5 pages with smaller
-  comment windows, and only there one retry as is), records `source-degraded`,
-  and keeps the level in its profile. A source is large when it stepped down,
-  when its branch scan timed out, or when its new-issue search has more than
-  one page; a large source shows no new unassigned issues
-  (`new-issues-skipped`) and gets the narrow branch scan.
+  empty body, classified as the `gateway-timeout` GhError and retried once by
+  `ghGraphql` like `failed`. A pull search that still fails that way, or with
+  `too-large`, steps the source one level down (level 1: each search on its
+  own, 10 × 5 pages; level 2: 5 × 5 pages with smaller comment windows; the
+  first split page of a source also reads team membership), records
+  `source-degraded`, and keeps the level in its profile. A source is large
+  when it stepped down or its branch scan was overloaded (kept in the profile),
+  or when its new-issue search counts more than `LARGE_NEW_ISSUES` (500, that
+  build only); a large source shows no new unassigned issues
+  (`new-issues-skipped`, only when some are in repositories the viewer
+  maintains) and gets the narrow branch scan (the repositories of the viewer's
+  PRs found in the source, then `ContributedRepos`).
   `canStartQuery` is the only quota gate: it stops at a reported rate limit or
   `MIN_RATE_REMAINING` (100) and records `scan-budget`; there is no per-refresh
   point budget. A failed query loses only its own results: a source whose pull

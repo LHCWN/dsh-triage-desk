@@ -618,24 +618,28 @@ This section was checked against DSH 0.2.2-rc.5; the plugin supports
 GitHub ends a GraphQL request after about 10 seconds of server time and answers
 HTTP 502 or 504 (or an empty response). In a very large organization, such as
 `llvm` with more than 12,000 open pull requests and bot comments that carry
-whole diffs, the full pull request search can take longer than that. Triage
-Desk then reads that source lighter instead of failing:
+whole diffs, the full pull request search can take longer than that. A
+timed-out request is retried once; if it times out again (or its response is
+larger than 12 MB), Triage Desk reads that source lighter instead of failing:
 
 - **Smaller searches**: each of the three pull request searches runs on its
   own, 10 pull requests per request and at most 50 per search. If GitHub still
   times out, 5 per request and at most 25, with shorter comment windows (the
   last 15 comments, 5 review threads with 3 comments each). The snapshot
   carries a `source-degraded` warning, and the source keeps the lighter search
-  until the plugin restarts or the settings are saved. Searches are sorted by
-  last update, so the most recently updated pull requests are always read.
-- **Large source**: a source that needed a lighter search, whose branch scan
-  timed out, or that has more than 50 new unassigned issues in the last 30 days
-  counts as large. It does not list new unassigned issues
-  (`new-issues-skipped`), and its branch CI covers only the repositories you
-  committed to or opened pull requests in during the last year (at most 10),
-  and in them only the branches with your login in their name, such as llvm's
+  until the plugin restarts or the GitHub settings change. Searches are sorted
+  by last update, so the most recently updated pull requests are always read.
+- **Large source**: a source that needed a lighter search or whose branch scan
+  timed out counts as large until then too; a source with more than 500 new
+  unassigned issues in the last 30 days counts as large for that refresh. A
+  large source does not list new unassigned issues (`new-issues-skipped`, shown
+  when some are in repositories you maintain), and its branch CI covers only
+  the repositories of your open pull requests there and the ones you committed
+  to or opened pull requests in during the last year (at most 10), and in them
+  only the branches with your login in their name, such as llvm's
   `users/<login>/...` branches (`branch-scan-narrowed`). Red default branches
-  are still checked in those repositories.
+  are still checked in those repositories; a branch without your login in its
+  name, in a repository you have no pull request or contribution in, is not.
 
 ## Limitations
 
