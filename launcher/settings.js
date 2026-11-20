@@ -64,12 +64,17 @@ export function normalizeLauncherConfig(config) {
   // the panel shows the ones detection finds (`agentsAuto`). Saving agents in
   // Settings fixes the list.
   const agentsAuto = !Array.isArray(input.agents)
-  const { agents, invalidAgents } = normalizeAgentConfig(agentsAuto ? DISCOVERABLE_AGENTS : input.agents)
+  const { agents, invalidAgents, renamed } = normalizeAgentConfig(agentsAuto ? DISCOVERABLE_AGENTS : input.agents)
   const ids = new Set(agents.map((agent) => agent.id))
+  // A saved agent named "dsh" was renamed: its references follow it, since
+  // before the DSH target existed "dsh" could only mean that agent.
+  const legacy = renamed[DSH_TARGET]
+  const follow = (id) => (legacy !== undefined && id === DSH_TARGET ? legacy : id)
   // A new profile, an unknown id or "dsh": launches open a DSH chat.
-  const defaultAgent =
-    typeof input.defaultAgent === 'string' && ids.has(input.defaultAgent) ? input.defaultAgent : DSH_TARGET
-  const scenarios = normalizeScenarios(input.scenarios)
+  const savedDefault = follow(input.defaultAgent)
+  const defaultAgent = typeof savedDefault === 'string' && ids.has(savedDefault) ? savedDefault : DSH_TARGET
+  const scenarios = normalizeScenarios(input.scenarios).map((scenario) =>
+    scenario.agent === DSH_TARGET && legacy !== undefined ? { ...scenario, agent: legacy } : scenario)
   const requestedDefault = typeof input.defaultScenario === 'string' ? input.defaultScenario.trim() : ''
   const defaultScenario = scenarios.some((entry) => entry.id === requestedDefault && entry.scope === 'item')
     ? requestedDefault

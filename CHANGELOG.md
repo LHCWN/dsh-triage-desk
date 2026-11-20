@@ -8,6 +8,8 @@
   lists only the coding agents installed on the machine. Choose another default
   in Settings; an agent that cannot start opens a DSH chat instead.
 - Settings saves the agent list only when you change it.
+- `dsh` now names the DSH launch target. A custom agent you named `dsh` gets
+  a new id, and your default and scenarios keep pointing at it.
 
 ### Fixed
 

@@ -1380,13 +1380,20 @@ await recordAsync('a default agent that is not installed falls back to the first
 // A fresh profile: nothing saved. The default opens DSH, and the agent list is
 // what detection finds on the machine (here Claude Code and Codex).
 captured.installed = ['claude', 'codex', 'python3', 'gh']
-apply(ctx, { cloneDirs: [path.join(fixture, 'Playground')], terminal: 'terminal' })
+apply(ctx, {
+  cloneDirs: [path.join(fixture, 'Playground')],
+  terminal: 'terminal',
+  // Referenced by a scenario pin but not installed: it stays in the list.
+  scenarios: [...defaultScenarios(), { id: 'gem', label: 'Gemini run', scope: 'item', sections: ['review'], prompt: '{url}', agent: 'gemini', enabled: true }],
+})
 
 await recordAsync('a fresh profile defaults to DSH and lists only installed agents', async () => {
   const config = (await json(await callHandler('/triage-desk/config', 'GET'))).config
   assert.equal(config.defaultAgent, 'dsh')
   assert.equal(config.defaultTarget, 'dsh', 'the panel opens a DSH chat')
-  assert.deepEqual(config.agents.map((agent) => agent.id), ['claude', 'codex'], 'agents that are not installed are not offered')
+  assert.deepEqual(config.agents.map((agent) => agent.id), ['claude', 'codex', 'gemini'],
+    'installed agents, plus a missing one a scenario still points to (so Settings can save)')
+  assert.equal(config.detectedAgents.gemini.available, false)
   assert.equal(config.effectiveDefaultAgent, 'claude', 'a launch the host runs uses the first installed agent')
   const res = await callHandler('/triage-desk/launch', 'POST', { url: PR_URL, scenario: 'review-pr' })
   assert.equal(res.statusCode, 200, res.body)

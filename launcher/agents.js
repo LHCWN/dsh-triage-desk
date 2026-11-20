@@ -99,8 +99,10 @@ export function normalizeAgentConfig(value) {
   const agents = []
   const invalidAgents = []
   // DSH_TARGET is reserved for the DSH launch target: an agent named "dsh"
-  // is renamed like a duplicate.
+  // (valid before 0.1.3) is renamed like a duplicate, and `renamed` maps it
+  // so its saved references can follow.
   const seen = new Set([DSH_TARGET])
+  const renamed = {}
   for (let index = 0; index < source.length && agents.length < MAX_AGENTS; index += 1) {
     const entry = source[index]
     if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue
@@ -116,6 +118,7 @@ export function normalizeAgentConfig(value) {
     }
     let id = rawId
     while (seen.has(id)) id = id + '-' + String(index + 1)
+    if (rawId === DSH_TARGET) renamed[DSH_TARGET] = id
     seen.add(id)
     const preset = AGENT_PRESETS.find((candidate) => candidate.id === id)
     const draftFlag =
@@ -127,5 +130,6 @@ export function normalizeAgentConfig(value) {
   return {
     agents: agents.length > 0 ? agents : AGENT_PRESETS.map((preset) => ({ ...preset })),
     invalidAgents,
+    renamed,
   }
 }

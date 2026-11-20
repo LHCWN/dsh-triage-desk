@@ -2749,7 +2749,8 @@ window.__ModuleLoader__.load({
       const selected = dsh && picked === DSH_TARGET
         ? DSH_TARGET
         : ordered.some((agent) => agent.id === picked) ? picked : fallback
-      return { agents, detected, dsh, ordered, selected }
+      // `explicit`: the user picked `selected`; else it is the implicit default.
+      return { agents, detected, dsh, ordered, selected, explicit: selected === picked }
     }
 
     /** One line under the agent picker: where the agent opens and how it gets the prompt. */
@@ -2788,7 +2789,13 @@ window.__ModuleLoader__.load({
     /** One scenario of a launch menu; a pinned agent wins over the picked one, except for DSH. */
     function launchScenarioItem(t, scenario, targets, { label, disabled, isDefault, launch, launchDsh }) {
       const pinned = scenarioPinnedAgent(scenario, targets.agents)
-      const toDsh = targets.selected === DSH_TARGET
+      // A pinned agent wins over the implicit default (DSH included); only a
+      // DSH target the user picked overrides it.
+      const toDsh = targets.selected === DSH_TARGET && (pinned === null || targets.explicit)
+      // An untouched picker sends no agent: the host resolves "default" with
+      // fresh detection, so a default that vanished since the menu opened
+      // still falls back (and Retry resolves it again).
+      const agent = pinned !== null ? pinned.id : targets.explicit ? targets.selected : null
       return h(
         'button',
         {
@@ -2797,7 +2804,7 @@ window.__ModuleLoader__.load({
           role: 'menuitem',
           className: 'adx-launch-item',
           disabled,
-          onClick: () => (toDsh ? launchDsh(scenario.id) : launch(scenario.id, pinned !== null ? pinned.id : targets.selected)),
+          onClick: () => (toDsh ? launchDsh(scenario.id) : launch(scenario.id, agent)),
         },
         h('span', { className: 'adx-launch-item-main' }, h('span', { className: 'adx-launch-item-label' }, label)),
         pinned !== null && !toDsh ? h('span', { className: 'adx-launch-badge' }, pinned.label) : null,
@@ -4189,7 +4196,9 @@ window.__ModuleLoader__.load({
           }
           agentIds.add(id)
         }
-        if (agentIds.size === 0 || !agentIds.has(String(form.defaultAgent || '').trim().toLowerCase())) {
+        // DSH is a launch target, not an agent: it needs no entry in the list.
+        const defaultId = String(form.defaultAgent || '').trim().toLowerCase()
+        if (defaultId !== DSH_TARGET && !agentIds.has(defaultId)) {
           setNotice({ tone: 'error', text: t('settings.invalidAgents') })
           return
         }
@@ -4791,8 +4800,10 @@ window.__ModuleLoader__.load({
               value: form.defaultAgent,
               onChange: (event) => update({ defaultAgent: event.target.value }),
             },
-            // DSH is offered where the panel can open it, and kept while saved.
-            (dsh || form.defaultAgent === DSH_TARGET ? [h('option', { key: DSH_TARGET, value: DSH_TARGET }, t('launch.dshTarget'))] : [])
+            // DSH is offered where the panel can open it and the host saves it
+            // (a host that sends defaultTarget; an older one rejects "dsh"),
+            // and kept while saved.
+            ((dsh && configValue(config, 'defaultTarget') !== undefined) || form.defaultAgent === DSH_TARGET ? [h('option', { key: DSH_TARGET, value: DSH_TARGET }, t('launch.dshTarget'))] : [])
               .concat(agentOptions(t, form.agents, detected)),
           ),
         )

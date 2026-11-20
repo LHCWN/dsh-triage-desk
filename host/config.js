@@ -76,12 +76,16 @@ function detectedAgentsView(detected, agents, platform) {
  */
 function shownAgents(launcher, detected) {
   if (!launcher.agentsAuto) return launcher.agents
-  const found = installedAgents(launcher.agents, detected)
-  if (found.length > 0) return found
-  const answered = launcher.agents.some((agent) => detected[agent.id] && detected[agent.id].available === false)
-  if (answered) return []
+  // An agent the saved default or a scenario points to stays listed (marked
+  // missing by detection), so Settings can still show and save those choices.
+  const referenced = new Set([launcher.defaultAgent, ...launcher.scenarios.map((scenario) => scenario.agent)])
+  const installed = new Set(installedAgents(launcher.agents, detected).map((agent) => agent.id))
+  const found = launcher.agents.filter((agent) => installed.has(agent.id) || referenced.has(agent.id))
+  // Before detection has answered: the presets (and the references).
+  const answered = launcher.agents.some((agent) => detected[agent.id] && typeof detected[agent.id].available === 'boolean')
+  if (answered) return found
   const presets = new Set(AGENT_PRESETS.map((agent) => agent.id))
-  return launcher.agents.filter((agent) => presets.has(agent.id))
+  return launcher.agents.filter((agent) => presets.has(agent.id) || referenced.has(agent.id))
 }
 
 /**

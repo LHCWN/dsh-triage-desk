@@ -167,6 +167,19 @@ check('the default agent falls back to the first installed one', () => {
   assert.deepEqual(installedAgents(agents, { claude: missing, codex: found, opencode: found }).map((agent) => agent.id), ['codex', 'opencode'])
 })
 
+check('a saved agent named dsh is migrated with its default and scenario pins', () => {
+  const config = normalizeLauncherConfig({
+    agents: [{ id: 'dsh', label: 'My dsh', command: 'dsh-cli {prompt}' }, { id: 'codex', label: 'Codex', command: 'codex {prompt}' }],
+    defaultAgent: 'dsh',
+    scenarios: [{ id: 'mine', label: 'Mine', scope: 'item', sections: ['review'], prompt: '{url}', agent: 'dsh', enabled: true }],
+  })
+  const renamed = config.agents[0].id
+  assert.notEqual(renamed, DSH_TARGET, 'the agent leaves the reserved id')
+  assert.equal(config.agents[0].label, 'My dsh')
+  assert.equal(config.defaultAgent, renamed, 'its saved default follows it, not the DSH target')
+  assert.equal(config.scenarios.find((scenario) => scenario.id === 'mine').agent, renamed, 'scenario pins follow it')
+})
+
 check('presets cover the documented agents', () => {
   const ids = AGENT_PRESETS.map((agent) => agent.id)
   for (const id of ['claude', 'codex', 'opencode', 'gemini', 'cursor-agent', 'agy', 'pi']) assert.ok(ids.includes(id), id)
