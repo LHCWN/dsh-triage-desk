@@ -2125,6 +2125,31 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /**
+     * The Triage Desk mark (icon.svg, "prompt queue": a shell caret picks the
+     * one waiting row that needs you) in one colour, filled with currentColor
+     * so it takes the host's text colour. Same 16-unit grid as icon.svg.
+     */
+    function triageMark(size) {
+      const edge = typeof size === 'number' ? size : 16
+      return h(
+        'svg',
+        {
+          width: edge,
+          height: edge,
+          viewBox: '0 0 16 16',
+          fill: 'currentColor',
+          fillRule: 'evenodd',
+          'aria-hidden': 'true',
+          focusable: 'false',
+          style: { display: 'block' },
+        },
+        h('path', { d: 'M1 3H3.5L8.5 8L3.5 13H1V11.5L4.5 8L1 4.5Z' }),
+        h('path', { d: 'M10 3H14V5H10ZM10 11H14V13H10Z' }),
+        h('path', { d: 'M9 7H15V9H9L10 8Z' }),
+      )
+    }
+
     /* ------------------------------------------------------------------ store */
 
     function createStore() {
@@ -6064,7 +6089,7 @@ window.__ModuleLoader__.load({
       return h(
         'span',
         { className: 'adx-icon-wrap' },
-        icon('inbox', edge, 1.3),
+        triageMark(edge),
         total > 0
           ? h('span', { className: 'adx-badge', 'aria-hidden': 'true' }, total > 99 ? '99+' : String(total))
           : null,

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- New icon: a shell prompt that picks the one waiting item that needs you. The
+  sidebar shows it in the DSH text colour.
+
 ## [0.1.3-rc.0](https://github.com/LHCWN/dsh-triage-desk/releases/tag/v0.1.3-rc.0) — 2026-11-20
 
 ### Added
