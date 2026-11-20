@@ -14,7 +14,7 @@ window.__ModuleLoader__.load({
   factory(require) {
     const React = require('react')
     const h = React.createElement
-    const { useState, useEffect, useLayoutEffect, useRef, useMemo } = React
+    const { useState, useEffect, useLayoutEffect, useRef, useMemo, useId } = React
 
     const PACKAGE_ID = 'dsh-triage-desk'
     const NS = 'triage-desk'
@@ -118,6 +118,15 @@ window.__ModuleLoader__.load({
       'page.expand': 'Expand section',
       'page.stale': 'Showing the snapshot from {time}: the last refresh failed.',
       'page.partial': 'Some data couldn’t be loaded',
+      'count.title': '{n} need your action',
+      'count.titleOne': '1 needs your action',
+      'count.once': 'A pull request in several sections counts once.',
+      'count.excluded': 'Not counted: {list}',
+      'count.issues': '{n} new issues',
+      'count.issuesOne': '1 new issue',
+      'count.optional': '{n} optional reviews',
+      'count.optionalOne': '1 optional review',
+      'count.snoozed': '{n} snoozed',
       'page.partialMore': '+{n} more',
       'limits.title': 'Limited view of {sources}',
       'limits.titleGeneral': 'Some lists are shortened',
@@ -425,6 +434,15 @@ window.__ModuleLoader__.load({
       'page.expand': '展开分类',
       'page.stale': '显示的是 {time} 的快照：上次刷新失败。',
       'page.partial': '部分数据未能加载',
+      'count.title': '{n} 项需要你处理',
+      'count.titleOne': '1 项需要你处理',
+      'count.once': '同一拉取请求出现在多个分类中只计一次。',
+      'count.excluded': '未计入：{list}',
+      'count.issues': '{n} 个新议题',
+      'count.issuesOne': '1 个新议题',
+      'count.optional': '{n} 个可选审核',
+      'count.optionalOne': '1 个可选审核',
+      'count.snoozed': '{n} 个已延后',
       'page.partialMore': '另有 {n} 条',
       'limits.title': '{sources} 仅显示部分内容',
       'limits.titleGeneral': '部分列表已缩短',
@@ -726,6 +744,33 @@ window.__ModuleLoader__.load({
         background: var(--adx-module); color: var(--adx-ink-2);
         font-size: 12px; line-height: 18px; font-weight: 500; font-variant-numeric: tabular-nums;
       }
+      .adx-total-wrap { position: relative; display: inline-flex; }
+      .adx-total { cursor: default; }
+      .adx-total:focus-visible { outline: var(--adx-ring-w) solid var(--adx-ring); outline-offset: 2px; }
+      .adx-tooltip {
+        position: absolute; z-index: 40; top: calc(100% + 8px); left: -4px; transform: translateY(-2px);
+        display: flex; flex-direction: column; gap: 2px;
+        width: max-content; max-width: min(320px, 80vw); padding: 8px 10px; border-radius: 8px;
+        background: var(--dsw-alias-bg-elevated, var(--adx-module)); color: var(--adx-ink-2);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2), inset 0 0 0 0.5px var(--adx-hairline);
+        font-size: 12px; line-height: 18px; font-weight: 400; text-align: left; white-space: normal;
+        opacity: 0; visibility: hidden; pointer-events: none;
+        transition: opacity 120ms ease, transform 120ms ease, visibility 0s linear 120ms;
+      }
+      /* Bridges the gap above the hint, so the pointer can move onto it
+         without leaving the hover (WCAG 1.4.13, hoverable). */
+      .adx-tooltip::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: 8px; }
+      .adx-tooltip strong { color: var(--adx-ink); font-weight: 500; }
+      .adx-tooltip-quiet { color: var(--adx-ink-3); }
+      /* Hover waits a moment so a passing pointer does not flash it; focus
+         shows it at once; Escape (data-dismissed) hides it until leave/blur. */
+      .adx-total-wrap:hover .adx-tooltip { transition-delay: 300ms, 300ms, 0s; }
+      /* Shown at once on focus: the base 120 ms visibility delay is for hiding. */
+      .adx-total:focus-visible + .adx-tooltip { transition-delay: 0s; }
+      .adx-total-wrap:hover .adx-tooltip,
+      .adx-total:focus-visible + .adx-tooltip { opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto; }
+      .adx-total-wrap[data-dismissed='true'] .adx-tooltip { opacity: 0; visibility: hidden; pointer-events: none; }
+      @media (prefers-reduced-motion: reduce) { .adx-tooltip { transition: none; } }
       .adx-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
                  margin: 4px 0 0; color: var(--adx-ink-2); font-size: 13px; line-height: 20px;
                  font-variant-numeric: tabular-nums; }
@@ -1620,24 +1665,133 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * The attention badge: actionable items, each counted once (a PR in
-     * `respond` and `ci` is one item), without snoozed items and without review
-     * requests the host marks `optional` (an older host omits the field: counted).
-     * `matches` narrows the items further, e.g. to the selected source; `now`
-     * (default: the current time) decides whether timed snoozes still hold.
+     * The attention badge (`total`): actionable items, each counted once (a
+     * PR in `respond` and `ci` is one item), without snoozed items and without
+     * review requests the host marks `optional` (an older host omits the
+     * field: counted). The rest says what the count leaves out, for its hint:
+     * `repeats` rows of a pull request already counted in another section,
+     * `optional` review requests, `snoozed` items and new `issues`. One pass,
+     * so the hint cannot disagree with the badge. `matches` narrows the items,
+     * e.g. to the selected source; `now` (default: the current time) decides
+     * whether timed snoozes still hold.
      */
-    function attentionCount(sections, snoozed, matches, now) {
-      const ids = new Set()
+    function attentionSummary(sections, snoozed, matches, now) {
+      const counted = new Set()
+      const optional = new Set()
+      const quiet = new Set()
+      const issues = new Set()
+      let rows = 0
       for (const section of Array.isArray(sections) ? sections : []) {
-        if (!section || ACTIONABLE_SECTIONS.indexOf(section.id) === -1 || !Array.isArray(section.items)) continue
+        if (!section || !Array.isArray(section.items)) continue
+        const actionable = ACTIONABLE_SECTIONS.indexOf(section.id) !== -1
+        if (!actionable && section.id !== 'issues') continue
         for (const item of section.items) {
           if (item === null || item === undefined) continue
-          if (section.id === 'review' && item.optional === true) continue
-          if (isSnoozed(snoozed, item, now) || (typeof matches === 'function' && !matches(item))) continue
-          ids.add(item.id)
+          if (typeof matches === 'function' && !matches(item)) continue
+          if (isSnoozed(snoozed, item, now)) {
+            quiet.add(item.id)
+          } else if (!actionable) {
+            issues.add(item.id)
+          } else if (section.id === 'review' && item.optional === true) {
+            optional.add(item.id)
+          } else {
+            rows += 1
+            counted.add(item.id)
+          }
         }
       }
-      return ids.size
+      // One category per pull request: an id counted in another section is
+      // not also reported as left out.
+      const leftOut = (set) => [...set].filter((id) => !counted.has(id)).length
+      return { total: counted.size, repeats: rows - counted.size, optional: leftOut(optional), snoozed: leftOut(quiet), issues: leftOut(issues) }
+    }
+
+    /* A per-instance id: React's useId (18+), else one fixed for the instance. */
+    let instanceIds = 0
+    const useInstanceId = typeof useId === 'function'
+      ? () => useId().replace(/[^a-zA-Z0-9_-]/g, '')
+      : () => {
+          const ref = useRef(null)
+          if (ref.current === null) ref.current = String(++instanceIds)
+          return ref.current
+        }
+
+    /** `key` for a count, or `key + 'One'` when it is 1 (English plurals). */
+    const plural = (t, key, n) => t(n === 1 ? key + 'One' : key, { n })
+
+    /**
+     * The attention count in the page header with its hint (WAI-ARIA tooltip
+     * pattern): focusable, described by the tooltip, shown on hover and focus,
+     * dismissed with Escape. The hint says what the number counts and what it
+     * leaves out, so it can be read against the section tabs.
+     */
+    function AttentionCount({ t, summary }) {
+      const [dismissed, setDismissed] = useState(false)
+      // While the count has focus, a dismissal holds until blur: the pointer
+      // leaving must not bring the focus-shown hint back.
+      const focusedRef = useRef(false)
+      const [hovered, setHovered] = useState(false)
+      const id = 'adx-count-hint' + useInstanceId()
+      // A hint shown by hover closes with Escape too, wherever focus is. The
+      // listener runs in the capture phase and stops the event, so this Escape
+      // does not also leave Select mode (a document listener) or reach the host.
+      useEffect(() => {
+        if (!hovered || dismissed) return undefined
+        const onKeyDown = (event) => {
+          if (event.key !== 'Escape') return
+          event.stopPropagation()
+          setDismissed(true)
+        }
+        document.addEventListener('keydown', onKeyDown, true)
+        return () => document.removeEventListener('keydown', onKeyDown, true)
+      }, [hovered, dismissed])
+      const label = summary.total > 99 ? '99+' : String(summary.total)
+      const left = []
+      if (summary.issues > 0) left.push(plural(t, 'count.issues', summary.issues))
+      if (summary.optional > 0) left.push(plural(t, 'count.optional', summary.optional))
+      if (summary.snoozed > 0) left.push(t('count.snoozed', { n: summary.snoozed }))
+      return h(
+        'span',
+        {
+          className: 'adx-total-wrap',
+          'data-dismissed': dismissed ? 'true' : 'false',
+          onMouseEnter: () => setHovered(true),
+          onMouseLeave: () => {
+            setHovered(false)
+            if (!focusedRef.current) setDismissed(false)
+          },
+        },
+        h(
+          'span',
+          {
+            className: 'adx-total',
+            tabIndex: 0,
+            'aria-describedby': id,
+            onKeyDown: (event) => {
+              if (event.key !== 'Escape' || dismissed) return
+              // This Escape only closes the hint; it must not also leave
+              // Select mode or reach the host's Escape handlers.
+              event.stopPropagation()
+              setDismissed(true)
+            },
+            onFocus: () => {
+              focusedRef.current = true
+            },
+            onBlur: () => {
+              focusedRef.current = false
+              setDismissed(false)
+            },
+          },
+          label,
+        ),
+        h(
+          'span',
+          { role: 'tooltip', id, className: 'adx-tooltip' },
+          h('strong', null, plural(t, 'count.title', summary.total)),
+          summary.repeats > 0 ? h('span', null, t('count.once')) : null,
+          left.length > 0 ? h('span', { className: 'adx-tooltip-quiet' }, t('count.excluded', { list: left.join(' · ') })) : null,
+        ),
+      )
     }
 
     function parseRepoPathsText(text) {
@@ -5324,7 +5478,11 @@ window.__ModuleLoader__.load({
         return map
       }, [visible, snoozedView])
       // The header total is the attention badge for the selected source.
-      const total = attentionCount(sections, snoozed, (item) => itemMatchesSource(item, activeSource), now)
+      const attention = useMemo(
+        () => attentionSummary(sections, snoozed, (item) => itemMatchesSource(item, activeSource), now),
+        [sections, snoozed, activeSource, now],
+      )
+      const total = attention.total
       const previousFilter = state.filterBeforeSnoozed && state.filterBeforeSnoozed !== 'snoozed' ? state.filterBeforeSnoozed : 'all'
       const toggleSnoozedView = () =>
         store.set(snoozedView ? { filter: previousFilter } : { filter: 'snoozed', filterBeforeSnoozed: activeFilter })
@@ -5464,7 +5622,7 @@ window.__ModuleLoader__.load({
                   'div',
                   { className: 'adx-title-row' },
                   h('h1', null, view === 'settings' ? t('settings.title') : t('page.title')),
-                  view === 'list' && total > 0 ? h('span', { className: 'adx-total' }, total > 99 ? '99+' : String(total)) : null,
+                  view === 'list' && total > 0 ? h(AttentionCount, { t, summary: attention }) : null,
                 ),
                 view === 'settings'
                   ? h('p', { className: 'adx-sub' }, t('settings.subtitle'))
@@ -5823,8 +5981,17 @@ window.__ModuleLoader__.load({
     function PanelIcon(props) {
       const store = props.store || runtime.store
       const state = useStore(store)
-      const total = attentionCount(state.data && state.data.sections, state.snoozed)
+      const sections = state.data && state.data.sections
+      // Timed snoozes end with the clock: the minute is part of the memo key.
+      const minute = Math.floor(Date.now() / 60_000)
+      const total = useMemo(() => attentionSummary(sections, state.snoozed).total, [sections, state.snoozed, minute])
       const edge = typeof props.size === 'number' ? props.size : 18
+      // No hint here: DSH renders this slot inside its own panel button
+      // (verified in the DSH sidebar: PanelRow), which carries the slot label
+      // as aria-label, shows its own Tooltip when the sidebar is collapsed, and
+      // wraps this icon in an aria-hidden span. A title would add a second
+      // tooltip and a hidden label would never be read; the header count
+      // carries the explanation.
       return h(
         'span',
         { className: 'adx-icon-wrap' },

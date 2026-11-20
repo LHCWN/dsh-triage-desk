@@ -226,11 +226,15 @@ whole file.
   from the visible rows, prunes ids it no longer shows, clears the selection
   on filter/source/search changes, leaves the mode on Escape (unless a menu is
   open) and renders `SelectionBar`, whose bulk actions end the mode;
-- `attentionCount(sections, snoozed, matches?, now?)` is the one attention
-  counter: each actionable item once by `id`, without snoozed items and review
-  items marked `optional` by the host. `PanelIcon` (global) and the page total
-  (source filter) use it; section chips and the *Snoozed* chip count the
-  visible rows (source filter and search);
+- `attentionSummary(sections, snoozed, matches?, now?)` is the one attention
+  counter: `total` is each actionable item once by `id`, without snoozed items
+  and review items marked `optional` by the host; `repeats`, `optional`,
+  `snoozed` and `issues` say what it leaves out, each pull request in one
+  category. `PanelIcon` (global badge only: DSH's panel button owns the
+  label, tooltip and accessible name) and the page total (source filter,
+  `AttentionCount` tooltip: hover, focus, Escape in the capture phase) use it;
+  section chips and the
+  *Snoozed* chip count the visible rows (source filter and search);
 - `PanelIcon` for `sidebar.panellist`;
 - `Page` for the `main` slot, with `Section` and memoized `Row`; `Page` owns the
   minute tick (`now` prop for relative times) and the Settings leave guard

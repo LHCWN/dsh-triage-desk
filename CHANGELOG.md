@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- Hover or focus the count next to *Triage* to see what it counts and what it
+  leaves out, such as new issues and optional reviews.
+
 ### Fixed
 
 - Large organizations: when the branch scan was narrowed partway through, a
