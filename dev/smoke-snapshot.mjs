@@ -597,9 +597,11 @@ await check('pull search pages are followed to a bounded depth and report trunca
   assert.ok(find(snapshot, 'ci', 181), 'PRs from later pages are classified')
   const warning = warningOf(snapshot, 'prs-truncated')
   assert.ok(warning, 'a search with more matches than the bound is reported')
-  assert.match(warning.message, /4 most recently updated of 140 open pull requests review requests/)
+  assert.equal(warning.kind, 'limit')
+  assert.deepEqual({ source: warning.source, ...warning.params }, { source: ME, list: 'reviewRequested', read: 4, total: 140 })
+  assert.match(warning.message, /review requests, showing the 4 most recently updated of 140 open pull requests/)
   assert.equal(snapshot.warnings.filter((entry) => entry.code === 'prs-truncated').length, 1, 'the exhausted alias is not reported')
-  assert.equal(snapshot.status, 'partial')
+  assert.equal(snapshot.status, 'ok', 'a coverage limit is not missing data')
 })
 
 await check('a repeated pull search cursor ends that search', async () => {
@@ -974,7 +976,7 @@ await check('a search that still times out moves the source to the lightest leve
   const lost = snapshot.warnings.filter((entry) => entry.code === 'source-unavailable')
   assert.equal(lost.length, 1)
   assert.match(lost[0].message, /org:llvm: pull request search \(reviewed by you\) failed/)
-  assert.match(warningOf(snapshot, 'source-degraded').message, /at most 25 pull requests, 5 per request/)
+  assert.deepEqual(warningOf(snapshot, 'source-degraded').params, { max: 25, pageSize: 5 })
 })
 
 await check('follow-up pages of a large source keep their cursor on a lighter level and stay within its bound', async () => {
@@ -1017,7 +1019,7 @@ await check('a search that steps down after its first page stays within the ligh
   const snapshot = await buildSnapshot(ctx, settings())
   assert.deepEqual(pageCalls, ['25:p25', '25:p25', '10:p25', '10:p35', '5:p45'], 'the last page is cut to the level\'s bound of 50')
   assert.equal(ids(snapshot, 'review').length, 50)
-  assert.match(warningOf(snapshot, 'prs-truncated').message, /only the 50 most recently updated of 900/)
+  assert.deepEqual(warningOf(snapshot, 'prs-truncated').params, { list: 'reviewRequested', read: 50, total: 900 })
 })
 
 await check('one GitHub timeout that passes on the retry leaves the source at the full search', async () => {
@@ -1190,7 +1192,8 @@ await check('a large source checks branch CI only in repositories the viewer con
   assert.deepEqual(ci.map((item) => item.id), ['llvm@llvm/llvm-project@users/me/fix-crash'])
   const warning = warningOf(snapshot, 'branch-scan-narrowed')
   assert.ok(warning)
-  assert.match(warning.message, /^llvm: .*the 2 repositories.*"me"/)
+  assert.deepEqual({ source: warning.source, ...warning.params }, { source: 'llvm', login: ME, scanned: 2, total: 2 })
+  assert.equal(warning.message, 'llvm: branch CI checks only branches with "me" in their name, in the 2 repositories you work in')
   assert.ok(!hasWarning(snapshot, 'repos-truncated'))
   assert.ok(!hasWarning(snapshot, 'truncated-history'), 'the hidden new-issue list is not also reported as truncated history')
 })
@@ -1242,7 +1245,8 @@ await check('the narrowed warning counts only the repositories whose branches we
       : ok({ repository: repoNode({ nameWithOwner: `${vars.owner}/${vars.name}` }), rateLimit })),
   })
   const snapshot = await buildSnapshot(ctx, settings())
-  assert.match(warningOf(snapshot, 'branch-scan-narrowed').message, /only 1 of the 2 repositories/)
+  assert.deepEqual(warningOf(snapshot, 'branch-scan-narrowed').params, { login: ME, scanned: 1, total: 2 })
+  assert.equal(snapshot.status, 'partial', 'the failed repository is missing data')
   assert.ok(hasWarning(snapshot, 'source-unavailable'))
 })
 
@@ -1269,7 +1273,7 @@ await check('a GitHub timeout on the organization branch scan narrows it for tha
   assert.equal(calls.filter((call) => call === 'branches:llvm').length, 2, 'the scan is retried once, then narrowed')
   assert.ok(calls.includes('repo:llvm/llvm-project'))
   assert.deepEqual(snapshot.sections.find((entry) => entry.id === 'ci').items.map((item) => item.ref), ['users/me/a'])
-  assert.ok(hasWarning(snapshot, 'branch-scan-narrowed'))
+  assert.match(warningOf(snapshot, 'branch-scan-narrowed').message, /in the 1 repository you work in$/)
   assert.ok(!hasWarning(snapshot, 'source-unavailable'))
   calls.length = 0
   await buildSnapshot(ctx, settings(), { profiles })
@@ -1447,6 +1451,17 @@ await check('the tool text reports stale and partial snapshots with their reason
   const partial = formatToolText(toolSnapshot({ status: 'partial' }), null, toolNow)
   assert.ok(partial.includes('Status: partial — some sources could not be read'), partial)
   assert.ok(!formatToolText(toolSnapshot(), null, toolNow).includes('Status:'), 'a fresh snapshot has no status line')
+})
+
+await check('the tool text lists coverage limits apart from warnings', async () => {
+  const text = formatToolText(toolSnapshot({
+    warnings: [
+      { code: 'source-unavailable', message: 'org:acme: pull request search failed: HTTP 500' },
+      { code: 'source-degraded', kind: 'limit', source: 'llvm', params: { max: 50 }, message: 'llvm: each pull request list shows the 50 most recently updated' },
+    ],
+  }), null, toolNow)
+  assert.ok(text.includes('\nWarnings: org:acme: pull request search failed: HTTP 500'), text)
+  assert.ok(text.includes('\nLimits: llvm: each pull request list shows the 50 most recently updated'), text)
 })
 
 await check('the tool header says how old the snapshot is', async () => {

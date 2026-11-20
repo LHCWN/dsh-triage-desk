@@ -73,8 +73,11 @@ export function formatToolText(snapshot, wanted, now = Date.now()) {
   const lastError = snapshot.status === 'stale' ? snapshot.meta?.lastError : null
   const warnings = (Array.isArray(snapshot.warnings) ? snapshot.warnings : []).filter((entry) =>
     !(lastError && entry.code === lastError.code && String(entry.message).includes(lastError.message)))
-  if (warnings.length > 0) {
-    lines.push('', `Warnings: ${warnings.map((entry) => entry.message).join('; ')}`)
-  }
+  // Coverage limits (kind 'limit') bound what was read; other warnings are
+  // data that failed to load.
+  const limits = warnings.filter((entry) => entry.kind === 'limit')
+  const problems = warnings.filter((entry) => entry.kind !== 'limit')
+  if (problems.length > 0) lines.push('', `Warnings: ${problems.map((entry) => entry.message).join('; ')}`)
+  if (limits.length > 0) lines.push('', `Limits: ${limits.map((entry) => entry.message).join('; ')}`)
   return lines.join('\n')
 }
