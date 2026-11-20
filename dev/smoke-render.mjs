@@ -355,7 +355,17 @@ assert.ok(source.includes('body[data-ds-dark-theme] .adx-root { color-scheme: da
   state.config = { ...state.config, supportsPrompt: false }
   const noDsh = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
   assert.ok(/<option value="codex" selected="">/.test(noDsh), 'without the DSH target, the installed agent')
-  state.config = { ...state.config, supportsPrompt: true }
+  state.openMenu = null
+  state.view = 'settings'
+  const noDshSettings = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+  assert.ok(!noDshSettings.includes('<option value="dsh">'), 'Settings does not offer a DSH target the panel cannot open')
+  state.config = { ...state.config, defaultAgent: 'dsh', defaultTarget: 'dsh' }
+  const savedDsh = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+  assert.ok(/<option value="dsh" selected="">/.test(savedDsh), 'a saved DSH default is still shown')
+  assert.ok(savedDsh.includes('settings.defaultDshUnavailable'), 'and Settings says what launches use instead')
+  state.config = { ...state.config, defaultAgent: 'claude', supportsPrompt: true }
+  state.view = 'list'
+  state.openMenu = 'review:pull:1'
   state.openMenu = null
   state.view = 'settings'
   const settings = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))

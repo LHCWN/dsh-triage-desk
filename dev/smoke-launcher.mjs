@@ -153,7 +153,12 @@ check('the default agent falls back to the first installed one', () => {
     'with nothing installed the default stays, so the launch can say it is missing')
   // A launch the host runs cannot open a DSH chat: it uses the first installed agent.
   assert.equal(effectiveDefaultAgent(DSH_TARGET, agents, { claude: missing, codex: found }), 'codex')
-  assert.equal(effectiveDefaultAgent(DSH_TARGET, agents, { claude: missing }), DSH_TARGET, 'none installed: DSH stays, the launch explains')
+  assert.equal(effectiveDefaultAgent(DSH_TARGET, agents, { claude: missing, codex: missing, opencode: missing }), DSH_TARGET,
+    'every agent known missing: DSH stays, the launch explains')
+  const unknown = { available: null, reason: 'probe-failed' }
+  assert.equal(effectiveDefaultAgent(DSH_TARGET, agents, { claude: unknown, codex: unknown, opencode: unknown }), 'claude',
+    'a failed detection is no reason to refuse: the first agent not known missing is tried')
+  assert.equal(effectiveDefaultAgent(DSH_TARGET, agents, { claude: missing }), 'codex')
   // The panel opens the saved agent while it can start, else a DSH chat.
   assert.equal(panelDefaultTarget('codex', { codex: found }), 'codex')
   assert.equal(panelDefaultTarget('codex', {}), 'codex', 'unknown detection keeps the saved agent')

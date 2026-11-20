@@ -263,6 +263,7 @@ window.__ModuleLoader__.load({
       'settings.terminalHint': 'The terminal button on each row starts an agent in the local clone of the repository with a prepared initial prompt.',
       'settings.defaultAgent': 'Default agent',
       'settings.defaultAgentFallback': '{missing} can’t be started ({reason}), so launches use {used}.',
+      'settings.defaultDshUnavailable': 'This DSH version can’t open a chat from here, so launches use {used}.',
       'settings.agentsHint': 'The name is shown in menus; each agent keeps an internal id automatically. Launch command; {prompt} is replaced with the initial prompt. The binary is resolved through the interactive login-shell PATH. Use {prompt} exactly once: as its own unquoted word (claude {prompt}) or after --flag= (aider --message={prompt}).',
       'settings.agentName': 'Label',
       'settings.agentCommand': 'Command',
@@ -571,6 +572,7 @@ window.__ModuleLoader__.load({
       'settings.terminalHint': '每行的终端按钮会在仓库的本地克隆中启动智能体，并带好初始提示。',
       'settings.defaultAgent': '默认智能体',
       'settings.defaultAgentFallback': '{missing} 无法启动（{reason}），启动时改用 {used}。',
+      'settings.defaultDshUnavailable': '当前 DSH 版本无法从这里打开对话，启动时改用 {used}。',
       'settings.agentsHint': '名称会显示在菜单中；内部 ID 自动保留。启动命令；{prompt} 会替换为初始提示。程序通过交互式登录 shell 的 PATH 查找。请仅使用一次 {prompt}：作为不带引号的独立单词（claude {prompt}）或位于 --flag= 之后（aider --message={prompt}）。',
       'settings.agentName': '名称',
       'settings.agentCommand': '命令',
@@ -4766,15 +4768,18 @@ window.__ModuleLoader__.load({
         const detected = configValue(config, 'detectedAgents') || {}
         const saved = configValue(config, 'defaultAgent')
         const used = panelDefaultTarget(config, form.agents)
-        // The saved agent cannot start: say what the panel opens instead.
-        const fallback = saved !== DSH_TARGET && used !== saved && form.defaultAgent === saved
-        const hint = fallback
-          ? t('settings.defaultAgentFallback', {
-              missing: targetLabel(t, saved, form.agents),
-              reason: agentMissingLabel(t, detected[saved]),
-              used: targetLabel(t, used, form.agents),
-            })
-          : undefined
+        const dsh = canOpenDsh(config)
+        // The saved target cannot be used: say what the panel opens instead.
+        const unchanged = form.defaultAgent === saved
+        const hint = !unchanged || used === saved
+          ? undefined
+          : saved === DSH_TARGET
+            ? t('settings.defaultDshUnavailable', { used: targetLabel(t, used, form.agents) })
+            : t('settings.defaultAgentFallback', {
+                missing: targetLabel(t, saved, form.agents),
+                reason: agentMissingLabel(t, detected[saved]),
+                used: targetLabel(t, used, form.agents),
+              })
         return h(
           Field,
           { label: t('settings.defaultAgent'), htmlFor: 'adx-default-agent', hint },
@@ -4786,7 +4791,9 @@ window.__ModuleLoader__.load({
               value: form.defaultAgent,
               onChange: (event) => update({ defaultAgent: event.target.value }),
             },
-            [h('option', { key: DSH_TARGET, value: DSH_TARGET }, t('launch.dshTarget'))].concat(agentOptions(t, form.agents, detected)),
+            // DSH is offered where the panel can open it, and kept while saved.
+            (dsh || form.defaultAgent === DSH_TARGET ? [h('option', { key: DSH_TARGET, value: DSH_TARGET }, t('launch.dshTarget'))] : [])
+              .concat(agentOptions(t, form.agents, detected)),
           ),
         )
       }

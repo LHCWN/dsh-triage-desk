@@ -61,14 +61,20 @@ export function installedAgents(agents, detected = {}) {
 /**
  * The agent a launch the host runs uses for "default". The host cannot open a
  * DSH chat, and a saved agent detection reports missing cannot start, so both
- * use the first agent detection found. With nothing found the default stays,
- * so the launch can say what is missing.
+ * use the first agent detection found. With nothing found, a saved agent
+ * stays, so the launch can say it is missing; DSH tries the first agent not
+ * known to be missing (a failed probe reports every agent unknown), and only
+ * when every agent is known missing does it stay DSH, which the launch
+ * explains.
  */
 export function effectiveDefaultAgent(defaultAgent, agents, detected = {}) {
   const status = detected[defaultAgent]
   if (defaultAgent !== DSH_TARGET && (!status || status.available !== false)) return defaultAgent
   const [found] = installedAgents(agents, detected)
-  return found ? found.id : defaultAgent
+  if (found) return found.id
+  if (defaultAgent !== DSH_TARGET) return defaultAgent
+  const untried = agents.find((agent) => !(detected[agent.id] && detected[agent.id].available === false))
+  return untried ? untried.id : DSH_TARGET
 }
 
 /**
