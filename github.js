@@ -1084,8 +1084,15 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
       .filter((name) => name.split('/')[0].toLowerCase() === owner)
     return { names, error: contributions.error || null }
   }
-  const addRepo = (state, repo) => {
-    if (!repo || typeof repo.nameWithOwner !== 'string' || state.seenRepos.has(repo.nameWithOwner)) return
+  // Adds a repository once. `replace`: a narrowed read (branches named for
+  // the viewer) supersedes what an organization page read for it before the
+  // scan was narrowed (its first 100 branches, which rarely include them).
+  const addRepo = (state, repo, replace = false) => {
+    if (!repo || typeof repo.nameWithOwner !== 'string') return
+    if (state.seenRepos.has(repo.nameWithOwner)) {
+      if (replace) state.repos = state.repos.map((known) => (known.nameWithOwner === repo.nameWithOwner ? repo : known))
+      return
+    }
     state.seenRepos.add(repo.nameWithOwner)
     state.repos.push(repo)
   }
@@ -1109,7 +1116,7 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
           'branches-repo',
           'graphql-source',
         )
-        addRepo(state, data.repository)
+        addRepo(state, data.repository, true)
         scanned += 1
       } catch (error) {
         sourceUnavailable(state, `branch scan (${name})`, error)

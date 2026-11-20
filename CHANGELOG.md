@@ -12,6 +12,8 @@
 ### Fixed
 
 - Without Claude Code installed, launches no longer fail on the preset default.
+- Large organizations: when the branch scan was narrowed partway through, a
+  repository already read in full no longer hides your red branches in it.
 
 ## [0.1.2](https://github.com/LHCWN/dsh-triage-desk/releases/tag/v0.1.2) — 2026-11-20
 
