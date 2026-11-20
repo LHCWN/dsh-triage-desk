@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Hover or focus the count next to *Triage* to see what it counts and what it
+  leaves out, such as new issues and optional reviews.
+
 ## [0.1.2](https://github.com/LHCWN/dsh-triage-desk/releases/tag/v0.1.2) — 2026-11-20
 
 ### Fixed

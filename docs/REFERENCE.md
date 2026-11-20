@@ -70,7 +70,8 @@ Other panel features:
   optional because someone else's approval already satisfies the PR, and leaves
   out snoozed items and new unassigned issues. Section chips (and *Snoozed*)
   count the rows the list shows under the current source filter and search; the
-  page total is the badge for the selected source.
+  page total is the badge for the selected source. Hover or focus the page
+  total for what it counts and what it leaves out.
 - **Sources**: GitHub personal repositories and up to 10 organizations the
   account belongs to (or an explicit list of up to 10). Each row carries its
   source, and a source filter narrows the list (and its counts) when more than
