@@ -27,6 +27,7 @@ const {
   MAX_SCENARIO_TEMPLATE,
   MAX_SCENARIOS,
   defaultScenarios,
+  normalizeLauncherConfig,
   openTerminalPlan,
   PASTE_WRAPPER_PY,
 } = await import(pathToFileURL(path.join(here, '..', 'launcher.js')).href)
@@ -1061,9 +1062,11 @@ await recordAsync('config POST accepts scenarios and a default scenario', async 
   const stored = new Map(captured.edits[0].scenarios.map((scenario) => [scenario.id, scenario.prompt]))
   assert.equal(stored.get('review-pr'), '', 'an unedited built-in prompt is stored empty and follows the default')
   assert.equal(stored.get('custom-test'), 'Do {links}\nnow')
-  const reread = await json(await callHandler('/triage-desk/config', 'GET'))
+  // The fake editor records saves without applying them: read the saved config
+  // back the way the host loads it.
+  const reread = normalizeLauncherConfig(captured.edits[0])
   assert.equal(
-    reread.config.scenarios.find((scenario) => scenario.id === 'review-pr').prompt,
+    reread.scenarios.find((scenario) => scenario.id === 'review-pr').prompt,
     defaultScenarios().find((scenario) => scenario.id === 'review-pr').prompt,
     'the panel still sees the full prompt',
   )

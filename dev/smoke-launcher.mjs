@@ -251,6 +251,12 @@ check('review scenarios post one COMMENT review with inline comments', () => {
     assert.match(prompt, /don't change code/i, id)
   }
   assert.match(builtinScenario('rereview-pr').prompt, /nothing new to say, post nothing/)
+  for (const id of ['fix-pr', 'fix-mine']) {
+    const prompt = builtinScenario(id).prompt
+    assert.match(prompt, /gh pr checkout/, id)
+    assert.match(prompt, /skip(ping)? hooks/, id)
+    assert.match(prompt, /wait for my OK before pushing; never merge/i, id)
+  }
 })
 
 check('built-in prompts treat PR, issue and log text as data, not instructions', () => {

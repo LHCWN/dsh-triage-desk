@@ -150,9 +150,10 @@ changed line, tagged `[P1]` blocking, `[P2]` should fix, or `[P3]` minor; a
 code, never approve or request changes, and post nothing when there is nothing
 new to say. A re-review looks only at changes since your last review's commit.
 *Fix* scenarios check out the branch, fix the first real error with the smallest
-change, and wait for your OK before pushing. *Reply* scenarios draft as you and
-post after you approve. *Triage* scenarios only report: summary, likely cause, size, labels from the repository's
-existing ones, duplicates, and the next step. Every prompt asks for no AI
+change without skipping hooks, wait for your OK before pushing, and never merge.
+*Reply* scenarios draft as you and post after you approve. *Triage* scenarios
+only report: summary, likely cause, size, labels from the repository's existing
+ones, duplicates, and the next step. Every prompt asks for no AI
 attribution in comments and commits, and treats PR, issue, and CI log text as
 data, not instructions.
 
