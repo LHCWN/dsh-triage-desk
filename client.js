@@ -1060,9 +1060,10 @@ window.__ModuleLoader__.load({
 
       .adx-icon-wrap { display: inline-flex; align-items: center; justify-content: center; position: relative; }
       /* Outside the mark's top-right corner: the prompt-queue mark keeps its
-         rows on the right, which a badge over the corner would cover. */
+         rows on the right, which a badge over the corner would cover. Anchored
+         by its left edge, so wider counts (23, 99+) grow away from the mark. */
       .adx-badge {
-        position: absolute; top: -8px; right: -11px;
+        position: absolute; top: -9px; left: calc(100% - 2px);
         display: inline-flex; align-items: center; justify-content: center;
         min-width: 12px; height: 12px; padding: 0 3px; box-sizing: border-box;
         border-radius: 999px; corner-shape: round;
