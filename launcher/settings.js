@@ -7,7 +7,7 @@
 import path from 'node:path'
 import { asObject, expandHome } from './common.js'
 import { REPO_PATTERN } from './repo-urls.js'
-import { DISCOVERABLE_AGENTS, DSH_TARGET, normalizeAgentConfig } from './agents.js'
+import { AGENTS_VERSION, DISCOVERABLE_AGENTS, DSH_TARGET, normalizeAgentConfig } from './agents.js'
 import { DEFAULT_SCENARIO_ID, normalizeScenarios } from './scenarios.js'
 import { normalizeTerminalChoice } from './terminals.js'
 
@@ -65,7 +65,9 @@ export function normalizeLauncherConfig(config) {
   // Settings fixes the list.
   // An empty saved list (every agent removed in Settings) means the same.
   const agentsAuto = !Array.isArray(input.agents) || input.agents.length === 0
-  const { agents, invalidAgents, renamed } = normalizeAgentConfig(agentsAuto ? DISCOVERABLE_AGENTS : input.agents)
+  const { agents, invalidAgents, renamed } = normalizeAgentConfig(agentsAuto ? DISCOVERABLE_AGENTS : input.agents, {
+    upgradeLegacy: !(input.agentsVersion >= AGENTS_VERSION),
+  })
   const ids = new Set(agents.map((agent) => agent.id))
   // A saved agent named "dsh" was renamed: its references follow it, since
   // before the DSH target existed "dsh" could only mean that agent.

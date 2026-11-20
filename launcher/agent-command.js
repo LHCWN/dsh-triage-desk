@@ -206,6 +206,20 @@ export function assertDraftFlag(draftFlag) {
 }
 
 /**
+ * Switches that never take a value: the full-access flags of the built-in
+ * agents in `agents.js` (a smoke check keeps the two in step). A `{prompt}`
+ * right after one of them is a positional prompt, so the switch stays when the
+ * prompt is removed.
+ */
+const VALUELESS_SWITCHES = new Set([
+  '--dangerously-skip-permissions',
+  '--dangerously-bypass-approvals-and-sandbox',
+  '--dangerously-allow-all',
+  '--yes-always',
+  '--yolo',
+])
+
+/**
  * The agent command without the prompt placeholder: used by clipboard mode, where
  * the agent starts bare and the prompt is pasted by the user.
  */
@@ -213,12 +227,13 @@ export function bareAgentCommand(agentCommand, platform = process.platform) {
   assertSafeAgentCommand(agentCommand, platform)
   const { words, index, word, prefix } = promptWord(agentCommand, platform)
   // `--message={prompt}` carries its own flag: drop that one word. A whole
-  // `{prompt}` word also drops a directly preceding value-less flag such as
-  // `--prompt`; `--model=opus {prompt}` keeps its complete flag.
+  // `{prompt}` word also drops a directly preceding flag that carries it, such
+  // as `--prompt`; `--model=opus {prompt}` and a known switch such as `--yolo`
+  // stay.
   const previous = index > 0 ? words[index - 1] : null
-  const first = prefix === '' && previous !== null && previous.value.startsWith('-') && !previous.value.includes('=')
-    ? previous
-    : word
+  const carriesPrompt = previous !== null && previous.value.startsWith('-') && !previous.value.includes('=') &&
+    !VALUELESS_SWITCHES.has(previous.value)
+  const first = prefix === '' && carriesPrompt ? previous : word
   const before = agentCommand.slice(0, first.start).trimEnd()
   const after = agentCommand.slice(word.end).trimStart()
   const bare = [before, after].filter(Boolean).join(' ')

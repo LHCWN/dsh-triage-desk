@@ -26,6 +26,8 @@ import {
   defaultScenarios,
   draftCommandForStatus,
   AGENT_PRESETS,
+  AGENTS_VERSION,
+  defaultAgentCommand,
   DSH_TARGET,
   effectiveDefaultAgent,
   expandHome,
@@ -160,7 +162,9 @@ function sanitizeAgents(input) {
     }
     if (seen.has(id)) throw new BadRequest(`duplicate agent id "${id}"`)
     seen.add(id)
-    agents.push({ id, label, command })
+    // An unedited known agent is saved without its command, so it follows the
+    // default when a release changes it (normalizeAgentConfig fills it back in).
+    agents.push({ id, label, command: command === defaultAgentCommand(id) ? '' : command })
   }
   if (agents.length === 0) throw new BadRequest('at least one agent is required')
   if (agents.length > MAX_AGENTS) throw new BadRequest(`at most ${MAX_AGENTS} agents are supported`)
@@ -282,7 +286,10 @@ export function sanitizePatch(input, currentLauncher) {
     }
     patch.promptDelivery = input.promptDelivery
   }
-  if (input.agents !== undefined) patch.agents = sanitizeAgents(input.agents)
+  if (input.agents !== undefined) {
+    patch.agents = sanitizeAgents(input.agents)
+    patch.agentsVersion = AGENTS_VERSION
+  }
   if (input.defaultAgent !== undefined) {
     if (typeof input.defaultAgent !== 'string' || input.defaultAgent.trim() === '') {
       throw new BadRequest('defaultAgent must be an agent id')

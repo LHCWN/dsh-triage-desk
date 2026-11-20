@@ -40,6 +40,9 @@ import {
   normalizeLauncherConfig,
   normalizeScenarios,
   LEGACY_BUILTIN_PROMPTS,
+  defaultAgentCommand,
+  AGENTS_VERSION,
+  LEGACY_AGENT_COMMANDS,
   openTerminalPlan,
   parseRepoUrl,
   promptVars,
@@ -188,6 +191,84 @@ check('presets cover the documented agents', () => {
     AGENT_PRESETS.filter((agent) => agent.draftFlag !== undefined).map((agent) => agent.id),
     ['claude'],
   )
+})
+
+/** The words between a built-in agent's executable and its {prompt}. */
+function presetFlags(agentId) {
+  return DISCOVERABLE_AGENTS.find((agent) => agent.id === agentId).command.split(' ').slice(1, -1)
+}
+
+/** Those words as a Windows launch script passes them after the executable. */
+function windowsFlags(agentId) {
+  return presetFlags(agentId).map((flag) => ' ' + windowsQuote(flag)).join('')
+}
+
+check('agents launch in full access by default, with the flags Orca uses', () => {
+  const commands = Object.fromEntries(DISCOVERABLE_AGENTS.map((agent) => [agent.id, agent.command]))
+  assert.deepEqual(commands, {
+    claude: 'claude --dangerously-skip-permissions {prompt}',
+    codex: 'codex --dangerously-bypass-approvals-and-sandbox {prompt}',
+    opencode: 'opencode --prompt {prompt}',
+    gemini: 'gemini --yolo {prompt}',
+    'cursor-agent': 'cursor-agent --yolo {prompt}',
+    agy: 'agy --dangerously-skip-permissions {prompt}',
+    pi: 'pi {prompt}',
+    aider: 'aider --yes-always {prompt}',
+    amp: 'amp --dangerously-allow-all {prompt}',
+    droid: 'droid --auto high {prompt}',
+    goose: 'goose {prompt}',
+    crush: 'crush --yolo {prompt}',
+  })
+  for (const agent of DISCOVERABLE_AGENTS) {
+    assert.ok(hasSafePromptPlaceholder(agent.command), agent.id)
+    assert.equal(agentExecutable(agent.command), agent.id, agent.id + ' is detected by its executable')
+  }
+  assert.equal(
+    buildDraftCommand(commands.claude, 'hi', '--prefill'),
+    "claude --dangerously-skip-permissions --prefill 'hi'",
+    'the native draft keeps the permission flag',
+  )
+  for (const agent of DISCOVERABLE_AGENTS) {
+    if (agent.id === 'opencode') continue // `--prompt` carries the prompt and goes with it
+    assert.equal(bareAgentCommand(agent.command), agent.command.replace(/ \{prompt\}$/, ''), agent.id + ' keeps its flags without the prompt')
+  }
+})
+
+check('saved agents still on an old default command are upgraded; edited commands are kept', () => {
+  const { agents } = normalizeLauncherConfig({ agents: [
+    { id: 'codex', label: 'Codex', command: 'codex {prompt}' },
+    { id: 'agy', label: 'Antigravity', command: '  agy {prompt} ' },
+    { id: 'claude', label: 'Claude Code', command: 'claude --model opus {prompt}' },
+    { id: 'gemini', label: 'Gemini', command: 'gemini --yolo {prompt}' },
+    { id: 'mine', label: 'Mine', command: 'codex {prompt}' },
+    { id: 'crush', label: 'Crush', command: 'crush {prompt}' },
+  ] })
+  const byId = Object.fromEntries(agents.map((agent) => [agent.id, agent.command]))
+  assert.equal(byId.codex, 'codex --dangerously-bypass-approvals-and-sandbox {prompt}')
+  assert.equal(byId.agy, 'agy --dangerously-skip-permissions {prompt}')
+  assert.equal(byId.crush, 'crush --yolo {prompt}', 'discoverable agents beyond the presets upgrade too')
+  assert.equal(byId.claude, 'claude --model opus {prompt}', 'an edited command is kept')
+  assert.equal(byId.gemini, 'gemini --yolo {prompt}')
+  assert.equal(byId.mine, 'codex {prompt}', 'only the agent the old default belonged to is upgraded')
+  const unedited = normalizeLauncherConfig({ agents: [
+    { id: 'codex', label: 'Codex', command: '' },
+    { id: 'mine', label: 'Mine', command: '' },
+  ] })
+  assert.equal(unedited.agents.find((agent) => agent.id === 'codex').command, defaultAgentCommand('codex'),
+    'an empty command on a known agent is its current default')
+  assert.deepEqual(unedited.invalidAgents.map((agent) => agent.id), ['mine'], 'an empty custom command stays broken')
+  // Once agents are saved by this version, the old default is a deliberate
+  // choice (the flag removed to get permission prompts back): never re-upgraded.
+  const optedOut = normalizeLauncherConfig({
+    agents: [{ id: 'codex', label: 'Codex', command: 'codex {prompt}' }, { id: 'agy', label: 'Antigravity', command: '' }],
+    agentsVersion: AGENTS_VERSION,
+  })
+  assert.equal(optedOut.agents.find((agent) => agent.id === 'codex').command, 'codex {prompt}')
+  assert.equal(optedOut.agents.find((agent) => agent.id === 'agy').command, defaultAgentCommand('agy'))
+  for (const [id, command] of Object.entries(LEGACY_AGENT_COMMANDS)) {
+    const [upgraded] = normalizeLauncherConfig({ agents: [{ id, label: id, command }] }).agents
+    assert.equal(upgraded.command, DISCOVERABLE_AGENTS.find((agent) => agent.id === id).command, id)
+  }
 })
 
 check('default config is neutral', () => {
@@ -1334,7 +1415,7 @@ await checkAsync('Windows keeps the native draft for an .exe agent only and runs
         assert.deepEqual(result.body.delivery, { mode, pasteBlocked: blocked, platform: 'win32' }, name)
         const script = [...files.entries()].find(([file]) => file.endsWith('launch.ps1'))?.[1].toString('utf8') || ''
         assert.equal(script.includes('--prefill'), mode === 'draft', name + ': the prompt argument is used only for a native draft')
-        const invocation = '& ' + windowsQuote(runs)
+        const invocation = '& ' + windowsQuote(runs) + windowsFlags(agent)
         if (mode === 'draft') {
           assert.ok(script.split('\n').some((line) => line.trimStart().startsWith(invocation + ' ')), name + ': the draft runs the detected .exe')
           assert.ok(!script.includes("& 'claude'"), name + ': the draft never runs the bare name')
@@ -1518,7 +1599,7 @@ await checkAsync('a launch detects again once when the cached agent path is gone
             return file[1].toString('utf8').split('\n')
           }
           const runs = fresh === null ? 'codex' : fresh
-          assert.ok((await script()).includes(windows ? '& ' + windowsQuote(runs) : runs), name + ': runs ' + runs)
+          assert.ok((await script()).includes(windows ? '& ' + windowsQuote(runs) + windowsFlags('codex') : runs + ' ' + presetFlags('codex').join(' ')), name + ': runs ' + runs)
           assert.equal(probes, 2, name + ': one forced re-detection')
           if (fresh !== null) {
             await script()
@@ -1561,7 +1642,7 @@ await checkAsync('a Windows re-detection decides the draft with the fresh shim v
       assert.equal(result.body.mode, 'paste', 'the fresh shim verdict blocks the draft')
       const script = [...files.entries()].find(([file]) => file.endsWith('launch.ps1'))?.[1].toString('utf8') || ''
       assert.ok(!script.includes('--prefill'), 'no prompt argument')
-      assert.equal(encodedCommand(script), '& ' + windowsQuote(newPath), 'the fresh path runs')
+      assert.equal(encodedCommand(script), '& ' + windowsQuote(newPath) + windowsFlags('claude'), 'the fresh path runs')
     }, {}, { disk: ['C:\\scoop\\shims\\claude.shim'] })
   } finally {
     os.release = release
@@ -1944,7 +2025,7 @@ await checkAsync('detection reports aliases/functions and launch pins the detect
       const launched = await request('/triage-desk/launch', 'POST', { url: PR_URL, agent: 'claude' })
       assert.equal(launched.status, 200, JSON.stringify(launched.body))
       const script = [...files.entries()].find(([file]) => file.endsWith('launch.command'))[1].toString('utf8')
-      assert.ok(script.includes("/home/me/.nvm/versions/node/v22/bin/claude --prefill '"), script)
+      assert.ok(script.includes("/home/me/.nvm/versions/node/v22/bin/claude --dangerously-skip-permissions --prefill '"), script)
       assert.ok(script.includes("case \":$PATH:\" in *:'/home/me/.nvm/versions/node/v22/bin':*)"), script)
     })
   } finally {

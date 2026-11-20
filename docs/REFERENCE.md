@@ -382,13 +382,27 @@ launch command, while the internal agent id stays stable and is not shown):
 
 | Agent id | Launch command | Prompt delivery |
 |---|---|---|
-| `claude` | `claude {prompt}` | native `--prefill` (input box, unsent) |
-| `codex` | `codex {prompt}` | Prompt delivery setting |
+| `claude` | `claude --dangerously-skip-permissions {prompt}` | native `--prefill` (input box, unsent) |
+| `codex` | `codex --dangerously-bypass-approvals-and-sandbox {prompt}` | Prompt delivery setting |
 | `opencode` | `opencode --prompt {prompt}` | Prompt delivery setting |
-| `gemini` | `gemini {prompt}` | Prompt delivery setting |
-| `cursor-agent` | `cursor-agent {prompt}` | Prompt delivery setting |
-| `agy` | `agy {prompt}` | Prompt delivery setting |
+| `gemini` | `gemini --yolo {prompt}` | Prompt delivery setting |
+| `cursor-agent` | `cursor-agent --yolo {prompt}` | Prompt delivery setting |
+| `agy` | `agy --dangerously-skip-permissions {prompt}` | Prompt delivery setting |
 | `pi` | `pi {prompt}` | Prompt delivery setting |
+
+**Full access.** Like Orca's *Full access* mode, every agent with such a flag
+starts without permission prompts: the flags in the table above, plus Aider
+`--yes-always`, Amp `--dangerously-allow-all`, Droid `--auto high`, and Crush
+`--yolo`. opencode and pi have none; Goose's is an environment variable
+(`GOOSE_MODE=auto`) that a Windows launch cannot set. The agent then edits files,
+runs commands, and posts to GitHub without asking, so a step a scenario asks it
+to confirm first, such as pushing, rests on the agent following the prompt.
+Delete the flag from an agent's command in Settings to get the prompts back. An
+unedited command is saved empty, so it follows the default when a release
+changes it; a profile whose agents were last saved before 0.1.4 has its old
+defaults (`codex {prompt}`) upgraded on load. An edited command is kept, and so is
+a flag you removed: saving agents marks them `agentsVersion: 2`, which ends the
+upgrade.
 
 **Find agents** in Settings scans the login environment for known CLIs (Claude
 Code, Codex, opencode, Gemini CLI, Cursor Agent, Antigravity, pi, Aider, Amp,
@@ -525,7 +539,7 @@ Fields:
 | `ttlMs` | `max(refreshSeconds, 600)` s, capped at 1 h | Host snapshot cache lifetime |
 | `requireGreenChecks` | `true` | List under "Ready to merge" only with green checks or no checks (pending/red are excluded) |
 | `includeBotReviews` | `false` | Count reviews from bot accounts as yours on the PRs your searches return |
-| `agents` | installed agents | Agent list (up to 12): `{ id, label, command }`; `command` contains exactly one unquoted `{prompt}` after the executable, as its own word or after `--flag=` (see [Agents](#agents)). Unset, the menu shows the known CLIs that are installed; editing the list in Settings saves it |
+| `agents` | installed agents | Agent list (up to 12): `{ id, label, command }`; an empty `command` on a known agent id means its current default; otherwise `command` contains exactly one unquoted `{prompt}` after the executable, as its own word or after `--flag=` (see [Agents](#agents)). Unset, the menu shows the known CLIs that are installed; editing the list in Settings saves it |
 | `defaultAgent` | `dsh` | What a launch opens unless another target is picked: `dsh` (a new DSH chat) or an agent id. An agent that cannot start opens a DSH chat instead, and Settings says so. Launches the host runs (the agent tool) cannot open DSH and use the first installed agent |
 | `terminal` | `auto` | Terminal for launches: `auto` or one of `terminal`, `iterm`, `ghostty`, `gnome-terminal`, `konsole`, `xfce4-terminal`, `kitty`, `alacritty`, `xterm`, `windows-terminal`, `console` (see [Choosing a terminal](#choosing-a-terminal)) |
 | `promptDelivery` | `paste` | How agents without a native draft get the prompt: `paste` (typed into the input box, unsent) or `clipboard` (see [Prompt delivery](#prompt-delivery)) |

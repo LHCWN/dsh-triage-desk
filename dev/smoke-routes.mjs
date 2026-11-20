@@ -26,6 +26,8 @@ const {
   SCENARIO_REASON_LABELS,
   MAX_SCENARIO_TEMPLATE,
   MAX_SCENARIOS,
+  AGENTS_VERSION,
+  defaultAgentCommand,
   defaultScenarios,
   normalizeLauncherConfig,
   openTerminalPlan,
@@ -355,7 +357,7 @@ await recordAsync('launch without a scenario uses the link scenario', async () =
   const launcherFile = argv[3]
   const script = await fs.readFile(launcherFile, 'utf8')
   assert.ok(script.includes('cd -- ' + "'" + cloneDir + "'"))
-  assert.ok(script.includes("claude --prefill " + "'" + PR_URL + "'"))
+  assert.ok(script.includes("claude --dangerously-skip-permissions --prefill " + "'" + PR_URL + "'"))
   assert.ok(!script.includes('ZDOTDIR'))
   await cleanupLaunches()
 })
@@ -374,7 +376,7 @@ await recordAsync('agents without a native draft flag fall back to the clipboard
   assert.equal(captured.clipboard, PR_URL + '\n')
   const argv = captured.opens.find((entry) => entry.length === 4)
   const script = await fs.readFile(argv[3], 'utf8')
-  assert.ok(script.includes('\n/opt/homebrew/bin/codex\n'), 'the detected binary is launched by path')
+  assert.ok(script.includes('\n/opt/homebrew/bin/codex --dangerously-bypass-approvals-and-sandbox\n'), 'the detected binary is launched by path')
   assert.ok(!script.includes(PR_URL))
   await cleanupLaunches()
 })
@@ -1029,6 +1031,36 @@ await recordAsync('an agents-only patch cannot orphan a saved scenario agent', a
   assert.ok(payload.error.message.includes('codex-review'), payload.error.message)
 })
 
+await recordAsync('config POST saves an unedited known agent without its command', async () => {
+  captured.edits.length = 0
+  const agents = [
+    { id: 'codex', label: 'Codex', command: defaultAgentCommand('codex') },
+    { id: 'claude', label: 'Claude Code', command: 'claude --model opus {prompt}' },
+  ]
+  const res = await callHandler('/triage-desk/config', 'POST', { agents, defaultAgent: 'codex' })
+  assert.equal(res.statusCode, 200, res.body)
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  assert.deepEqual(captured.edits.at(-1).agents, [
+    { id: 'codex', label: 'Codex', command: '' },
+    { id: 'claude', label: 'Claude Code', command: 'claude --model opus {prompt}' },
+  ], 'the unedited command follows the default; the edited one is kept')
+  assert.equal(captured.edits.at(-1).agentsVersion, AGENTS_VERSION, 'saved agents are marked as already upgraded')
+  const optOut = await callHandler('/triage-desk/config', 'POST', {
+    agents: [{ id: 'codex', label: 'Codex', command: 'codex {prompt}' }],
+    defaultAgent: 'codex',
+  })
+  assert.equal(optOut.statusCode, 200, optOut.body)
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  const afterOptOut = normalizeLauncherConfig(captured.edits.at(-1))
+  assert.equal(afterOptOut.agents.find((agent) => agent.id === 'codex').command, 'codex {prompt}',
+    'removing the full-access flag sticks')
+  // The fake editor records saves without applying them: read the saved config
+  // back the way the host loads it.
+  const reread = normalizeLauncherConfig(captured.edits[0])
+  assert.equal(reread.agents.find((agent) => agent.id === 'codex').command, defaultAgentCommand('codex'),
+    'the panel still sees the full command')
+})
+
 await recordAsync('config POST accepts scenarios and a default scenario', async () => {
   captured.edits.length = 0
   const scenarios = [
@@ -1225,7 +1257,7 @@ await recordAsync('launch writes a .command file opened through Terminal on darw
   assert.ok(launcherFile.endsWith('.command'), 'the darwin launcher keeps the .command extension')
   const script = await fs.readFile(launcherFile, 'utf8')
   assert.ok(script.startsWith('#!/bin/zsh\n'))
-  assert.ok(script.includes('claude --prefill'))
+  assert.ok(script.includes('claude --dangerously-skip-permissions --prefill'))
   await cleanupLaunches()
 })
 

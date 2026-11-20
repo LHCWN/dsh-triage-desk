@@ -143,6 +143,14 @@ Goose, and Crush. Pick another default in Settings, or add your own command. A
 command must contain `{prompt}` exactly once, unquoted, as its own argument or
 right after a `--flag=`.
 
+Agents start in **full access**, as Orca's default does: each built-in command
+carries the agent's own flag for skipping permission prompts, such as
+`codex --dangerously-bypass-approvals-and-sandbox` or
+`agy --dangerously-skip-permissions`. A step a scenario asks the agent to
+confirm first, such as pushing, then rests on the agent following its prompt. To
+get the permission prompts back, remove the flag from the agent's command in
+Settings ([flags per agent](docs/REFERENCE.md#agents)).
+
 Details: [terminal launcher reference](docs/REFERENCE.md#terminal-launcher).
 
 ## Settings

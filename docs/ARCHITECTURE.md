@@ -110,8 +110,10 @@ import the launcher layer only through `launcher.js` and the data layer through
   - `agent-command.js` — `commandWords` (static word decoding with raw spans),
     `agentExecutable`, `hasSafePromptPlaceholder` and its one user-facing
     wording `AGENT_COMMAND_RULE`, `shellQuote`, and the command variants
-    (`bareAgentCommand`, `buildDraftCommand`, and `withAgentExecutable`, the
-    one pin of the detected executable; Windows uses `windowsPin`, see
+    (`bareAgentCommand`, which drops `{prompt}` and a flag carrying it but
+    keeps known value-less switches such as `--yolo`, `buildDraftCommand`, and
+    `withAgentExecutable`, the one pin of the detected executable; Windows uses
+    `windowsPin`, see
     [REFERENCE.md](REFERENCE.md#agents)), and `draftCommandForStatus`, the one
     decision whether a launch uses the native draft, taken from a detection
     status for both the launch and the launch menu (on Windows only for a
@@ -121,7 +123,12 @@ import the launcher layer only through `launcher.js` and the data layer through
     as a whole word or directly after `-x=`/`--flag=`; backticks, `$(`, `${`,
     unquoted `; & | < > ( )` and word-initial `#` are rejected. The host is the
     only implementation of this rule;
-  - `agents.js` — presets, discoverable CLIs, `DSH_TARGET` (`dsh`, the
+  - `agents.js` — presets and discoverable CLIs with their full-access flags
+    (`defaultAgentCommand`; an empty command, which `host/config.js` saves for
+    an unedited known agent, and, in a list without `agentsVersion` (written
+    by `host/config.js` with every agents save), a pre-0.1.4 copy matching
+    `LEGACY_AGENT_COMMANDS` both read as the current default),
+    `DSH_TARGET` (`dsh`, the
     default launch target: a new DSH chat the panel opens; reserved as an agent
     id), `installedAgents`, and the two meanings of "default", both sent in
     the public config: `panelDefaultTarget` (`defaultTarget`: the saved agent
