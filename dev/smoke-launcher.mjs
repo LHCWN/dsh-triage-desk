@@ -66,6 +66,11 @@ import {
   normalizeTerminalChoice,
   sanitizePastePrompt,
   windowsQuote,
+  effectiveDefaultAgent,
+  installedAgents,
+  panelDefaultTarget,
+  DSH_TARGET,
+  DISCOVERABLE_AGENTS,
 } from '../launcher.js'
 
 const checks = []
@@ -137,6 +142,44 @@ await fs.writeFile(
   '[remote "origin"]\n\turl = https://github.com/acme/private-notes.git\n',
 )
 
+check('the default agent falls back to the first installed one', () => {
+  const agents = [{ id: 'claude' }, { id: 'codex' }, { id: 'opencode' }]
+  const missing = { available: false, reason: 'missing' }
+  const found = { available: true, path: '/usr/bin/x' }
+  assert.equal(effectiveDefaultAgent('claude', agents, { claude: found, codex: found }), 'claude', 'an installed default stays')
+  assert.equal(effectiveDefaultAgent('claude', agents, { claude: missing, codex: missing, opencode: found }), 'opencode')
+  assert.equal(effectiveDefaultAgent('claude', agents, {}), 'claude', 'unknown detection keeps the default')
+  assert.equal(effectiveDefaultAgent('claude', agents, { claude: missing, codex: missing, opencode: missing }), 'claude',
+    'with nothing installed the default stays, so the launch can say it is missing')
+  // A launch the host runs cannot open a DSH chat: it uses the first installed agent.
+  assert.equal(effectiveDefaultAgent(DSH_TARGET, agents, { claude: missing, codex: found }), 'codex')
+  assert.equal(effectiveDefaultAgent(DSH_TARGET, agents, { claude: missing, codex: missing, opencode: missing }), DSH_TARGET,
+    'every agent known missing: DSH stays, the launch explains')
+  const unknown = { available: null, reason: 'probe-failed' }
+  assert.equal(effectiveDefaultAgent(DSH_TARGET, agents, { claude: unknown, codex: unknown, opencode: unknown }), 'claude',
+    'a failed detection is no reason to refuse: the first agent not known missing is tried')
+  assert.equal(effectiveDefaultAgent(DSH_TARGET, agents, { claude: missing }), 'codex')
+  // The panel opens the saved agent while it can start, else a DSH chat.
+  assert.equal(panelDefaultTarget('codex', { codex: found }), 'codex')
+  assert.equal(panelDefaultTarget('codex', {}), 'codex', 'unknown detection keeps the saved agent')
+  assert.equal(panelDefaultTarget('claude', { claude: missing }), DSH_TARGET)
+  assert.equal(panelDefaultTarget(DSH_TARGET, { claude: found }), DSH_TARGET)
+  assert.deepEqual(installedAgents(agents, { claude: missing, codex: found, opencode: found }).map((agent) => agent.id), ['codex', 'opencode'])
+})
+
+check('a saved agent named dsh is migrated with its default and scenario pins', () => {
+  const config = normalizeLauncherConfig({
+    agents: [{ id: 'dsh', label: 'My dsh', command: 'dsh-cli {prompt}' }, { id: 'codex', label: 'Codex', command: 'codex {prompt}' }],
+    defaultAgent: 'dsh',
+    scenarios: [{ id: 'mine', label: 'Mine', scope: 'item', sections: ['review'], prompt: '{url}', agent: 'dsh', enabled: true }],
+  })
+  const renamed = config.agents[0].id
+  assert.notEqual(renamed, DSH_TARGET, 'the agent leaves the reserved id')
+  assert.equal(config.agents[0].label, 'My dsh')
+  assert.equal(config.defaultAgent, renamed, 'its saved default follows it, not the DSH target')
+  assert.equal(config.scenarios.find((scenario) => scenario.id === 'mine').agent, renamed, 'scenario pins follow it')
+})
+
 check('presets cover the documented agents', () => {
   const ids = AGENT_PRESETS.map((agent) => agent.id)
   for (const id of ['claude', 'codex', 'opencode', 'gemini', 'cursor-agent', 'agy', 'pi']) assert.ok(ids.includes(id), id)
@@ -148,7 +191,8 @@ check('presets cover the documented agents', () => {
 
 check('default config is neutral', () => {
   const config = normalizeLauncherConfig({})
-  assert.equal(config.defaultAgent, 'claude')
+  assert.equal(config.defaultAgent, DSH_TARGET, 'a new profile launches into DSH')
+  assert.equal(config.agentsAuto, true, 'no saved list: agents come from discovery')
   assert.equal(config.defaultScenario, 'link')
   assert.equal(config.scenarios.length, BUILTIN_SCENARIOS.length)
   const link = config.scenarios[0]
@@ -162,7 +206,13 @@ check('default config is neutral', () => {
   assert.equal(config.promptTemplate, undefined)
   assert.equal(config.agents.find((agent) => agent.id === 'claude').draftFlag, '--prefill')
   assert.equal(config.cloneDirs.length, 0)
-  assert.equal(config.agents.length, AGENT_PRESETS.length)
+  assert.deepEqual(config.agents.map((agent) => agent.id), DISCOVERABLE_AGENTS.map((agent) => agent.id),
+    'detection checks the whole discovery catalog')
+  const saved = normalizeLauncherConfig({ agents: [{ id: 'codex', label: 'Codex', command: 'codex {prompt}' }], defaultAgent: 'codex' })
+  assert.equal(saved.agentsAuto, false)
+  assert.equal(saved.defaultAgent, 'codex')
+  assert.equal(normalizeLauncherConfig({ defaultAgent: 'dsh' }).defaultAgent, DSH_TARGET)
+  assert.equal(normalizeLauncherConfig({ defaultAgent: 'gone' }).defaultAgent, DSH_TARGET, 'an unknown default opens DSH')
 })
 
 check('builtin scenarios are complete and titled', () => {
@@ -205,7 +255,7 @@ check('custom agents are normalized and validated', () => {
   })
   assert.equal(config.agents.length, 1)
   assert.equal(config.agents[0].id, 'my-agent')
-  assert.equal(config.defaultAgent, 'my-agent')
+  assert.equal(config.defaultAgent, DSH_TARGET, 'an unknown default opens DSH, not the first agent')
   assert.deepEqual(config.invalidAgents, [{ id: 'broken', label: 'Broken', command: 'no-placeholder', reason: 'placeholder' }])
   assert.deepEqual(normalizeLauncherConfig({}).invalidAgents, [])
 })
@@ -1310,6 +1360,45 @@ await checkAsync('a launch builds the bare command only for paste and clipboard,
   }
 })
 
+await checkAsync('a default agent that disappears since detection falls back after the re-detection', async () => {
+  // Cached as installed, gone at launch: the forced re-detection reports it
+  // missing, and a "default" launch then uses the agent that is installed.
+  const oldTerminal = process.env.TERMINAL
+  process.env.TERMINAL = '/usr/bin/gnome-terminal'
+  try {
+    let probes = 0
+    await withPlatformHost('linux', (spec, handle) => {
+      if (spec.argv[3] === 'triage-desk' && spec.argv.includes('claude')) {
+        probes += 1
+        return handle(0, probeOutput(['claude', 'codex'], (name) => (name === 'codex' ? '/usr/bin/codex' : probes === 1 ? '/old/bin/claude' : null)))
+      }
+      if (['wl-copy', '/usr/bin/gnome-terminal'].includes(spec.argv[0])) return handle()
+      throw new Error('unexpected subprocess: ' + spec.argv.join(' '))
+    }, async ({ request }) => {
+      assert.equal((await request('/triage-desk/config')).body.config.effectiveDefaultAgent, 'claude')
+      const access = fs.access
+      fs.access = async (file, mode) => {
+        if (file === '/old/bin/claude') throw Object.assign(new Error('ENOENT: ' + file), { code: 'ENOENT' })
+        return access(file, mode)
+      }
+      const result = await request('/triage-desk/launch', 'POST', { url: PR_URL })
+      assert.equal(result.status, 200, JSON.stringify(result.body))
+      assert.equal(result.body.agent.id, 'codex', 'the launch falls back after re-detecting')
+      assert.equal(probes, 2, 'one forced re-detection')
+    }, {
+      agents: [
+        { id: 'claude', label: 'Claude Code', command: 'claude {prompt}', draftFlag: '--prefill' },
+        { id: 'codex', label: 'Codex', command: 'codex {prompt}' },
+      ],
+      defaultAgent: 'claude',
+      promptDelivery: 'clipboard',
+    })
+  } finally {
+    if (oldTerminal === undefined) delete process.env.TERMINAL
+    else process.env.TERMINAL = oldTerminal
+  }
+})
+
 await checkAsync('a launch detects again once when the cached agent path is gone', async () => {
   // Detection is cached for 120 s and every launch runs the path it found, so
   // an agent moved or reinstalled meanwhile is looked up again (all platforms).
@@ -1504,7 +1593,7 @@ check('saved agents that break the rule are reported, valid ones kept', () => {
     defaultAgent: 'old',
   })
   assert.deepEqual(mixed.agents.map((agent) => agent.id), ['fine'])
-  assert.equal(mixed.defaultAgent, 'fine')
+  assert.equal(mixed.defaultAgent, DSH_TARGET)
   assert.deepEqual(mixed.invalidAgents, [{ id: 'old', label: 'Old quoted', command: 'claude "{prompt}"', reason: 'placeholder' }])
   const allInvalid = normalizeLauncherConfig({ agents: [{ id: 'old', label: 'Old', command: "claude '{prompt}'" }] })
   assert.deepEqual(allInvalid.agents.map((agent) => agent.id), AGENT_PRESETS.map((agent) => agent.id), 'presets fallback')

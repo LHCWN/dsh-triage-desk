@@ -24,7 +24,12 @@ import {
   TERMINAL_IDS,
   defaultScenarios,
   draftCommandForStatus,
+  AGENT_PRESETS,
+  DSH_TARGET,
+  effectiveDefaultAgent,
   expandHome,
+  installedAgents,
+  panelDefaultTarget,
   hasSafePromptPlaceholder,
   validateDefaultScenario,
   validateScenario,
@@ -65,6 +70,25 @@ function detectedAgentsView(detected, agents, platform) {
 }
 
 /**
+ * The agents the panel offers. A saved list is shown as saved. Without one
+ * (`agentsAuto`) the candidates are the discovery catalog and only the ones
+ * detection found are shown; before detection has answered, the presets.
+ */
+function shownAgents(launcher, detected) {
+  if (!launcher.agentsAuto) return launcher.agents
+  // An agent the saved default or a scenario points to stays listed (marked
+  // missing by detection), so Settings can still show and save those choices.
+  const referenced = new Set([launcher.defaultAgent, ...launcher.scenarios.map((scenario) => scenario.agent)])
+  const installed = new Set(installedAgents(launcher.agents, detected).map((agent) => agent.id))
+  const found = launcher.agents.filter((agent) => installed.has(agent.id) || referenced.has(agent.id))
+  // Before detection has answered: the presets (and the references).
+  const answered = launcher.agents.some((agent) => detected[agent.id] && typeof detected[agent.id].available === 'boolean')
+  if (answered) return found
+  const presets = new Set(AGENT_PRESETS.map((agent) => agent.id))
+  return launcher.agents.filter((agent) => presets.has(agent.id) || referenced.has(agent.id))
+}
+
+/**
  * `detected` is the agent detection map; `environment` carries what the host
  * found on this machine: `terminals` (detectTerminals) and `promptPaste`
  * (whether the paste wrapper can run, and why not).
@@ -79,11 +103,17 @@ export function publicConfig(settings, runtime, launcher, detected, environment 
     refreshSeconds: settings.refreshSeconds,
     requireGreenChecks: settings.requireGreenChecks,
     includeBotReviews: settings.includeBotReviews,
-    agents: launcher.agents,
+    agents: shownAgents(launcher, detected || {}),
     // Saved agents set aside because their command breaks the prompt rule:
     // [{ id, label, command, reason: 'placeholder' }], [] when none.
     invalidAgents: launcher.invalidAgents,
     defaultAgent: launcher.defaultAgent,
+    // `defaultAgent` (the saved choice, shown in Settings) may be DSH_TARGET.
+    // `defaultTarget`: what the panel opens for "default" (the saved agent
+    // while it can start, else DSH); `effectiveDefaultAgent`: what a launch
+    // without DSH uses (the host's own launches, a panel that cannot open DSH).
+    defaultTarget: panelDefaultTarget(launcher.defaultAgent, detected || {}),
+    effectiveDefaultAgent: effectiveDefaultAgent(launcher.defaultAgent, launcher.agents, detected || {}),
     cloneDirs: launcher.cloneDirs,
     cloneDirsDefault: DEFAULT_CLONE_DIRS,
     repoPaths: launcher.repoPaths,
@@ -116,6 +146,7 @@ function sanitizeAgents(input) {
     const label = typeof entry.label === 'string' ? entry.label.trim() : ''
     const command = typeof entry.command === 'string' ? entry.command.trim() : ''
     if (!AGENT_ID_PATTERN.test(id)) throw new BadRequest(`invalid agent id "${id}"`)
+    if (id === DSH_TARGET) throw new BadRequest(`the agent id "${DSH_TARGET}" is reserved for the DSH launch target`)
     if (label === '' || label.length > MAX_AGENT_LABEL) {
       throw new BadRequest(`agent "${id}" needs a label of up to ${MAX_AGENT_LABEL} characters`)
     }
@@ -252,7 +283,7 @@ export function sanitizePatch(input, currentLauncher) {
     }
     const id = input.defaultAgent.trim().toLowerCase()
     const agents = patch.agents !== undefined ? patch.agents : currentLauncher.agents
-    if (!agents.some((agent) => agent.id === id)) throw new BadRequest(`unknown agent "${id}"`)
+    if (id !== DSH_TARGET && !agents.some((agent) => agent.id === id)) throw new BadRequest(`unknown agent "${id}"`)
     patch.defaultAgent = id
   }
   if (input.cloneDirs !== undefined) patch.cloneDirs = sanitizeCloneDirs(input.cloneDirs)

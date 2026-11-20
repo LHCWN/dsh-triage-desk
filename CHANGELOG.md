@@ -7,8 +7,18 @@
 - Hover or focus the count next to *Triage* to see what it counts and what it
   leaves out, such as new issues and optional reviews.
 
+### Changed
+
+- A new profile launches into a new DSH chat by default, and the launch menu
+  lists only the coding agents installed on the machine. Choose another default
+  in Settings; an agent that cannot start opens a DSH chat instead.
+- Settings saves the agent list only when you change it.
+- `dsh` now names the DSH launch target. A custom agent you named `dsh` gets
+  a new id, and your default and scenarios keep pointing at it.
+
 ### Fixed
 
+- Without Claude Code installed, launches no longer fail on the preset default.
 - Large organizations: when the branch scan was narrowed partway through, a
   repository already read in full no longer hides your red branches in it.
 

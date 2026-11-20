@@ -149,7 +149,9 @@ function fakeSpawn(spec) {
     const executables = argv.slice(4)
     let output = ''
     for (const executable of executables) {
-      const located = executable === 'missing-agent' ? '' : '/opt/homebrew/bin/' + executable
+      // `captured.installed`, when set, lists the only agent executables found.
+      const missing = executable === 'missing-agent' || (captured.installed && !captured.installed.includes(executable))
+      const located = missing ? '' : '/opt/homebrew/bin/' + executable
       output += ['__td__', executable, located, located].join('\t') + '\n'
     }
     return fakeHandle(0, output, '')
@@ -1343,6 +1345,59 @@ await recordAsync('a native draft agent keeps its draft when paste mode is on', 
   const payload = await json(res)
   assert.equal(payload.mode, 'draft')
   assert.equal(payload.delivery.pasteBlocked, null)
+  await cleanupLaunches()
+})
+
+// A third host instance whose saved default agent is not installed.
+apply(ctx, {
+  agents: [
+    { id: 'missing', label: 'Missing Agent', command: 'missing-agent {prompt}' },
+    { id: 'codex', label: 'Codex', command: 'codex {prompt}' },
+  ],
+  defaultAgent: 'missing',
+  cloneDirs: [path.join(fixture, 'Playground')],
+  terminal: 'terminal',
+})
+
+await recordAsync('a default agent that is not installed falls back to the first installed one', async () => {
+  const config = await json(await callHandler('/triage-desk/config', 'GET'))
+  assert.equal(config.config.defaultAgent, 'missing', 'the saved choice is kept')
+  assert.equal(config.config.effectiveDefaultAgent, 'codex', 'launches use the first installed agent')
+  assert.equal(config.config.defaultTarget, 'dsh', 'the panel opens a DSH chat instead of the missing agent')
+  const reserved = await callHandler('/triage-desk/config', 'POST', { agents: [{ id: 'dsh', label: 'My dsh', command: 'dsh-cli {prompt}' }] })
+  assert.equal(reserved.statusCode, 400)
+  assert.match((await json(reserved)).error.message, /"dsh" is reserved/)
+  const res = await callHandler('/triage-desk/launch', 'POST', { url: PR_URL, scenario: 'review-pr' })
+  const payload = await json(res)
+  assert.equal(res.statusCode, 200, res.body)
+  assert.equal(payload.agent.id, 'codex')
+  const explicit = await callHandler('/triage-desk/launch', 'POST', { url: PR_URL, agent: 'missing' })
+  assert.equal(explicit.statusCode, 400, 'an explicitly chosen missing agent is still an error')
+  assert.equal((await json(explicit)).error.code, 'agent-missing')
+  await cleanupLaunches()
+})
+
+// A fresh profile: nothing saved. The default opens DSH, and the agent list is
+// what detection finds on the machine (here Claude Code and Codex).
+captured.installed = ['claude', 'codex', 'python3', 'gh']
+apply(ctx, {
+  cloneDirs: [path.join(fixture, 'Playground')],
+  terminal: 'terminal',
+  // Referenced by a scenario pin but not installed: it stays in the list.
+  scenarios: [...defaultScenarios(), { id: 'gem', label: 'Gemini run', scope: 'item', sections: ['review'], prompt: '{url}', agent: 'gemini', enabled: true }],
+})
+
+await recordAsync('a fresh profile defaults to DSH and lists only installed agents', async () => {
+  const config = (await json(await callHandler('/triage-desk/config', 'GET'))).config
+  assert.equal(config.defaultAgent, 'dsh')
+  assert.equal(config.defaultTarget, 'dsh', 'the panel opens a DSH chat')
+  assert.deepEqual(config.agents.map((agent) => agent.id), ['claude', 'codex', 'gemini'],
+    'installed agents, plus a missing one a scenario still points to (so Settings can save)')
+  assert.equal(config.detectedAgents.gemini.available, false)
+  assert.equal(config.effectiveDefaultAgent, 'claude', 'a launch the host runs uses the first installed agent')
+  const res = await callHandler('/triage-desk/launch', 'POST', { url: PR_URL, scenario: 'review-pr' })
+  assert.equal(res.statusCode, 200, res.body)
+  assert.equal((await json(res)).agent.id, 'claude')
   await cleanupLaunches()
 })
 

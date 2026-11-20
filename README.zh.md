@@ -80,7 +80,7 @@ iTerm2、Ghostty（macOS）、GNOME Terminal、Konsole、Xfce Terminal 和 Windo
 
 Toast 提示会写明智能体和终端，例如*已在 Ghostty 中打开 Codex（/path）：提示将出现在输入框中，尚未发送——检查后按 Enter*。
 
-**智能体。** 内置预设涵盖 Claude Code、Codex、opencode、Gemini CLI、Cursor Agent、Antigravity（`agy`）和 pi；设置中的**查找智能体**还能检测 Aider、Amp、Droid、Goose 和 Crush，你也可以添加自己的命令。命令必须恰好包含一个未加引号的 `{prompt}`，作为独立参数，或紧跟在 `--flag=` 之后。
+**智能体。** 默认情况下，启动会打开一个带有提示的新 DSH 对话；菜单列出本机已安装的编码智能体：Claude Code、Codex、opencode、Gemini CLI、Cursor Agent、Antigravity（`agy`）、pi、Aider、Amp、Droid、Goose 和 Crush。可以在设置中选择其他默认目标，或添加自己的命令。命令必须恰好包含一个未加引号的 `{prompt}`，作为独立参数，或紧跟在 `--flag=` 之后。
 
 详情：[终端启动器参考](docs/REFERENCE.md#terminal-launcher)。
 

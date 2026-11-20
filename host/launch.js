@@ -22,6 +22,8 @@ import {
   buildWindowsLoginLauncherScript,
   buildWindowsPasteLauncherScript,
   draftCommandForStatus,
+  DSH_TARGET,
+  effectiveDefaultAgent,
   PASTE_WRAPPER_CS,
   PASTE_WRAPPER_PY,
   parseRepoUrl,
@@ -91,11 +93,22 @@ export function createLaunch({
     return fallback !== undefined ? fallback : launcherSettings.scenarios[0]
   }
 
-  const resolveLauncherAgent = (body, scenario) => {
+  // `detected` decides what "default" means: see effectiveDefaultAgent. An
+  // agent named by the request or pinned by the scenario is used as is.
+  const resolveLauncherAgent = (body, scenario, detected) => {
     let wantedAgent =
       typeof body.agent === 'string' && body.agent.trim() !== '' ? body.agent.trim().toLowerCase() : ''
     if (wantedAgent === '') {
-      wantedAgent = scenario.agent === 'default' ? launcherSettings.defaultAgent : scenario.agent
+      wantedAgent = scenario.agent === 'default'
+        ? effectiveDefaultAgent(launcherSettings.defaultAgent, launcherSettings.agents, detected)
+        : scenario.agent
+    }
+    if (wantedAgent === DSH_TARGET) {
+      throw new LaunchError(
+        'agent-missing',
+        'the default opens a new DSH chat, which only the Triage panel can do, and no coding agent is installed; choose an agent in Settings',
+        { agent: DSH_TARGET },
+      )
     }
     const agent = launcherSettings.agents.find((entry) => entry.id === wantedAgent)
     if (agent === undefined) {
@@ -182,13 +195,17 @@ export function createLaunch({
     const body = input !== null && typeof input === 'object' ? input : {}
     const rendered = renderScenarioPrompt(body)
     const scenario = rendered.scenario
-    const agent = resolveLauncherAgent(body, scenario)
-    let status = (await detectAgents())[agent.id]
+    const cached = await detectAgents()
+    let agent = resolveLauncherAgent(body, scenario, cached)
+    let status = cached[agent.id]
     // Detection is cached and the launch runs the path it found: when that
-    // path is gone (the agent was moved or reinstalled), detect once more.
+    // path is gone (the agent was moved or reinstalled), detect once more,
+    // and resolve again so a "default" launch can fall back to another agent.
     if (status !== undefined && status.available === true && typeof status.path === 'string'
       && !(await isExecutableFile(status.path))) {
-      status = (await detectAgents(true))[agent.id]
+      const fresh = await detectAgents(true)
+      agent = resolveLauncherAgent(body, scenario, fresh)
+      status = fresh[agent.id]
     }
     if (status !== undefined && status.available === false) {
       const why = {

@@ -338,6 +338,58 @@ assert.ok(/\.adx-select option, \.adx-select optgroup \{\s*background-color: var
   'select options take the theme surface, not the white default')
 assert.ok(source.includes('body[data-ds-dark-theme] .adx-root { color-scheme: dark; }'), 'native controls follow the DSH dark theme')
 
+// An older host (no defaultTarget) would reject "dsh" on save: no DSH option.
+{
+  const view = state.view
+  state.view = 'settings'
+  const olderHost = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+  assert.ok(!olderHost.includes('<option value="dsh"'), 'Settings offers DSH only to a host that saves it')
+  state.view = view
+}
+
+// A saved default agent that is not installed: the launch menu preselects the
+// host's effective default, and Settings keeps the saved one with a hint.
+{
+  const saved = { ...state.config }
+  state.config = {
+    ...state.config,
+    defaultAgent: 'claude',
+    defaultTarget: 'dsh',
+    effectiveDefaultAgent: 'codex',
+    detectedAgents: { claude: { available: false, reason: 'missing' }, codex: { available: true } },
+  }
+  state.openMenu = 'review:pull:1'
+  const menu = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+  assert.ok(/<option value="dsh" selected="">/.test(menu), 'a default that cannot start opens a DSH chat')
+  state.config = { ...state.config, supportsPrompt: false }
+  const noDsh = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+  assert.ok(/<option value="codex" selected="">/.test(noDsh), 'without the DSH target, the installed agent')
+  state.openMenu = null
+  state.view = 'settings'
+  const noDshSettings = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+  assert.ok(!noDshSettings.includes('<option value="dsh">'), 'Settings does not offer a DSH target the panel cannot open')
+  state.config = { ...state.config, defaultAgent: 'dsh', defaultTarget: 'dsh' }
+  const savedDsh = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+  assert.ok(/<option value="dsh" selected="">/.test(savedDsh), 'a saved DSH default is still shown')
+  assert.ok(savedDsh.includes('settings.defaultDshUnavailable'), 'and Settings says what launches use instead')
+  state.config = { ...state.config, defaultAgent: 'claude', supportsPrompt: true }
+  state.view = 'list'
+  state.openMenu = 'review:pull:1'
+  state.openMenu = null
+  state.view = 'settings'
+  const settings = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+  assert.ok(settings.includes('settings.defaultAgentFallback'), 'Settings explains what launches open instead')
+  assert.ok(/<option value="claude" data-missing="true" selected="">/.test(settings), 'Settings keeps the saved choice, marked missing')
+  assert.ok(settings.includes('<option value="dsh">launch.dshTarget</option>'), 'DSH can be chosen as the default')
+  state.config = { ...state.config, defaultAgent: 'dsh', defaultTarget: 'dsh' }
+  state.view = 'list'
+  state.openMenu = 'review:pull:1'
+  assert.ok(/<option value="dsh" selected="">/.test(renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))),
+    'a DSH default preselects DSH')
+  state.openMenu = null
+  state.config = saved
+}
+
 state.openMenu = 'review:pull:1'
 state.config.supportsPrompt = false
 const menuWithoutDsh = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
@@ -683,6 +735,7 @@ async function editSettings(harness) {
   harness.click(save)
   assert.equal(harness.pending.length, 1, 'clicking Save sends one real store request')
   assert.deepEqual(harness.pending[0].body.orgs, ['edited-org'])
+  assert.ok(!('agents' in harness.pending[0].body), 'the agent list is not saved unless edited')
   assert.ok(harness.text().includes('settings.saving'), 'pending persistence shows Saving')
   assert.ok(!harness.text().includes('settings.saved'), 'pending persistence must never show Saved')
   assert.ok(!harness.text().includes('settings.done'), 'pending persistence must not mark the form clean')
@@ -1266,6 +1319,38 @@ for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-
 
 {
   // Row and section launches through the menus: request bodies and toasts.
+  {
+    // DSH default (a new profile): a scenario pinned to Codex still runs Codex
+    // when the picker is untouched; an unpinned one opens a DSH chat; Settings
+    // saves with the DSH default.
+    const pinned = { id: 'codex-review', label: 'Codex review', scope: 'item', sections: ['review', 'rereview', 'merge', 'respond', 'ci', 'issues'], prompt: '{url}', agent: 'codex', enabled: true }
+    const harness = settingsHarness({
+      snapshotPayload: snapshot,
+      scenarios: [state.config.scenarios[0], pinned],
+      configExtra: { defaultAgent: 'dsh', defaultTarget: 'dsh', effectiveDefaultAgent: 'claude' },
+    })
+    await harness.flush()
+    const item = (label) => harness.nodes().find((node) => node.props?.role === 'menuitem'
+      && flattenTree(node.props.children).some((child) => typeof child === 'string' && child.startsWith(label)))
+    const rowTrigger = () => harness.nodes().filter((node) => node.type === 'button' && node.props['aria-label'] === 'launch.title')[1]
+    harness.click(rowTrigger())
+    harness.click(item('Codex review'))
+    await harness.flush()
+    assert.equal(harness.launches[0].url, '/triage-desk/launch', 'a pinned scenario is not overridden by the implicit DSH default')
+    assert.equal(harness.launches[0].body.agent, 'codex')
+    harness.click(rowTrigger())
+    harness.click(item('link'))
+    await harness.flush()
+    assert.equal(harness.launches[1].url, '/triage-desk/prompt', 'an unpinned scenario opens the DSH default')
+    harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+    await harness.flush()
+    harness.change(harness.nodes().find((node) => node.props?.placeholder === 'settings.orgsPlaceholder'), 'edited-org')
+    harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('settings.save')))
+    assert.equal(harness.pending.length, 1, 'a profile with the DSH default can save Settings')
+    assert.equal(harness.pending[0].body.defaultAgent, 'dsh')
+    harness.dispose()
+  }
+
   const sections = snapshot.sections.map((section) => section.id !== 'rereview' ? section
     : { ...section, items: [{ ...section.items[0], rereviewCause: 'author-reply' }] })
   const harness = settingsHarness({ snapshotPayload: { ...snapshot, sections } })
@@ -1282,7 +1367,8 @@ for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-
   assert.equal(harness.launches.length, 1)
   assert.equal(harness.launches[0].url, '/triage-desk/launch')
   assert.equal(harness.launches[0].body.reason, 'author-replied', 'a terminal launch sends the author-replied reason')
-  assert.equal(harness.launches[0].body.agent, 'claude')
+  assert.equal(harness.launches[0].body.agent, undefined,
+    'an untouched picker sends no agent: the host resolves the default with fresh detection')
   assert.equal(harness.store.get().openMenu, null, 'a successful launch closes the menu')
   assert.equal(harness.store.get().toast.text, 'launch.draft:Claude Code,iTerm2,/work,⌘V')
   harness.click(rowTrigger())
@@ -1296,9 +1382,9 @@ for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-
   harness.click(item('review-all (2)'))
   await harness.flush()
   assert.deepEqual(harness.launches[2].body, {
-    scenario: 'review-all', section: 'review', agent: 'claude',
+    scenario: 'review-all', section: 'review',
     urls: ['https://github.com/tester/example/pull/1', 'https://github.com/tester/example/pull/2'],
-  }, 'a section launch sends the union of its sections')
+  }, 'a section launch sends the union of its sections (no agent: the picker was not touched)')
   assert.equal(harness.store.get().toast.text, 'launch.draft:Claude Code,iTerm2,/work,⌘V' + 'launch.countSuffix:2')
   harness.dispose()
 }
