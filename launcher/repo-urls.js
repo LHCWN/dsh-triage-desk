@@ -33,7 +33,11 @@ export function parseRepoUrl(value) {
     return null
   }
   if (!REPO_PATTERN.test(owner + '/' + name)) return null
-  return { owner, name, slug: owner + '/' + name }
+  // The issue or pull request number, when the link points at one.
+  const number = (segments[2] === 'pull' || segments[2] === 'issues') && /^\d+$/.test(segments[3] || '')
+    ? segments[3]
+    : ''
+  return { owner, name, slug: owner + '/' + name, number }
 }
 
 const GITHUB_SSH_HOSTNAMES = new Set(['github.com', 'ssh.github.com'])

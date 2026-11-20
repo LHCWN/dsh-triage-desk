@@ -27,9 +27,9 @@ const {
   MAX_SCENARIO_TEMPLATE,
   MAX_SCENARIOS,
   AGENTS_VERSION,
-  normalizeLauncherConfig,
   defaultAgentCommand,
   defaultScenarios,
+  normalizeLauncherConfig,
   openTerminalPlan,
   PASTE_WRAPPER_PY,
 } = await import(pathToFileURL(path.join(here, '..', 'launcher.js')).href)
@@ -391,8 +391,8 @@ await recordAsync('launch with a known scenario builds its prompt', async () => 
   assert.equal(payload.agent.id, 'claude')
   assert.equal(payload.count, 1)
   assert.equal(payload.trimmed, null)
-  assert.ok(captured.clipboard.startsWith('Review the pull request ' + PR_URL))
-  assert.ok(captured.clipboard.includes('strict senior reviewer'))
+  assert.ok(captured.clipboard.startsWith('Review pull request ' + PR_URL))
+  assert.ok(captured.clipboard.includes('repos/acme/widgets/pulls/288/reviews'), captured.clipboard)
   assert.ok(!captured.clipboard.includes('Items:'))
   await cleanupLaunches()
 })
@@ -444,7 +444,7 @@ await recordAsync('prompt route renders item and section prompts without launchi
   assert.equal(section.statusCode, 200)
   const sectionPayload = await json(section)
   assert.equal(sectionPayload.count, 1)
-  assert.ok(sectionPayload.prompt.includes('Review every pull request'))
+  assert.ok(sectionPayload.prompt.includes('Review each pull request below'))
   assert.ok(sectionPayload.prompt.includes(PR_URL))
   const badUrl = await callHandler('/triage-desk/prompt', 'POST', {
     url: 'https://example.com/x',
@@ -501,7 +501,7 @@ await recordAsync('section launch over one repository uses the clone', async () 
   assert.equal(payload.cwdMode, 'clone')
   assert.equal(payload.trimmed, null)
   assert.equal(payload.agent.id, 'codex')
-  assert.ok(captured.clipboard.startsWith('Review every pull request listed below'))
+  assert.ok(captured.clipboard.startsWith('Review each pull request below'))
   assert.ok(captured.clipboard.includes('Items: 2 · sections: awaiting my review'))
   assert.ok(captured.clipboard.includes(PR_URL))
   assert.ok(captured.clipboard.includes(PR_URL_2))
@@ -1091,6 +1091,17 @@ await recordAsync('config POST accepts scenarios and a default scenario', async 
   assert.equal(captured.edits.length, 1)
   assert.equal(captured.edits[0].defaultScenario, 'review-pr')
   assert.equal(captured.edits[0].scenarios.length, defaultScenarios().length + 1)
+  const stored = new Map(captured.edits[0].scenarios.map((scenario) => [scenario.id, scenario.prompt]))
+  assert.equal(stored.get('review-pr'), '', 'an unedited built-in prompt is stored empty and follows the default')
+  assert.equal(stored.get('custom-test'), 'Do {links}\nnow')
+  // The fake editor records saves without applying them: read the saved config
+  // back the way the host loads it.
+  const reread = normalizeLauncherConfig(captured.edits[0])
+  assert.equal(
+    reread.scenarios.find((scenario) => scenario.id === 'review-pr').prompt,
+    defaultScenarios().find((scenario) => scenario.id === 'review-pr').prompt,
+    'the panel still sees the full prompt',
+  )
 })
 
 await recordAsync('config POST accepts a body larger than the launch limit', async () => {
@@ -1357,16 +1368,16 @@ await recordAsync('paste mode runs the agent through the Python wrapper with the
   assert.equal(payload.mode, 'paste')
   assert.deepEqual(payload.delivery, { mode: 'paste', pasteBlocked: null, platform: 'darwin' })
   assert.deepEqual(payload.terminal, { id: 'terminal', label: 'Terminal', fallback: false })
-  assert.ok(captured.clipboard.startsWith('Review the pull request'), 'the clipboard keeps a copy')
+  assert.ok(captured.clipboard.startsWith('Review pull request'), 'the clipboard keeps a copy')
   const launcherFile = captured.opens.find((entry) => entry.length === 4)[3]
   const script = await fs.readFile(launcherFile, 'utf8')
   const dir = path.dirname(launcherFile)
   const wrapper = path.join(dir, 'paste-wrapper.py')
   const promptFile = path.join(dir, 'prompt.txt')
   assert.ok(script.includes("'/opt/homebrew/bin/python3' -I '" + wrapper + "' '" + promptFile + "' '/bin/zsh' -c '/opt/homebrew/bin/codex --model=gpt-5'"), script)
-  assert.ok(!script.includes('Review the pull request'), 'the prompt never appears in the script')
+  assert.ok(!script.includes('Review pull request'), 'the prompt never appears in the script')
   assert.equal(await fs.readFile(wrapper, 'utf8'), PASTE_WRAPPER_PY)
-  assert.ok((await fs.readFile(promptFile, 'utf8')).startsWith('Review the pull request ' + PR_URL))
+  assert.ok((await fs.readFile(promptFile, 'utf8')).startsWith('Review pull request ' + PR_URL))
   const tool = await captured.tool.execute({ action: 'launch', url: PR_URL })
   assert.match(tool.text, /typed into the agent's input box and has not been sent/)
   assert.equal(tool.launched.mode, 'paste')

@@ -95,6 +95,11 @@ prepared but **not sent**. A line under the agent picker says where it opens and
 how the prompt arrives, for example *Opens in Ghostty · prompt typed into the
 input box, unsent*.
 
+Once you send it, the review scenarios post one GitHub review of inline comments
+tagged `[P1]`–`[P3]`, and never approve. The fix and reply scenarios wait for your
+OK before pushing or posting; triage only reports back. None of them add AI
+attribution.
+
 <img src="docs/screenshots/launch-menu.png" width="300" alt="The launch menu on a row: the agent picker set to DSH — this app, and the scenarios Just the link and Review this PR">
 
 **Terminals.** Settings → *Terminal and agents* → **Open agents in** offers

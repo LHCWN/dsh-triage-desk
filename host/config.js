@@ -22,6 +22,7 @@ import {
   SCENARIO_SECTION_LABELS,
   TERMINAL_AUTO,
   TERMINAL_IDS,
+  BUILTIN_SCENARIOS,
   defaultScenarios,
   draftCommandForStatus,
   AGENT_PRESETS,
@@ -170,6 +171,8 @@ function sanitizeAgents(input) {
   return agents
 }
 
+const BUILTIN_PROMPTS = new Map(BUILTIN_SCENARIOS.map((scenario) => [scenario.id, scenario.prompt]))
+
 function sanitizeScenarios(input, agents) {
   if (!Array.isArray(input)) throw new BadRequest('scenarios must be an array')
   if (input.length === 0) throw new BadRequest('at least one scenario is required')
@@ -182,12 +185,15 @@ function sanitizeScenarios(input, agents) {
     const id = entry.id.trim()
     if (seen.has(id)) throw new BadRequest(`duplicate scenario id "${id}"`)
     seen.add(id)
+    const prompt = entry.prompt.replace(/\r\n/g, '\n').trim()
     scenarios.push({
       id,
       label: entry.label.trim(),
       scope: entry.scope,
       sections: entry.sections.slice(),
-      prompt: entry.prompt.replace(/\r\n/g, '\n').trim(),
+      // An unedited built-in prompt is saved empty, so it follows the default
+      // when a release changes it (normalizeScenarios fills it back in).
+      prompt: prompt === BUILTIN_PROMPTS.get(id) ? '' : prompt,
       agent: entry.agent.trim(),
       enabled: entry.enabled,
     })
