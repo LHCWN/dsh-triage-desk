@@ -53,6 +53,20 @@ function normalizeAgentId(value, fallbackIndex) {
  * so Settings can show it for repair. When no saved agent is usable the presets
  * are used; `invalidAgents` still lists every rejected entry.
  */
+/**
+ * The agent a launch uses for "default": the saved default while detection
+ * does not report it missing, else the first agent detection found. With
+ * nothing found it stays, so the launch reports the default as missing. The
+ * saved default is only ever the first preset unless the user picked one, so
+ * this is what keeps a fresh profile without Claude Code launchable.
+ */
+export function effectiveDefaultAgent(defaultAgent, agents, detected = {}) {
+  const status = detected[defaultAgent]
+  if (!status || status.available !== false) return defaultAgent
+  const found = agents.find((agent) => detected[agent.id] && detected[agent.id].available === true)
+  return found ? found.id : defaultAgent
+}
+
 export function normalizeAgentConfig(value) {
   const source = Array.isArray(value) ? value : AGENT_PRESETS
   const agents = []

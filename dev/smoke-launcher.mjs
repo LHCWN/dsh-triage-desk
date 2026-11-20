@@ -66,6 +66,7 @@ import {
   normalizeTerminalChoice,
   sanitizePastePrompt,
   windowsQuote,
+  effectiveDefaultAgent,
 } from '../launcher.js'
 
 const checks = []
@@ -136,6 +137,17 @@ await fs.writeFile(
   path.join(skippedClone, '.git', 'config'),
   '[remote "origin"]\n\turl = https://github.com/acme/private-notes.git\n',
 )
+
+check('the default agent falls back to the first installed one', () => {
+  const agents = [{ id: 'claude' }, { id: 'codex' }, { id: 'opencode' }]
+  const missing = { available: false, reason: 'missing' }
+  const found = { available: true, path: '/usr/bin/x' }
+  assert.equal(effectiveDefaultAgent('claude', agents, { claude: found, codex: found }), 'claude', 'an installed default stays')
+  assert.equal(effectiveDefaultAgent('claude', agents, { claude: missing, codex: missing, opencode: found }), 'opencode')
+  assert.equal(effectiveDefaultAgent('claude', agents, {}), 'claude', 'unknown detection keeps the default')
+  assert.equal(effectiveDefaultAgent('claude', agents, { claude: missing, codex: missing, opencode: missing }), 'claude',
+    'with nothing installed the default stays, so the launch can say it is missing')
+})
 
 check('presets cover the documented agents', () => {
   const ids = AGENT_PRESETS.map((agent) => agent.id)

@@ -262,6 +262,7 @@ window.__ModuleLoader__.load({
       'settings.terminal': 'Terminal and agents',
       'settings.terminalHint': 'The terminal button on each row starts an agent in the local clone of the repository with a prepared initial prompt.',
       'settings.defaultAgent': 'Default agent',
+      'settings.defaultAgentFallback': '{missing} isn’t installed, so launches use {used}.',
       'settings.agentsHint': 'The name is shown in menus; each agent keeps an internal id automatically. Launch command; {prompt} is replaced with the initial prompt. The binary is resolved through the interactive login-shell PATH. Use {prompt} exactly once: as its own unquoted word (claude {prompt}) or after --flag= (aider --message={prompt}).',
       'settings.agentName': 'Label',
       'settings.agentCommand': 'Command',
@@ -569,6 +570,7 @@ window.__ModuleLoader__.load({
       'settings.terminal': '终端与智能体',
       'settings.terminalHint': '每行的终端按钮会在仓库的本地克隆中启动智能体，并带好初始提示。',
       'settings.defaultAgent': '默认智能体',
+      'settings.defaultAgentFallback': '{missing} 未安装，启动时改用 {used}。',
       'settings.agentsHint': '名称会显示在菜单中；内部 ID 自动保留。启动命令；{prompt} 会替换为初始提示。程序通过交互式登录 shell 的 PATH 查找。请仅使用一次 {prompt}：作为不带引号的独立单词（claude {prompt}）或位于 --flag= 之后（aider --message={prompt}）。',
       'settings.agentName': '名称',
       'settings.agentCommand': '命令',
@@ -1754,9 +1756,14 @@ window.__ModuleLoader__.load({
       return { id: value, label: agent !== undefined ? agent.label : value }
     }
 
+    /* The agent "default" launches with: the host's effective default (the
+       saved one, or the first installed agent when it is missing); an older
+       host only sends the saved one. */
     function defaultAgentId(config, agents) {
-      const value = configValue(config, 'defaultAgent')
-      if (typeof value === 'string' && value !== '') return value
+      for (const key of ['effectiveDefaultAgent', 'defaultAgent']) {
+        const value = configValue(config, key)
+        if (typeof value === 'string' && value !== '' && agents.some((agent) => agent && agent.id === value)) return value
+      }
       return agents.length > 0 ? agents[0].id : ''
     }
 
@@ -4725,6 +4732,39 @@ window.__ModuleLoader__.load({
       }
 
       /** Two radio cards: type the prompt into the agent (default) or copy it to the clipboard. */
+      // The saved default agent; when it is not installed, launches use the
+      // first installed one (the host's effectiveDefaultAgent) and a hint says so.
+      function renderDefaultAgent() {
+        const detected = (config && config.detectedAgents) || {}
+        const saved = config && config.defaultAgent
+        const effective = config && config.effectiveDefaultAgent
+        const labelOf = (id) => {
+          const agent = form.agents.find((entry) => entry.id === id)
+          return agent ? agent.label || agent.id : id
+        }
+        const fallback = typeof effective === 'string' && effective !== saved && form.defaultAgent === saved
+        const hint = fallback ? t('settings.defaultAgentFallback', { missing: labelOf(saved), used: labelOf(effective) }) : undefined
+        return h(
+          Field,
+          { label: t('settings.defaultAgent'), htmlFor: 'adx-default-agent', hint },
+          h(
+            'select',
+            {
+              id: 'adx-default-agent',
+              className: 'adx-select',
+              value: form.defaultAgent,
+              onChange: (event) => update({ defaultAgent: event.target.value }),
+            },
+            form.agents.map((agent) => {
+              const detection = detected[agent.id]
+              const missing = Boolean(detection && detection.available === false)
+              return h('option', { key: agent.id, value: agent.id, 'data-missing': missing ? 'true' : undefined },
+                (agent.label || agent.id) + (missing ? ' · ' + agentMissingLabel(t, detection) : ''))
+            }),
+          ),
+        )
+      }
+
       function renderPromptDelivery() {
         const paste = configValue(config, 'promptPaste')
         const blocked = paste && paste.available === false ? paste.reason : null
@@ -4907,22 +4947,7 @@ window.__ModuleLoader__.load({
           h('p', { className: 'adx-form-note' }, t('settings.terminalHint')),
           renderTerminalChoice(),
           renderPromptDelivery(),
-        h(
-          Field,
-          { label: t('settings.defaultAgent'), htmlFor: 'adx-default-agent' },
-          h(
-            'select',
-            {
-              id: 'adx-default-agent',
-              className: 'adx-select',
-              value: form.defaultAgent,
-              onChange: (event) => update({ defaultAgent: event.target.value }),
-            },
-            form.agents.map((agent) =>
-              h('option', { key: agent.id, value: agent.id }, agent.label || agent.id),
-            ),
-          ),
-        ),
+        renderDefaultAgent(),
         h(
           'div',
           { className: 'adx-agents' },

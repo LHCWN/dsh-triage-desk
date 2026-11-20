@@ -338,6 +338,28 @@ assert.ok(/\.adx-select option, \.adx-select optgroup \{\s*background-color: var
   'select options take the theme surface, not the white default')
 assert.ok(source.includes('body[data-ds-dark-theme] .adx-root { color-scheme: dark; }'), 'native controls follow the DSH dark theme')
 
+// A saved default agent that is not installed: the launch menu preselects the
+// host's effective default, and Settings keeps the saved one with a hint.
+{
+  const saved = { ...state.config }
+  state.config = {
+    ...state.config,
+    defaultAgent: 'claude',
+    effectiveDefaultAgent: 'codex',
+    detectedAgents: { claude: { available: false, reason: 'missing' }, codex: { available: true } },
+  }
+  state.openMenu = 'review:pull:1'
+  const menu = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+  assert.ok(/<option value="codex" selected="">/.test(menu), 'the launch menu preselects the installed agent')
+  state.openMenu = null
+  state.view = 'settings'
+  const settings = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+  assert.ok(settings.includes('settings.defaultAgentFallback'), 'Settings explains which agent launches use')
+  assert.ok(/<option value="claude" data-missing="true" selected="">/.test(settings), 'Settings keeps the saved choice, marked missing')
+  state.view = 'list'
+  state.config = saved
+}
+
 state.openMenu = 'review:pull:1'
 state.config.supportsPrompt = false
 const menuWithoutDsh = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))

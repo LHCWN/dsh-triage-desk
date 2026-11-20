@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Without Claude Code installed, launches no longer fail on the preset default:
+  they use the first installed agent, and Settings says which one.
+
 ## [0.1.2](https://github.com/LHCWN/dsh-triage-desk/releases/tag/v0.1.2) — 2026-11-20
 
 ### Fixed

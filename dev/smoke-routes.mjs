@@ -1346,6 +1346,31 @@ await recordAsync('a native draft agent keeps its draft when paste mode is on', 
   await cleanupLaunches()
 })
 
+// A third host instance whose saved default agent is not installed.
+apply(ctx, {
+  agents: [
+    { id: 'missing', label: 'Missing Agent', command: 'missing-agent {prompt}' },
+    { id: 'codex', label: 'Codex', command: 'codex {prompt}' },
+  ],
+  defaultAgent: 'missing',
+  cloneDirs: [path.join(fixture, 'Playground')],
+  terminal: 'terminal',
+})
+
+await recordAsync('a default agent that is not installed falls back to the first installed one', async () => {
+  const config = await json(await callHandler('/triage-desk/config', 'GET'))
+  assert.equal(config.config.defaultAgent, 'missing', 'the saved choice is kept')
+  assert.equal(config.config.effectiveDefaultAgent, 'codex', 'launches use the first installed agent')
+  const res = await callHandler('/triage-desk/launch', 'POST', { url: PR_URL, scenario: 'review-pr' })
+  const payload = await json(res)
+  assert.equal(res.statusCode, 200, res.body)
+  assert.equal(payload.agent.id, 'codex')
+  const explicit = await callHandler('/triage-desk/launch', 'POST', { url: PR_URL, agent: 'missing' })
+  assert.equal(explicit.statusCode, 400, 'an explicitly chosen missing agent is still an error')
+  assert.equal((await json(explicit)).error.code, 'agent-missing')
+  await cleanupLaunches()
+})
+
 await fs.rm(fixture, { recursive: true, force: true })
 
 const failed = checks.filter((entry) => entry.ok === false)

@@ -24,6 +24,7 @@ import {
   TERMINAL_IDS,
   defaultScenarios,
   draftCommandForStatus,
+  effectiveDefaultAgent,
   expandHome,
   hasSafePromptPlaceholder,
   validateDefaultScenario,
@@ -84,6 +85,9 @@ export function publicConfig(settings, runtime, launcher, detected, environment 
     // [{ id, label, command, reason: 'placeholder' }], [] when none.
     invalidAgents: launcher.invalidAgents,
     defaultAgent: launcher.defaultAgent,
+    // What "default" launches with: the saved default, or the first installed
+    // agent when detection reports it missing (Settings keeps the saved one).
+    effectiveDefaultAgent: effectiveDefaultAgent(launcher.defaultAgent, launcher.agents, detected || {}),
     cloneDirs: launcher.cloneDirs,
     cloneDirsDefault: DEFAULT_CLONE_DIRS,
     repoPaths: launcher.repoPaths,

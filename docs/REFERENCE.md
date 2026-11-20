@@ -502,7 +502,7 @@ Fields:
 | `requireGreenChecks` | `true` | List under "Ready to merge" only with green checks or no checks (pending/red are excluded) |
 | `includeBotReviews` | `false` | Count reviews from bot accounts as yours on the PRs your searches return |
 | `agents` | built-in presets | Agent list (up to 12): `{ id, label, command }`; `command` contains exactly one unquoted `{prompt}` after the executable, as its own word or after `--flag=` (see [Agents](#agents)) |
-| `defaultAgent` | `claude` | Agent id used when the menu is not opened explicitly |
+| `defaultAgent` | `claude` | Agent id used when the menu is not opened explicitly; if it is not installed, launches use the first installed agent and Settings says so |
 | `terminal` | `auto` | Terminal for launches: `auto` or one of `terminal`, `iterm`, `ghostty`, `gnome-terminal`, `konsole`, `xfce4-terminal`, `kitty`, `alacritty`, `xterm`, `windows-terminal`, `console` (see [Choosing a terminal](#choosing-a-terminal)) |
 | `promptDelivery` | `paste` | How agents without a native draft get the prompt: `paste` (typed into the input box, unsent) or `clipboard` (see [Prompt delivery](#prompt-delivery)) |
 | `cloneDirs` | `[]` | Optional base directories for clone discovery, up to 8 (under *Advanced: clone search*); empty searches the typical dirs that exist (`~/Projects`, `~/Developer`, …) plus project roots detected in your home |
