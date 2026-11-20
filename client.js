@@ -3637,9 +3637,12 @@ window.__ModuleLoader__.load({
       const large = [...new Set(limits.filter((entry) => LARGE_LIMIT_CODES.includes(entry.code)).map((entry) => entry.source).filter(Boolean))]
       const names = (list) => list.join(', ')
       const title = sources.length > 0 ? t('limits.title', { sources: names(sources) }) : t('limits.titleGeneral')
-      const lead = large.length === 0
-        ? t('limits.lead')
-        : t(large.length === 1 ? 'limits.leadLarge' : 'limits.leadLargeMany', { sources: names(large) })
+      // The lead gives the reason: a large source, or lists cut to their most
+      // recent part. Other limits (the organization cap) explain themselves.
+      const recent = limits.some((entry) => entry.code === 'prs-truncated' || entry.code === 'repos-truncated')
+      const lead = large.length > 0
+        ? t(large.length === 1 ? 'limits.leadLarge' : 'limits.leadLargeMany', { sources: names(large) })
+        : recent ? t('limits.lead') : null
       const prefix = sources.length > 1
       return h(
         'div',
@@ -3651,7 +3654,7 @@ window.__ModuleLoader__.load({
             'summary',
             { className: 'adx-limits-summary' },
             h('strong', null, title),
-            h('span', { className: 'adx-notice-detail' }, lead, ' ',
+            h('span', { className: 'adx-notice-detail' }, lead === null ? null : [lead, ' '],
               h('span', { className: 'adx-limits-toggle adx-limits-toggle--show' }, t('limits.show')),
               h('span', { className: 'adx-limits-toggle adx-limits-toggle--hide' }, t('limits.hide'))),
           ),

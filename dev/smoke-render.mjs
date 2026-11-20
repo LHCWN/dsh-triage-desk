@@ -274,6 +274,13 @@ assert.ok(limitsHtml.includes('limit.sourceDegraded') && limitsHtml.includes('li
 assert.ok(limitsHtml.includes('<details') && !limitsHtml.includes('<details open'), 'the limits list starts collapsed')
 assert.ok(limitsHtml.includes('REFERENCE.md#large-sources'), 'the notice links the explanation')
 assert.ok(!limitsHtml.includes('page.partial') && !limitsHtml.includes('source-degraded message'), 'limits are not shown as failures or raw messages')
+state.data = { ...snapshot, status: 'ok', warnings: [limit('orgs-truncated', null, { max: 10 })] }
+const orgsHtml = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+assert.ok(orgsHtml.includes('limits.titleGeneral') && orgsHtml.includes('limit.orgsTruncated'), 'the organization cap is a limit')
+assert.ok(!orgsHtml.includes('limits.lead'), 'the organization cap is not called a recency cut')
+state.data = { ...snapshot, status: 'ok', warnings: [limit('prs-truncated', 'acme', { list: 'authored', read: 100, total: 140 })] }
+assert.ok(renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store })).includes('limits.lead'),
+  'a list cut to its most recent part says so')
 state.data = { ...snapshot, status: 'ok', warnings: [limit('truncated-history', null, { reviews: 1, comments: 0, threads: 0, search: 0 })] }
 assert.ok(!renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store })).includes('adx-limits'),
   'old history on long pull requests alone is no notice')
