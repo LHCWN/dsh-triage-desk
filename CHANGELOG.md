@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### Large organizations
+
+- **No more failed refreshes on very large organizations.** GitHub ends a
+  GraphQL request after about 10 seconds and answers HTTP 502/504; on an
+  organization like `llvm` the pull request search took longer, was retried
+  unchanged, and the whole refresh failed. A search that times out twice (or
+  returns more than 12 MB) now retries lighter: each search on its own with 10
+  pull requests per request (at most 50), then 5 (at most 25) with shorter
+  comment windows. The source keeps the lighter search until a restart or a
+  change of the GitHub settings, and a `source-degraded` warning says so.
+- **Large sources skip the noisy parts.** A source that needed the lighter
+  search or timed out on its branch scan, or that has more than 500 new
+  unassigned issues in 30 days, shows no new-issue list (`new-issues-skipped`),
+  and its branch CI covers only the repositories of your pull requests there and
+  your contributions of the last year, on branches with your login in their name
+  (`branch-scan-narrowed`).
+- **One failed search no longer hides a source.** When a pull request search of
+  a source fails, its other searches, issues and branch CI are still shown.
+- **Comment bodies are read as markdown.** Mentions are matched in the stored
+  comment markdown, which GitHub serves much faster than rendered text; an
+  @-mention inside code, an HTML comment or a quoted line no longer counts as a
+  reply to you.
+
 ## [0.1.1](https://github.com/LHCWN/dsh-triage-desk/releases/tag/v0.1.1) — 2026-11-20
 
 ### Launching agents

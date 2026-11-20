@@ -17,6 +17,7 @@ overview; [ARCHITECTURE.md](ARCHITECTURE.md) maps files and contracts.
 - [Configuration](#configuration)
 - [Uninstall and saved settings](#uninstall-and-saved-settings)
 - [How it works](#how-it-works)
+- [Large sources](#large-sources)
 - [Limitations](#limitations)
 - [Development](#development)
 - [Releasing (maintainers)](#releasing-maintainers)
@@ -57,7 +58,8 @@ Sections:
   in repositories you maintain, styled quieter; they do not inflate the attention
   counter. Issues with an assignee are either your action (assigned to you, under
   *Needs your action*) or that person's work, so they never appear here. The
-  30-day window is fixed; snooze the issues you do not want to see.
+  30-day window is fixed; snooze the issues you do not want to see. A [large
+  source](#large-sources) does not show this list.
 
 Other panel features:
 
@@ -598,10 +600,12 @@ This section was checked against DSH 0.2.2-rc.5; the plugin supports
   agent, terminal, and prompt delivery on the host, and only then asks the OS to
   open the terminal. `GET /triage-desk/clones` powers **Check clones** in
   Settings.
-- **Failures**: transient network failures are retried once. A source whose PR
-  search fails is reported as unavailable and the snapshot is partial; a failed
-  issue search or branch scan keeps the source's pull requests and only makes
-  the snapshot partial. When a refresh cannot scan any source (network down,
+- **Failures**: transient network failures are retried once. A failed query
+  loses only its own results and makes the snapshot partial: a source whose PR
+  searches fail is reported as unavailable but still shows its issues and branch
+  CI, and a failed issue search or branch scan keeps the source's pull requests.
+  When GitHub times out on a query (see [large sources](#large-sources)), the
+  pull searches retry lighter instead of repeating it. When a refresh cannot scan any source (network down,
   rate limit, plugin reload), the panel and the agent tool keep the previous
   snapshot, marked stale with the reason, instead of showing an empty inbox;
   without a previous snapshot the error is reported explicitly. A permission
@@ -609,11 +613,40 @@ This section was checked against DSH 0.2.2-rc.5; the plugin supports
   rate-limit error or HTTP 429 stops further requests. A cancelled agent tool
   call stops waiting but does not cancel the shared refresh.
 
+## Large sources
+
+GitHub ends a GraphQL request after about 10 seconds of server time and answers
+HTTP 502 or 504 (or an empty response). In a very large organization, such as
+`llvm` with more than 12,000 open pull requests and bot comments that carry
+whole diffs, the full pull request search can take longer than that. A
+timed-out request is retried once; if it times out again (or its response is
+larger than 12 MB), Triage Desk reads that source lighter instead of failing:
+
+- **Smaller searches**: each of the three pull request searches runs on its
+  own, 10 pull requests per request and at most 50 per search. If GitHub still
+  times out, 5 per request and at most 25, with shorter comment windows (the
+  last 15 comments, 5 review threads with 3 comments each). The snapshot
+  carries a `source-degraded` warning, and the source keeps the lighter search
+  until the plugin restarts or the GitHub settings change. Searches are sorted
+  by last update, so the most recently updated pull requests are always read.
+- **Large source**: a source that needed a lighter search or whose branch scan
+  timed out counts as large until then too; a source with more than 500 new
+  unassigned issues in the last 30 days counts as large for that refresh. A
+  large source does not list new unassigned issues (`new-issues-skipped`, shown
+  when some are in repositories you maintain), and its branch CI covers only
+  the repositories of your open pull requests there and the ones you committed
+  to or opened pull requests in during the last year (at most 10), and in them
+  only the branches with your login in their name, such as llvm's
+  `users/<login>/...` branches (`branch-scan-narrowed`). Red default branches
+  are still checked in those repositories; a branch without your login in its
+  name, in a repository you have no pull request or contribution in, is not.
+
 ## Limitations
 
 - **Coverage per refresh**: at most 10 organizations (`orgs-truncated` warning),
-  100 open PRs per search and source (`prs-truncated`), and 300 repositories per
-  source for branch CI (`repos-truncated`). The limits keep the most recently
+  100 open PRs per search and source (`prs-truncated`; fewer for a [large
+  source](#large-sources)), and 300 repositories per source for branch CI
+  (`repos-truncated`). The limits keep the most recently
   updated PRs and the most recently pushed repositories, which is not a
   guarantee that older ones have no pending work.
 - **Quota**: a refresh has no fixed point budget. It stops starting queries only
@@ -629,7 +662,9 @@ This section was checked against DSH 0.2.2-rc.5; the plugin supports
 - **PR history windows**: re-review uses `viewerLatestReview` for your own last
   review, so the review window cannot hide it. Other PR history is read in
   bounded windows: the last 50 reviews, the last 30 comments, and the last 10
-  review threads with their last 5 comments each. When GitHub reports more, the
+  review threads with their last 5 comments each (smaller for a [large
+  source](#large-sources)). An @-mention counts only outside code and quoted
+  lines. When GitHub reports more, the
   snapshot carries a `truncated-history` warning instead of silently dropping
   them. New commits are always detected: the head commit id is compared with the
   commit your latest review was attached to.

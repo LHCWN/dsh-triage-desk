@@ -15,15 +15,29 @@ const LOOKBACK_DAYS = 7
 export const MAX_ORGS = 10
 /** Poll interval bounds and default, in seconds; Settings advertises the same. */
 export const REFRESH_SECONDS = { min: 15, max: 3600, default: 1200 }
-// Pull requests are discovered by search, 25 per page and at most 4 pages
-// (100) per search alias and source. A smaller page keeps the nested
-// AttentionPR cost and response size bounded; most sources need one page.
-const PULL_PAGE_SIZE = 25
-const MAX_PULL_PAGES = 4
+// Pull requests are discovered by search. GitHub ends a GraphQL request after
+// about 10 s of server time and answers HTTP 502/504 or an empty body; on
+// org:llvm (12,000+ open PRs, bot comments with full diffs) the combined
+// search of level 0 passes that limit. Each level is lighter than the last: a
+// source steps down one level when a search still times out after its retry
+// (or is too large) and keeps the level for the life of its snapshot store
+// (`profiles`). Level 0 is one combined query of
+// the three searches; levels 1 and 2 run each search as its own query, with
+// smaller pages and, at level 2, smaller comment windows. `maxPages` bounds
+// the pages read per search alias and source.
+const PULL_LEVELS = [
+  { combined: true, pageSize: 25, maxPages: 4, comments: 30, threads: 10, threadComments: 5 },
+  { combined: false, pageSize: 10, maxPages: 5, comments: 30, threads: 10, threadComments: 5 },
+  { combined: false, pageSize: 5, maxPages: 5, comments: 15, threads: 5, threadComments: 3 },
+]
+const MAX_PULL_PAGES = Math.max(...PULL_LEVELS.map((level) => level.maxPages))
 // Branch CI reads repositories without pull requests: 100 per page (about 2
 // points each), newest pushed first, at most 3 pages (300) per source.
 const REPO_PAGE_SIZE = 100
 const MAX_REPO_PAGES = 3
+// A large source's branch CI reads at most this many repositories the viewer
+// works in, one query each (see BRANCH_SCAN_REPO_QUERY).
+const MAX_CONTRIBUTED_REPOS = 10
 // Stop starting new queries when GitHub reports this little quota left (or a
 // rate limit). There is no per-refresh point budget: a normal refresh costs
 // roughly 20 points per source (see the query comments), so every source and
@@ -34,6 +48,10 @@ const MIN_RATE_REMAINING = 100
  * there is no setting for it: older ones the user does not want are snoozed.
  */
 const NEW_ISSUE_WINDOW_DAYS = 30
+// A source with more new unassigned issues in that window is too busy for the
+// list to be triage material (org:llvm: about 1,300), so it lists none and
+// gets the narrow branch scan for that build.
+const LARGE_NEW_ISSUES = 500
 const SECTION_IDS = ['review', 'rereview', 'merge', 'respond', 'ci', 'issues']
 
 /*
@@ -41,7 +59,7 @@ const SECTION_IDS = ['review', 'rereview', 'merge', 'respond', 'ci', 'issues']
  * fill every connection at its first/last limit, where a nested connection
  * needs one request per parent node; divide by 100 (minimum 1 point).
  *
- * AttentionPR at PULL_PAGE_SIZE = 25 parent nodes: reviewRequests, reviews,
+ * AttentionPR at 25 parent nodes (level 0): reviewRequests, reviews,
  * commits, commits.contexts (25 x 1), comments, reviewThreads, labels and
  * assignees need 25 requests each (200); thread comments need 25 x 10 = 250.
  * One pull search is therefore 1 + 450 = 451 requests, about 5 points.
@@ -68,8 +86,12 @@ query ViewerSources {
  * field, so a long review history cannot hide it. Review threads are the
  * dominant cost (threads x comments per PR), so only the 10 most recently
  * started threads and their 5 latest comments are read; replyTo/author/
- * createdAt/bodyText stay because commentRepliesToViewer needs them. Older
- * pages still raise the truncated-history warning through pageInfo.
+ * createdAt/body stay because commentRepliesToViewer needs them. `body` is
+ * the stored markdown; `bodyText` is rendered per request and was the largest
+ * part of the server time on org:llvm (review threads with it timed out, with
+ * `body` they took 4.6 s). The comment windows are variables so a lighter
+ * pull level can shrink them. Older pages still raise the truncated-history
+ * warning through pageInfo.
  */
 const PULL_FRAGMENTS = `
 fragment PullSearchResults on SearchResultItemConnection {
@@ -132,20 +154,20 @@ fragment AttentionPR on PullRequest {
       }
     }
   }
-  comments(last: 30) {
+  comments(last: $commentWindow) {
     totalCount
     pageInfo { hasPreviousPage }
-    nodes { author { login } createdAt bodyText }
+    nodes { author { login } createdAt body }
   }
-  reviewThreads(last: 10) {
+  reviewThreads(last: $threadWindow) {
     pageInfo { hasPreviousPage }
     nodes {
-      comments(last: 5) {
+      comments(last: $threadCommentWindow) {
         pageInfo { hasPreviousPage }
         nodes {
           author { login }
           createdAt
-          bodyText
+          body
           replyTo { author { login } }
         }
       }
@@ -165,7 +187,7 @@ fragment AttentionPR on PullRequest {
  * as their own query and cannot take the pull requests down with them.
  */
 const PULL_SEARCH_QUERY = `
-query PullSearch($login: String!, $viewerLogin: String!, $pullPageSize: Int!, $reviewRequestedQ: String!, $reviewedByQ: String!, $authoredQ: String!) {
+query PullSearch($login: String!, $viewerLogin: String!, $pullPageSize: Int!, $reviewRequestedQ: String!, $reviewedByQ: String!, $authoredQ: String!, $commentWindow: Int!, $threadWindow: Int!, $threadCommentWindow: Int!) {
   rateLimit { cost remaining resetAt }
   owner: repositoryOwner(login: $login) {
     __typename
@@ -242,15 +264,72 @@ fragment MentionPull on PullRequest {
 }
 `
 
-/** Follow-up page of one pull request search alias (about 5 points). */
+/**
+ * One page of one pull request search alias: follow-up pages, and every page
+ * of a source on a split pull level (about 5 points at 25 per page). On a
+ * split level the first page of a source also reads the viewer's teams
+ * (`withTeams`), as PullSearch does.
+ */
 const PULL_SEARCH_PAGE_QUERY = `
-query PullSearchPage($q: String!, $pageSize: Int!, $after: String!) {
+query PullSearchPage($q: String!, $pageSize: Int!, $after: String, $commentWindow: Int!, $threadWindow: Int!, $threadCommentWindow: Int!, $login: String!, $viewerLogin: String!, $withTeams: Boolean!) {
   rateLimit { cost remaining resetAt }
+  owner: repositoryOwner(login: $login) @include(if: $withTeams) {
+    ... on Organization {
+      teams(first: 50, userLogins: [$viewerLogin]) { nodes { slug name } }
+    }
+  }
   results: search(query: $q, type: ISSUE, first: $pageSize, after: $after) {
     ...PullSearchResults
   }
 }
 ${PULL_FRAGMENTS}`
+
+// The default-branch fields both branch scans read.
+const BRANCH_REPO_FRAGMENT = `
+fragment BranchRepo on Repository {
+  nameWithOwner
+  viewerPermission
+  defaultBranchRef {
+    name
+    target {
+      ... on Commit {
+        oid
+        committedDate
+        author { user { login } }
+        statusCheckRollup {
+          state
+          contexts(first: 20) {
+            totalCount
+            pageInfo { hasNextPage }
+            nodes {
+              __typename
+              ... on CheckRun { name status conclusion detailsUrl }
+              ... on StatusContext { context state targetUrl }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+`
+
+/** The branch refs field of a branch scan; `filter` adds refs arguments. */
+const branchRefsField = (filter = '') => `branchRefs: refs(refPrefix: "refs/heads/", ${filter}first: 100, orderBy: {field: TAG_COMMIT_DATE, direction: DESC}) {
+      totalCount
+      nodes {
+        name
+        target {
+          __typename
+          ... on Commit {
+            oid
+            committedDate
+            author { user { login } }
+            statusCheckRollup { state }
+          }
+        }
+      }
+    }`
 
 /*
  * Branch CI only: repositories without pull requests. Per 100-repository page
@@ -285,48 +364,47 @@ fragment BranchRepoConnection on RepositoryConnection {
   totalCount
   pageInfo { hasNextPage endCursor }
   nodes {
-    nameWithOwner
-    viewerPermission
-    defaultBranchRef {
-      name
-      target {
-        ... on Commit {
-          oid
-          committedDate
-          author { user { login } }
-          statusCheckRollup {
-            state
-            contexts(first: 20) {
-              totalCount
-              pageInfo { hasNextPage }
-              nodes {
-                __typename
-                ... on CheckRun { name status conclusion detailsUrl }
-                ... on StatusContext { context state targetUrl }
-              }
-            }
-          }
-        }
-      }
-    }
-    branchRefs: refs(refPrefix: "refs/heads/", first: 100, orderBy: {field: TAG_COMMIT_DATE, direction: DESC}) {
-      totalCount
-      nodes {
-        name
-        target {
-          __typename
-          ... on Commit {
-            oid
-            committedDate
-            author { user { login } }
-            statusCheckRollup { state }
-          }
-        }
-      }
+    ...BranchRepo
+    ${branchRefsField()}
+  }
+}
+${BRANCH_REPO_FRAGMENT}`
+
+/*
+ * Branch CI of a large source. The organization-wide scan times out there
+ * (org:llvm: 502 at 25 repositories; llvm/llvm-project has 1,367 branches,
+ * and the per-branch statusCheckRollup is the cost), and the viewer's own
+ * branches are only a few among them. So a large source reads only the
+ * repositories of the viewer's pull requests found in it and those the viewer
+ * committed to or opened pull requests in during the last year (one query per
+ * build, about 1 point; GitHub counts a commit only once it is on the default
+ * branch), and in each of them only the branches whose name contains the
+ * viewer login, such as llvm's
+ * `users/<login>/...` convention. Verified on llvm/llvm-project: `refs(query:)`
+ * is a case-insensitive substring match on the branch name, and one
+ * repository took about 1 s for 1 point.
+ */
+const CONTRIBUTED_REPOS_QUERY = `
+query ContributedRepos {
+  rateLimit { cost remaining resetAt }
+  viewer {
+    contributionsCollection {
+      commitContributionsByRepository(maxRepositories: 100) { repository { nameWithOwner } }
+      pullRequestContributionsByRepository(maxRepositories: 100) { repository { nameWithOwner } }
     }
   }
 }
 `
+
+const BRANCH_SCAN_REPO_QUERY = `
+query BranchScanRepo($owner: String!, $name: String!, $branchQuery: String!) {
+  rateLimit { cost remaining resetAt }
+  repository(owner: $owner, name: $name) {
+    ...BranchRepo
+    ${branchRefsField('query: $branchQuery, ')}
+  }
+}
+${BRANCH_REPO_FRAGMENT}`
 
 /* -------------------------------------------------------------------------- */
 /* gh runner                                                                  */
@@ -351,6 +429,10 @@ const GH_ENV = {
 const AUTHENTICATION = /gh auth login|authentication|bad credentials|HTTP 401/i
 const RATE_LIMIT = /\b(?:rate limit|secondary rate limit|abuse detection)\b/i
 const HTTP_STATUS = /\(HTTP (\d{3})\)/
+// GitHub's answer when a GraphQL request runs past its server time limit, as
+// gh reports it (measured): `gh: HTTP 502` or `gh: HTTP 504` for the HTML
+// error page, `unexpected end of JSON input` for an empty body.
+const GATEWAY_TIMEOUT = /\bHTTP 50[24]\b|unexpected end of JSON input/i
 const isGraphqlRateLimit = (error) => Boolean(error &&
   (error.type === 'RATE_LIMITED' || RATE_LIMIT.test(String(error.message || ''))))
 
@@ -371,7 +453,10 @@ function classifyGhFailure(result) {
   if (RATE_LIMIT.test(message) || (status !== null && status[1] === '429')) {
     return new GhError('rate-limit', message)
   }
-  // 5xx and everything else is transient/unknown; retryGh handles 'failed'.
+  // Retried once like 'failed'; a pull search that still times out retries
+  // lighter instead (PULL_LEVELS).
+  if (GATEWAY_TIMEOUT.test(message)) return new GhError('gateway-timeout', message)
+  // Other 5xx and everything else is transient/unknown; ghGraphql retries 'failed'.
   return new GhError('failed', message)
 }
 
@@ -436,16 +521,19 @@ async function ghGraphql(ctx, settings, query, variables, options = {}) {
     args.push(typed ? '-F' : '-f', `${key}=${value}`)
   }
   // One quiet retry for transient transport failures (TLS/proxy hiccups are
-  // common on VPNs); authentication and rate-limit failures are final. An
-  // oversized response would be just as large again, and a cancelled caller
-  // wants no second attempt, so neither is retried.
+  // common on VPNs) and GitHub timeouts (one may be a blip; a pull search
+  // that times out twice retries lighter, see PULL_LEVELS); authentication
+  // and rate-limit failures are final. An oversized response would be just as
+  // large again, and a cancelled caller wants no second attempt, so neither
+  // is retried.
+  const retryable = ['failed', 'timeout', 'gateway-timeout']
   let result
   for (let attempt = 0; ; attempt += 1) {
     try {
       result = await runGh(ctx, settings, args, options)
       break
     } catch (error) {
-      const transient = error instanceof GhError && (error.code === 'failed' || error.code === 'timeout')
+      const transient = error instanceof GhError && retryable.includes(error.code)
       const cancelled = options.signal !== undefined && options.signal !== null && options.signal.aborted === true
       if (attempt === 0 && transient && !cancelled) {
         await new Promise((resolve) => setTimeout(resolve, 600))
@@ -483,6 +571,17 @@ function latestReview(reviews) {
     (latest, review) => (latest === null || time(review && review.submittedAt) > time(latest.submittedAt) ? review : latest),
     null,
   )
+}
+
+/** `values` without later entries that equal an earlier one ignoring case, in order. */
+function uniqueIgnoringCase(values) {
+  const seen = new Set()
+  return values.filter((value) => {
+    const key = value.toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 function time(value) {
@@ -576,8 +675,12 @@ function snapshotSettings(settings) {
 /**
  * Build the snapshot. Throws a GhError on environment failures; section-level
  * failures are collected as warnings so one bad query does not blank the page.
+ * `profiles` maps a source key to what earlier builds learned about that
+ * source (`level`: its pull level, `large`); the snapshot store keeps one Map
+ * for its lifetime, so a GitHub settings change starts over. `signal` cancels the
+ * build's gh calls.
  */
-async function buildSnapshot(ctx, settings, signal) {
+async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {}) {
   const startedAt = Date.now()
   const warnings = []
   const truncated = { reviews: 0, comments: 0, threads: 0, search: 0 }
@@ -602,9 +705,7 @@ async function buildSnapshot(ctx, settings, signal) {
   // Configured organizations win; auto-detection shares their quota bound.
   // Ask for one extra membership so truncation is explicit even at the limit.
   const selectedOrgs = settings.orgs.length > 0 ? settings.orgs : memberOrgs
-  const uniqueOrgs = selectedOrgs.filter((login, index) =>
-    selectedOrgs.findIndex((other) => other.toLowerCase() === login.toLowerCase()) === index,
-  )
+  const uniqueOrgs = uniqueIgnoringCase(selectedOrgs)
   const orgLogins = uniqueOrgs.slice(0, MAX_ORGS)
   if (uniqueOrgs.length > MAX_ORGS ||
       (settings.orgs.length === 0 && viewerNode.organizations?.pageInfo?.hasNextPage)) {
@@ -715,9 +816,35 @@ async function buildSnapshot(ctx, settings, signal) {
   const pullQuery = (source, search) =>
     `${prefixOf(source)} is:pr is:open archived:false ${search.qualifier} sort:updated-desc`
 
+  const levelOf = (state) => PULL_LEVELS[state.profile.level]
+  // Any query of the source succeeded, so its results are shown.
+  const reached = (state) => state.scanned || state.issueData !== null
+  // The most pull requests one search reads at a level, over all its pages.
+  const pullBound = (level) => level.pageSize * level.maxPages
+  // GitHub could not serve the request at this size: it timed out (after the
+  // retry) or the response passed GH_MAX_BYTES. A smaller request may pass.
+  const isOverload = (error) => error instanceof GhError && (error.code === 'gateway-timeout' || error.code === 'too-large')
+  // An overloaded source stays large for the life of its profile.
+  const markLarge = (state) => {
+    state.profile.large = true
+  }
+  // A large source hides its new unassigned issues and gets the narrow branch
+  // scan: overloaded once (sticky), or busy in this build's issue search.
+  const isLarge = (state) => state.profile.large || state.busy
+  const profileOf = (source) => {
+    const key = sourceName(source).toLowerCase()
+    if (!profiles.has(key)) profiles.set(key, { level: 0, large: false })
+    return profiles.get(key)
+  }
   const states = sources.map((source) => ({
     source,
+    profile: profileOf(source),
+    // A pull request search succeeded (the inbox guard below).
     scanned: false,
+    // This build ran the source's pull searches (quota may stop it earlier).
+    pullsTried: false,
+    // More new unassigned issues in this build than LARGE_NEW_ISSUES.
+    busy: false,
     teams: settings.teams,
     issueData: null,
     pulls: new Map(),
@@ -758,36 +885,108 @@ async function buildSnapshot(ctx, settings, signal) {
     }
     const cursor = connection.pageInfo && connection.pageInfo.endCursor
     const more = Boolean(connection.pageInfo && connection.pageInfo.hasNextPage)
-    const next = more && typeof cursor === 'string' && cursor !== '' && !cursors.has(cursor) && page < MAX_PULL_PAGES
+    const level = levelOf(state)
+    const next = more && typeof cursor === 'string' && cursor !== '' && !cursors.has(cursor) &&
+      page < level.maxPages && read < pullBound(level)
     if (more && !next) pullsTruncated(state, search, connection, read)
     if (next) cursors.add(cursor)
     const pending = { search, cursors, read, after: next ? cursor : null, page, connection }
     state.pullPages = state.pullPages.filter((other) => other.search !== search).concat([pending])
   }
 
+  const windowsOf = (level) => ({
+    commentWindow: level.comments,
+    threadWindow: level.threads,
+    threadCommentWindow: level.threadComments,
+  })
+  // An overload moves the source one pull level down, and a source that
+  // needed a lighter level is large; false when the error is something else
+  // or the source is already at the lightest level.
+  const stepDown = (state, error) => {
+    if (!isOverload(error) || state.profile.level === PULL_LEVELS.length - 1) return false
+    state.profile.level += 1
+    markLarge(state)
+    return true
+  }
+  // One page of one search alias at the source's current level, stepping down
+  // on overloads; `read` is what the alias already holds, so the page is cut
+  // to the level's bound (null once it is reached). `withTeams` also reads
+  // the viewer's teams in the source, once per source on a split level.
+  const searchPage = async (state, search, after, read, withTeams = false) => {
+    for (;;) {
+      const level = levelOf(state)
+      const pageSize = Math.min(level.pageSize, pullBound(level) - read)
+      if (pageSize <= 0) return null
+      try {
+        const data = await runQuery(
+          state,
+          PULL_SEARCH_PAGE_QUERY,
+          {
+            q: pullQuery(state.source, search),
+            pageSize,
+            ...windowsOf(level),
+            ...(after ? { after } : {}),
+            login: state.source.login,
+            viewerLogin,
+            withTeams,
+          },
+          `search-page:${search.alias}`,
+          'graphql-search',
+        )
+        if (withTeams) readTeams(state, data.owner)
+        return data.results || null
+      } catch (error) {
+        if (!stepDown(state, error)) throw error
+      }
+    }
+  }
+  const readTeams = (state, owner) => {
+    const orgTeams = owner && owner.teams && Array.isArray(owner.teams.nodes)
+      ? owner.teams.nodes.map((team) => team && team.slug).filter(Boolean)
+      : []
+    if (orgTeams.length > 0) state.teams = orgTeams
+  }
+  const pullSearchFailed = (state, what, error) => {
+    if (firstScanError === null) firstScanError = error
+    sourceUnavailable(state, what, error)
+  }
+
   // 1. Pull request discovery and issue searches for every source before any
   //    follow-up page, so a large source cannot use up the quota floor before
-  //    the others are seen. A source is scanned once its PullSearch succeeds;
-  //    a failed IssueSearch only loses that source's issues and mentions.
+  //    the others are seen. A failed search loses only its own results: the
+  //    other searches, issues and branch CI of the source still run.
   for (const state of states) {
     if (!canStartQuery()) break
     const { source } = state
-    const pullVariables = { login: source.login, viewerLogin, pullPageSize: PULL_PAGE_SIZE }
-    for (const search of PULL_SEARCHES) pullVariables[`${search.alias}Q`] = pullQuery(source, search)
-    let data
-    try {
-      data = await runQuery(state, PULL_SEARCH_QUERY, pullVariables, 'pulls', 'graphql-search')
-    } catch (error) {
-      if (firstScanError === null) firstScanError = error
-      sourceUnavailable(state, 'pull request search', error)
-      continue
+    state.pullsTried = true
+    const level = levelOf(state)
+    if (level.combined) {
+      const pullVariables = { login: source.login, viewerLogin, pullPageSize: level.pageSize, ...windowsOf(level) }
+      for (const search of PULL_SEARCHES) pullVariables[`${search.alias}Q`] = pullQuery(source, search)
+      try {
+        const data = await runQuery(state, PULL_SEARCH_QUERY, pullVariables, 'pulls', 'graphql-search')
+        state.scanned = true
+        readTeams(state, data.owner)
+        for (const search of PULL_SEARCHES) collectPulls(state, search, data[search.alias], 1)
+      } catch (error) {
+        if (!stepDown(state, error)) pullSearchFailed(state, 'pull request search', error)
+      }
     }
-    state.scanned = true
-    const orgTeams = data.owner && data.owner.teams && Array.isArray(data.owner.teams.nodes)
-      ? data.owner.teams.nodes.map((team) => team && team.slug).filter(Boolean)
-      : []
-    if (orgTeams.length > 0) state.teams = orgTeams
-    for (const search of PULL_SEARCHES) collectPulls(state, search, data[search.alias], 1)
+    // Split levels read each search on its own; the first one that succeeds
+    // also reads team membership. Re-read the level: an overload above may
+    // have stepped the source down.
+    if (!levelOf(state).combined) {
+      for (const search of PULL_SEARCHES) {
+        if (!canStartQuery()) break
+        try {
+          const results = await searchPage(state, search, null, 0, !state.scanned)
+          state.scanned = true
+          collectPulls(state, search, results, 1)
+        } catch (error) {
+          pullSearchFailed(state, `pull request search (${search.label})`, error)
+        }
+      }
+    }
 
     if (!canStartQuery()) break
     const prefix = prefixOf(source)
@@ -803,6 +1002,10 @@ async function buildSnapshot(ctx, settings, signal) {
         'issues',
         'graphql-search',
       )
+      // A source this busy is large for this build only: the list would be
+      // a firehose, not triage material.
+      const newIssues = state.issueData && state.issueData.newIssues
+      state.busy = Boolean(newIssues && typeof newIssues.issueCount === 'number' && newIssues.issueCount > LARGE_NEW_ISSUES)
     } catch (error) {
       warnings.push({ code: 'search-unavailable', message: `${source.login}: issue search failed: ${errorText(error)}` })
     }
@@ -820,14 +1023,8 @@ async function buildSnapshot(ctx, settings, signal) {
           continue
         }
         try {
-          const data = await runQuery(
-            state,
-            PULL_SEARCH_PAGE_QUERY,
-            { q: pullQuery(state.source, pending.search), pageSize: PULL_PAGE_SIZE, after },
-            `search-page:${pending.search.alias}`,
-            'graphql-search',
-          )
-          if (data.results) collectPulls(state, pending.search, data.results, page)
+          const results = await searchPage(state, pending.search, after, pending.read)
+          if (results) collectPulls(state, pending.search, results, page)
           else pullsTruncated(state, pending.search, pending.connection, pending.read)
         } catch (error) {
           sourceUnavailable(state, `pull request search page (${pending.search.label})`, error)
@@ -837,11 +1034,90 @@ async function buildSnapshot(ctx, settings, signal) {
     }
   }
 
-  // 3. Branch CI scan: repositories only, one page per source per round.
+  for (const state of states) {
+    if (state.profile.level === 0 || !state.pullsTried) continue
+    const level = levelOf(state)
+    warnings.push({
+      code: 'source-degraded',
+      message: `${state.source.login}: GitHub timed out on the full pull request search, so each search reads at most ${pullBound(level)} pull requests, ${level.pageSize} per request`,
+    })
+  }
+
+  // The repositories the viewer contributed to in the last year, read once
+  // per build and only when a large source needs them; a failure is kept too,
+  // so a second large source does not repeat it. The repositories of the
+  // viewer's own pull requests found in the source come first: they are where
+  // the viewer is working now, contributed in GitHub's sense or not.
+  let contributions = null
+  const contributedReposOf = async (state) => {
+    if (contributions === null) {
+      try {
+        const data = await runQuery(state, CONTRIBUTED_REPOS_QUERY, {}, 'contributions', 'graphql-source')
+        const collection = (data.viewer && data.viewer.contributionsCollection) || {}
+        const names = [
+          ...(collection.commitContributionsByRepository || []),
+          ...(collection.pullRequestContributionsByRepository || []),
+        ].map((entry) => entry && entry.repository && entry.repository.nameWithOwner).filter((name) => typeof name === 'string')
+        contributions = { names }
+      } catch (error) {
+        contributions = { error }
+      }
+    }
+    const authored = [...state.pulls.values()]
+      .filter((entry) => entry.found.has('authored'))
+      .map((entry) => entry.repoName)
+    const owner = state.source.login.toLowerCase()
+    const names = uniqueIgnoringCase([...authored, ...(contributions.names || [])])
+      .filter((name) => name.split('/')[0].toLowerCase() === owner)
+    return { names, error: contributions.error || null }
+  }
+  const addRepo = (state, repo) => {
+    if (!repo || typeof repo.nameWithOwner !== 'string' || state.seenRepos.has(repo.nameWithOwner)) return
+    state.seenRepos.add(repo.nameWithOwner)
+    state.repos.push(repo)
+  }
+  // Branch CI of a large source: see BRANCH_SCAN_REPO_QUERY.
+  const narrowBranchScan = async (state) => {
+    state.repoNext = false
+    // Without contributions, the repositories of the viewer's own pull
+    // requests are still scanned.
+    const { names: contributed, error } = await contributedReposOf(state)
+    if (error !== null) sourceUnavailable(state, 'branch scan (your contributed repositories)', error)
+    const names = contributed.slice(0, MAX_CONTRIBUTED_REPOS)
+    let scanned = 0
+    for (const name of names) {
+      if (!canStartQuery()) break
+      const [owner, repoName] = name.split('/')
+      try {
+        const data = await runQuery(
+          state,
+          BRANCH_SCAN_REPO_QUERY,
+          { owner, name: repoName, branchQuery: viewerLogin },
+          'branches-repo',
+          'graphql-source',
+        )
+        addRepo(state, data.repository)
+        scanned += 1
+      } catch (error) {
+        sourceUnavailable(state, `branch scan (${name})`, error)
+      }
+    }
+    warnings.push({
+      code: 'branch-scan-narrowed',
+      message: `${state.source.login}: large source; branch CI covers only ${scanned < contributed.length ? `${scanned} of the ${contributed.length}` : `the ${scanned}`} repositories you work in (your pull requests here and your contributions in the last year), and in them only branches with "${viewerLogin}" in their name`,
+    })
+  }
+
+  // 3. Branch CI scan: repositories only, one page per source per round. A
+  //    large source, or one whose scan GitHub times out, is scanned narrowly.
   for (let page = 0; page < MAX_REPO_PAGES; page += 1) {
     for (const state of states) {
-      if (!state.scanned || !state.repoNext) continue
+      if (!reached(state) || !state.repoNext) continue
       if (!canStartQuery()) break
+      if (isLarge(state)) {
+        await narrowBranchScan(state)
+        continue
+      }
       try {
         const data = await runQuery(
           state,
@@ -860,11 +1136,7 @@ async function buildSnapshot(ctx, settings, signal) {
         state.repoPages += 1
         state.repoTotal = Math.max(state.repoTotal, connection.totalCount || 0)
         // Pushes can reorder the connection between pages; skip duplicates.
-        for (const repo of connection.nodes || []) {
-          if (!repo || typeof repo.nameWithOwner !== 'string' || state.seenRepos.has(repo.nameWithOwner)) continue
-          state.seenRepos.add(repo.nameWithOwner)
-          state.repos.push(repo)
-        }
+        for (const repo of connection.nodes || []) addRepo(state, repo)
         state.repoMore = Boolean(connection.pageInfo && connection.pageInfo.hasNextPage)
         const cursor = connection.pageInfo && connection.pageInfo.endCursor
         // A missing or repeated cursor ends this source's scan.
@@ -874,8 +1146,13 @@ async function buildSnapshot(ctx, settings, signal) {
           state.repoAfter = cursor
         }
       } catch (error) {
-        sourceUnavailable(state, 'branch scan', error)
-        state.repoNext = false
+        if (isOverload(error)) {
+          markLarge(state)
+          await narrowBranchScan(state)
+        } else {
+          sourceUnavailable(state, 'branch scan', error)
+          state.repoNext = false
+        }
       }
     }
   }
@@ -901,15 +1178,33 @@ async function buildSnapshot(ctx, settings, signal) {
   }
 
   for (const state of states) {
-    if (!state.scanned) continue
+    if (!reached(state)) continue
     const { source } = state
-    if (state.repoPages > 0 && (state.repoTotal > state.repos.length || state.repoMore)) {
+    // A large source's branch scan is narrowed (it never pages repositories
+    // after it is large), so repository coverage does not apply to it.
+    if (!isLarge(state) && state.repoPages > 0 && (state.repoTotal > state.repos.length || state.repoMore)) {
       warnings.push({
         code: 'repos-truncated',
         message: `${source.login}: only ${state.repos.length} of ${state.repoTotal} repositories were scanned for branch CI`,
       })
     }
     sourceSummaries.push({ kind: source.kind, login: source.login, label: source.label, repos: state.repos.length })
+    // A large source lists no new unassigned issues. The warning says so only
+    // when the list would have shown some: issues in repositories the viewer
+    // maintains (classifySearch lists no others).
+    const newIssues = state.issueData && state.issueData.newIssues
+    if (isLarge(state) && newIssues) {
+      const triageable = (newIssues.nodes || []).some((node) => node && node.repository &&
+        (node.repository.viewerPermission === 'ADMIN' || node.repository.viewerPermission === 'MAINTAIN'))
+      if (triageable) {
+        const count = typeof newIssues.issueCount === 'number' ? newIssues.issueCount : newIssues.nodes.length
+        warnings.push({
+          code: 'new-issues-skipped',
+          message: `${source.login}: ${count} new unassigned issues in the last ${NEW_ISSUE_WINDOW_DAYS} days, some in repositories you maintain; the list is not shown for a source this large`,
+        })
+      }
+      state.issueData = { ...state.issueData, newIssues: null }
+    }
     for (const { pr, repoName, found } of state.pulls.values()) classifyPull(state, pr, repoName, found)
     for (const repo of state.repos) classifyBranches(state, repo)
     if (state.issueData) classifySearch(state, state.issueData)
@@ -1437,11 +1732,40 @@ function mentionPattern(login) {
   return pattern
 }
 
-/** True when a comment body @-mentions one of the viewer logins. */
+/**
+ * The prose of a markdown comment body: HTML comments, fenced code blocks
+ * (``` or ~~~, also one left open), inline code spans and quoted lines are
+ * dropped, so a login in a template comment, pasted code, a bot's diff or a
+ * quoted earlier comment is no mention (`bodyText` left HTML comments out,
+ * and GitHub does not notify for @-mentions in code either).
+ */
+function commentProse(body) {
+  const kept = []
+  let fence = null
+  for (const line of body.split(/\r?\n/)) {
+    const marker = /^\s{0,3}(`{3,}|~{3,})/.exec(line)
+    if (fence !== null) {
+      if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length) fence = null
+      continue
+    }
+    if (marker) {
+      fence = marker[1]
+      continue
+    }
+    if (/^\s{0,3}>/.test(line)) continue
+    kept.push(line.replace(/(`+)[^`]*?\1/g, ' '))
+  }
+  // After code, so `<!--` inside code opens no comment; an unclosed one is
+  // left as text rather than hiding the rest of the comment.
+  return kept.join('\n').replace(/<!--[\s\S]*?-->/g, ' ')
+}
+
+/** True when a comment's markdown body @-mentions one of the viewer logins outside code and quotes. */
 function commentMentionsViewer(body, meLogins) {
-  if (typeof body !== 'string' || body === '') return false
+  if (typeof body !== 'string' || !body.includes('@')) return false
+  const prose = commentProse(body)
   for (const login of meLogins) {
-    if (mentionPattern(login).test(body)) return true
+    if (mentionPattern(login).test(prose)) return true
   }
   return false
 }
@@ -1450,7 +1774,7 @@ function commentMentionsViewer(body, meLogins) {
 function commentRepliesToViewer(comment, meLogins) {
   const target = comment && comment.replyTo && comment.replyTo.author && comment.replyTo.author.login
   if (target && meLogins.has(target)) return true
-  return commentMentionsViewer(comment && comment.bodyText, meLogins)
+  return commentMentionsViewer(comment && comment.body, meLogins)
 }
 
 function recordRateLimit(meta, data, call) {

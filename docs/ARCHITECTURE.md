@@ -26,10 +26,12 @@ import the launcher layer only through `launcher.js` and the data layer through
     refresh, `retire` for a replaced cache, `raceAbort` so a cancelled caller
     never cancels the shared build), `shouldCacheSnapshot`,
     `hasTransientWarnings`;
-  - `snapshot.js` — `createSnapshotStore`: build, adaptive TTL on low quota, and
-    the stale fallback (a failed build serves the previous snapshot as `stale`
-    with `meta.lastError`; a store a save replaced hands over its snapshot as
-    that fallback until the new store caches a build);
+  - `snapshot.js` — `createSnapshotStore`: build, adaptive TTL on low quota,
+    the per-source `profiles` Map passed to every build (pull level and
+    `large`; the new store of a GitHub settings change starts empty), and the stale fallback (a
+    failed build serves the previous snapshot as `stale` with
+    `meta.lastError`; a store a save replaced hands over its snapshot as that
+    fallback until the new store caches a build);
   - `config.js` — `EDITABLE_FIELDS`, `sanitizePatch`, `publicConfig` (adds
     `detectedAgents[id].draft` from `draftCommandForStatus`);
   - `processes.js` — `createProcesses`: `runProcess`, executable lookup,
@@ -68,19 +70,38 @@ import the launcher layer only through `launcher.js` and the data layer through
   classification, warnings/rate-limit metadata, settings normalization. Query
   operations: `ViewerSources` (viewer and up to 11 memberships, so the
   10-organization cap `MAX_ORGS` can report `orgs-truncated`), `PullSearch`
-  (one per source: team membership and the `review-requested:`/`reviewed-by:`/
-  `author:` PR searches), `IssueSearch` (one per source: assigned issues, new
-  issues, mentions; a failure only adds `search-unavailable`),
-  `PullSearchPage` (follow-up PR search pages, `PULL_PAGE_SIZE` 25 ×
-  `MAX_PULL_PAGES` 4, then `prs-truncated`), and `BranchScan` (repositories
-  without PRs, `REPO_PAGE_SIZE` 100 × `MAX_REPO_PAGES` 3, then
-  `repos-truncated`). Phases run round-robin across sources: every source's
-  `PullSearch` and `IssueSearch`, then PR pages by page number, then branch
-  pages.
+  (one per source at pull level 0: team membership and the
+  `review-requested:`/`reviewed-by:`/`author:` PR searches), `IssueSearch` (one
+  per source: assigned issues, new issues, mentions; a failure only adds
+  `search-unavailable`), `PullSearchPage` (one page of one search: follow-up
+  pages, and every page on pull levels 1 and 2, then `prs-truncated`),
+  `BranchScan` (repositories without PRs, `REPO_PAGE_SIZE` 100 ×
+  `MAX_REPO_PAGES` 3, then `repos-truncated`), and for a large source
+  `ContributedRepos` (once per build) and `BranchScanRepo` (one per
+  contributed repository, at most `MAX_CONTRIBUTED_REPOS` 10, branches whose
+  name contains the viewer login; `branch-scan-narrowed`). Phases run
+  round-robin across sources: every source's pull searches and `IssueSearch`,
+  then PR pages by page number, then branch pages.
+  `PULL_LEVELS` is the ladder for sources GitHub cannot serve: a GraphQL
+  request past GitHub's ~10 s server limit answers `HTTP 502`/`504` or an
+  empty body, classified as the `gateway-timeout` GhError and retried once by
+  `ghGraphql` like `failed`. A pull search that still fails that way, or with
+  `too-large`, steps the source one level down (level 1: each search on its
+  own, 10 × 5 pages; level 2: 5 × 5 pages with smaller comment windows; the
+  first split page of a source also reads team membership), records
+  `source-degraded`, and keeps the level in its profile. A source is large
+  when it stepped down or its branch scan was overloaded (kept in the profile),
+  or when its new-issue search counts more than `LARGE_NEW_ISSUES` (500, that
+  build only); a large source shows no new unassigned issues
+  (`new-issues-skipped`, only when some are in repositories the viewer
+  maintains) and gets the narrow branch scan (the repositories of the viewer's
+  PRs found in the source, then `ContributedRepos`).
   `canStartQuery` is the only quota gate: it stops at a reported rate limit or
   `MIN_RATE_REMAINING` (100) and records `scan-budget`; there is no per-refresh
-  point budget. A source counts as scanned once its `PullSearch`
-  succeeded; when no source is scanned `buildSnapshot` throws. Searches use the
+  point budget. A failed query loses only its own results: a source whose pull
+  searches all failed still shows its issues and branch CI. A source counts as
+  scanned once one of its pull searches succeeded; when no source is scanned
+  `buildSnapshot` throws. Searches use the
   viewer login only; `meLogins` classify ownership, requests and activity on
   the PRs found and do not expand discovery. Cost estimates per query are in
   the comments next to the query texts.
