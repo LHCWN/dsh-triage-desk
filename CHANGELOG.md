@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [0.1.3-rc.0](https://github.com/LHCWN/dsh-triage-desk/releases/tag/v0.1.3-rc.0) — 2026-11-20
 
 ### Added
 

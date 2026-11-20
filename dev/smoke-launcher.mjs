@@ -210,6 +210,7 @@ check('default config is neutral', () => {
     'detection checks the whole discovery catalog')
   const saved = normalizeLauncherConfig({ agents: [{ id: 'codex', label: 'Codex', command: 'codex {prompt}' }], defaultAgent: 'codex' })
   assert.equal(saved.agentsAuto, false)
+  assert.equal(normalizeLauncherConfig({ agents: [] }).agentsAuto, true, 'removing every agent returns to discovery, not the presets')
   assert.equal(saved.defaultAgent, 'codex')
   assert.equal(normalizeLauncherConfig({ defaultAgent: 'dsh' }).defaultAgent, DSH_TARGET)
   assert.equal(normalizeLauncherConfig({ defaultAgent: 'gone' }).defaultAgent, DSH_TARGET, 'an unknown default opens DSH')

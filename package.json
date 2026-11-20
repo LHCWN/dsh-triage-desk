@@ -1,6 +1,6 @@
 {
   "name": "dsh-triage-desk",
-  "version": "0.1.2",
+  "version": "0.1.3-rc.0",
   "type": "module",
   "description": "GitHub triage inbox: reviews waiting on you, merge-ready pull requests, failing CI, new or assigned issues, and editable terminal launch scenarios for Claude Code, Codex, and other coding agents.",
   "exports": {
