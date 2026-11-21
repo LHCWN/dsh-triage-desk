@@ -62,7 +62,7 @@ async function checkRemoteChoices() {
   const remote = await fs.mkdtemp(path.join(root, 'choices-'))
   const folders = [path.join(remote, 'missing'), path.join(remote, 'projects')]
   const first = path.join(folders[1], 'first')
-  const copies = [first, path.join(first, 'worktrees', 'second')]
+  const copies = [first, path.join(first, 'worktrees', 'second'), path.join(folders[1], 'third')]
   const record = path.join(remote, 'record')
   for (const folder of [...copies, path.join(remote, 'outside')]) {
     await fs.mkdir(folder, { recursive: true })
@@ -95,6 +95,13 @@ async function checkRemoteChoices() {
   assert.equal(await opened(), actual[0])
 
   git(['-C', copies[1], 'remote', 'set-url', 'origin', 'git@github.com:else/widgets.git'])
+  const staleMenu = launch({}, '2\ny\n')
+  assert.match(staleMenu, /Choose a working copy/)
+  assert.ok(staleMenu.includes(actual[0]) && staleMenu.includes(actual[2]))
+  assert.ok(!staleMenu.includes(actual[1]))
+  assert.equal(await opened(), actual[2], 'choose and remember a different valid checkout')
+
+  git(['-C', copies[2], 'remote', 'remove', 'origin'])
   launch({}, '')
   assert.equal(await opened(), actual[0])
   assert.match(launch({}, '', 'missing/widgets'), /first accessible repository folder/)
