@@ -92,12 +92,17 @@ Other panel features:
   `Status: stale|partial — reason` line when the last refresh failed or some
   sources could not be read, and tells an empty inbox apart from requested
   sections that are empty while others are not.
-- **Settings in the panel**: organizations, personal repositories, auto-refresh
-  interval, green-CI merge rule and bot-review handling are grouped under **GitHub**.
-  Below it are terminal, prompt delivery,
-  agents, launch scenarios, and clone search. Terminal settings are grouped under
-  *Launch environments* alongside clone search. The
-  auto-refresh select accepts **Custom…** in minutes (1–60).
+- **Settings in the panel** has three sections, in this order.
+  - **GitHub** contains the connection, organizations, personal repositories,
+    refresh interval, and PR rules. **Custom…** accepts an interval of 1–60 minutes.
+  - **Agents** uses **Run on** to select the machine whose default agent you
+    want to edit. **Configure local agents** edits commands on this computer.
+    Selecting an SSH host checks its available agents. **Prompt templates**
+    applies across machines.
+  - **Launch environments** contains the terminal, prompt delivery, and working
+    folders. **Repository folders on** selects the machine whose folders you
+    want to edit. Local **Repository overrides** bind a GitHub repository to
+    a specific working copy.
 - Light and dark themes both use the host theme tokens.
 
 ## Snooze
@@ -129,9 +134,9 @@ Other panel features:
 
 ## Launch scenarios
 
-Open a row or group to preview and edit its rendered prompt. Select a machine
+Click the terminal button on a row or in a group heading to preview and edit its rendered prompt. Select a machine
 and agent, then **Open** or **Copy prompt**. Agent selection and draft edits are
-independent. Settings → **Agents** controls each template's prompt, enabled state, order and
+independent. **Settings → Agents → Prompt templates** controls each template's prompt, enabled state, order and
 applicable sections. Templates use the selected machine’s default agent. An existing
 local override can be cleared with **Use machine default**. The saved row default
 takes precedence where it applies. Built-in task templates cover initial review,
@@ -318,7 +323,7 @@ recognized, and managers without a marker beside the `.exe` (aqua's
 `aqua-proxy.exe` hard links, for one) are not covered. For such an install,
 write the absolute path of the program the shim starts in the agent command.
 
-For every other agent, Settings → **Prompt delivery** (config key
+For other local agents, **Settings → Launch environments → Prompt delivery** (config key
 `promptDelivery`) chooses how the prompt arrives:
 
 - **Type into the agent** (`paste`, the default and recommended): the agent runs
@@ -387,8 +392,9 @@ before each launch.
 
 ### Agents
 
-Built-in agents (edit or extend them in Settings; the form edits the name and the
-launch command, while the internal agent id stays stable and is not shown):
+For **This computer**, open **Settings → Agents → Configure local agents** to edit
+a display name or launch command. The agent ID stays the same when you rename it.
+The built-in commands are listed below.
 
 | Agent id | Launch command | Prompt delivery |
 |---|---|---|
@@ -568,7 +574,7 @@ Fields:
 | `repoPaths` | `{}` | Optional `owner/repo` → absolute clone path exceptions, up to 50, matched case-insensitively (under *Launch environments*) |
 | `scenarios` | built-in set | Named launch scenarios: `{ id, label?, scope: 'item' \| 'section', sections, prompt, agent: 'default' \| <agent id>, enabled }`; array order resolves competing templates; an empty `prompt` on a built-in scenario means its current default |
 | `defaultScenario` | empty string | Task-based preselection, or an enabled row scenario ID where applicable |
-| `sshServers` | `[]` | Remote destinations. Each entry has a literal OpenSSH `alias`, preferred built-in `agent` ID (empty uses the first detected agent), optional built-in `alternatives` and ordered remote `folders` (absolute or `~/…`) (up to eight). A legacy `cwd` supplies one folder |
+| `sshServers` | `[]` | Remote destinations. Each entry has a case-sensitive OpenSSH `alias`, preferred built-in `agent` ID (empty uses the first detected agent), optional built-in `alternatives` and ordered remote `folders` (absolute or `~/…`) (up to eight). A legacy `cwd` supplies one folder |
 | `ghCommand` | `gh` | Path to the GitHub CLI |
 | `timeoutMs` | `30000` | Timeout of one `gh` invocation |
 | `meLogins` | `[]` | Extra self logins: decide ownership, direct review requests, your activity, and recent branch authors on the items the signed-in account's searches find. PRs that involve only an alias are not found; aliases add no sources or team memberships |

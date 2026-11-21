@@ -92,7 +92,7 @@ After editing the host half, quit and reopen DSH, then refresh the page; see
 Open the terminal button on a row or section. The **Prompt** field contains the
 configured template filled in for this task. First reviews, re-reviews and issues
 use their respective templates. Change reusable instructions in **Settings →
-Agents**. You can edit the draft for this launch without changing its template.
+Agents → Prompt templates**. You can edit the draft for this launch without changing its template.
 Choose the local computer or an SSH host, then an agent. Switching machines keeps
 your edits. **Open** delivers the draft without sending it. **Copy prompt** copies
 your edited text and the row's **Copy link** copies the URL. An inbox refresh keeps
@@ -103,7 +103,8 @@ your open draft and its original items. Reopen the editor to use the updated lis
 Opening the first-review group includes its visible first reviews, even in **All**.
 Re-reviews have their own action. Their group prompt gives the reason for each
 PR and directs the agent to read author replies even when the diff is empty.
-**Feedback on my PRs** offers replies.
+In **Feedback on my PRs**, use the terminal button on a row to draft a reply for
+one PR, or the button in the group heading to prepare replies for several PRs.
 The count follows your source filter and search, skips snoozed items and counts
 each PR once. Rows marked **Optional review** are excluded by default. When a
 PR has new commits since your review, another reviewer's approval must cover
@@ -145,7 +146,9 @@ template with an existing local agent override, **Use machine default** clears i
 For a local repository with several working copies, open **Launch environments**,
 select **This computer**, and expand **Repository overrides**. Add the repository
 and the local folder to use. Choosing a Git working copy with **Repository**
-empty fills in its GitHub name. The collapsed section shows the number of overrides.
+empty fills in its GitHub name. Save one folder per repository. For example,
+`Acme/App` and `acme/app` refer to the same repository. The collapsed section
+shows the number of overrides.
 
 Under **Launch environments → Repository folders on**, select a host and enter one
 folder per line, such as `~/projects` or `/srv/git`. Home paths resolve on the
@@ -198,7 +201,7 @@ install (a `.cmd` shim) is handled like the other agents, because `cmd.exe`
 would not pass the prompt intact. So is an `.exe` shim from Scoop, bun,
 Chocolatey, Volta, mise or proto, which can start a `.cmd`
 ([prompt delivery](docs/REFERENCE.md#prompt-delivery)). For every other agent,
-Settings → **Prompt delivery** offers:
+**Settings → Launch environments → Prompt delivery** offers these options.
 
 - **Type into the agent** (default, recommended): a small paste wrapper waits
   until the agent's input box is ready, then pastes the prompt into it without
@@ -242,7 +245,7 @@ available while you save. The most used fields:
 | `includePersonal` | `true` | Include your personal repositories |
 | `refreshSeconds` | `1200` | Auto-refresh interval, 15–3600 s |
 | `requireGreenChecks` | `true` | Turn off to allow otherwise eligible PRs with pending or failing checks in *Ready to merge*. PRs GitHub marks `BLOCKED` are excluded with either setting. |
-| `defaultAgent` | `dsh` | Target selected in the launch menu: `dsh` (a new DSH chat) or an agent id |
+| `defaultAgent` | `dsh` | Default for **This computer**. Choose `dsh` for a new DSH chat or a local agent ID. Each SSH host has its own preference. |
 | `defaultScenario` | empty | Choose by task, or save an applicable row scenario ID |
 | `sshServers` | `[]` | SSH alias, preferred `agent`, optional `alternatives` and ordered remote `folders` (absolute or `~/…`). An existing `cwd` is read as one folder. |
 | `terminal` | `auto` | Terminal for launches: `auto` or a terminal id |
