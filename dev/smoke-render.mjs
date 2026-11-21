@@ -610,7 +610,11 @@ function settingsHarness({
       if (url === '/triage-desk/pick-directory' || url === '/triage-desk/pick-clone') {
         return new Promise((resolve, reject) => pendingPickers.push({ resolve, reject, url }))
       }
-      if (url === '/triage-desk/ssh/check') return Promise.resolve(response(200, { agents: [{ id: 'claude', label: 'Claude Code' }] }))
+      if (url === '/triage-desk/ssh/check') {
+        (host.probed ??= []).push(JSON.parse(options.body).alias)
+        return Promise.resolve(host.sshError ? response(502, { error: { message: host.sshError } }) :
+          response(200, { ok: true, agents: [{ id: 'claude', label: 'Claude Code' }] }))
+      }
       if (url === '/triage-desk/clones?refresh=1&sshAlias=old') {
         return Promise.resolve(response(200, { ok: true, clones: [{ repo: 'acme/widgets', path: '/original/fork' }] }))
       }
@@ -1401,6 +1405,86 @@ for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-
   openGroup()
   await harness.flush()
   assert.deepEqual(harness.launches.at(-1).body.urls, [...original, added.url])
+  harness.dispose()
+}
+
+function labeledControl(harness, label, type = 'select') {
+  const field = harness.nodes().find((node) => node.type === 'label' && node.props.children.includes(label))
+  return flattenTree(field?.props.children || []).find((node) => node.type === type)
+}
+
+const runOnConfig = { supportsRunOn: true, supportsTaskDefault: true, defaultScenario: '', supportsEditablePrompt: true, supportsSshRepositoryFolders: true,
+  sshServers: [{ alias: 'builder', agent: 'codex', folders: [], alternatives: [] }],
+  sshHosts: ['BUILDER', 'staging'], sshAgents: [{ id: 'claude', label: 'Claude Code' }, { id: 'codex', label: 'Codex' }] }
+
+{
+  const harness = settingsHarness({ snapshotPayload: snapshot, configExtra: runOnConfig })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'launch.title'))
+  await harness.flush()
+  const machine = labeledControl(harness, 'launch.machine')
+  assert.deepEqual(flattenTree(machine.props.children).filter((node) => node.type === 'option').map((node) => node.props.value),
+    ['', 'builder', 'staging'])
+  assert.equal(harness.host.probed, undefined)
+  harness.host.sshError = 'Connection refused'
+  harness.change(machine, 'builder')
+  await harness.flush()
+  assert.equal(labeledControl(harness, 'launch.agent').props.value, 'codex', 'a failed batch check keeps the saved SSH choice')
+  harness.change(labeledControl(harness, 'launch.prompt', 'textarea'), 'Preserve this edit')
+  harness.change(machine, 'staging')
+  await harness.flush()
+  assert.ok(harness.text().includes('Connection refused'))
+  harness.host.sshError = ''
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('launch.retry')))
+  await harness.flush()
+  const agent = labeledControl(harness, 'launch.agent')
+  harness.change(agent, 'claude')
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('launch.open')))
+  await harness.flush()
+  assert.deepEqual(harness.host.probed, ['builder', 'staging', 'staging'])
+  assert.equal(harness.launches.at(-1).body.sshAlias, 'staging')
+  assert.equal(harness.launches.at(-1).body.draft, 'Preserve this edit')
+  harness.dispose()
+}
+
+{
+  const harness = settingsHarness({ configExtra: runOnConfig })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+  await harness.flush()
+  const text = harness.text()
+  assert.ok(text.indexOf('settings.githubTitle') < text.indexOf('settings.agentsSection'))
+  const pick = () => labeledControl(harness, 'launch.machine')
+  harness.change(pick(), 'builder')
+  await harness.flush()
+  assert.equal(labeledControl(harness, 'settings.defaultAgent').props.value, 'codex', 'retain a missing preferred agent')
+  harness.change(pick(), 'staging')
+  await harness.flush()
+  assert.ok(harness.text().includes('settings.scenarios'))
+  assert.ok(!harness.text().includes('settings.manageAgents'))
+  harness.change(labeledControl(harness, 'settings.defaultAgent'), 'claude')
+  harness.change(pick(), '')
+  assert.ok(harness.text().includes('settings.manageAgents'))
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('settings.save')))
+  assert.deepEqual(harness.pending[0].body.sshServers.map(({ alias, agent }) => [alias, agent]),
+    [['builder', 'codex'], ['staging', 'claude']])
+  assert.equal(harness.pending[0].body.defaultAgent, state.config.defaultAgent)
+  harness.dispose()
+}
+
+{
+  const template = { ...state.config.scenarios[1], label: 'Pinned template', agent: 'claude' }
+  const harness = settingsHarness({ configExtra: runOnConfig, scenarios: [template] })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.className === 'adx-scenario-toggle'))
+  assert.ok(harness.text().includes('settings.localOverride:Claude Code'))
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('settings.useMachineDefault')))
+  assert.ok(!harness.text().includes('settings.localOverride'))
+  assert.ok(!harness.nodes().some((node) => node.type === 'label' && flattenTree(node.props.children).includes('settings.scenarioAgent')))
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('settings.save')))
+  assert.equal(harness.pending[0].body.scenarios[0].agent, 'default')
   harness.dispose()
 }
 

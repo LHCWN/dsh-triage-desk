@@ -14,6 +14,8 @@ import {
   bareAgentCommand,
   buildSshScripts,
   SSH_AGENTS,
+  SSH_ALIAS,
+  configuredSshHosts,
   buildClipboardLauncherScript,
   buildDraftCommand,
   buildDraftLauncherScript,
@@ -217,8 +219,13 @@ export function createLaunch({
   }
 
   const launchSsh = async (alias, rendered, signal, requestedAgent) => {
-    const server = launcherSettings.sshServers.find((entry) => entry.alias === alias)
-    if (!server) throw new LaunchError('bad-destination', 'choose a saved SSH destination')
+    if (typeof alias !== 'string' || !SSH_ALIAS.test(alias)) throw new LaunchError('bad-destination', 'choose a named SSH host')
+    let server = launcherSettings.sshServers.find((entry) => entry.alias.toLowerCase() === alias.toLowerCase())
+    if (!server) {
+      const known = (await configuredSshHosts()).find((host) => host.toLowerCase() === alias.toLowerCase())
+      if (!known) throw new LaunchError('bad-destination', 'choose a saved destination or a named OpenSSH host')
+      server = { alias: known, folders: [] }
+    }
     const agent = SSH_AGENTS.find((entry) => entry.id === (requestedAgent || server.agent))
     if (!agent) throw new LaunchError('unknown-agent', 'choose a supported SSH agent')
     const title = `SSH ${server.alias} · ${agent.label} · ${scenarioTitle(rendered.scenario)}`

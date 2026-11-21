@@ -8,7 +8,7 @@
 [![开放插件市场](https://img.shields.io/endpoint?url=https%3A%2F%2Fdshopen.org%2Fbadge%2Fdsh-triage-desk.json)](https://dshopen.org/zh/plugins/dsh-triage-desk/)
 [![已收录于 Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com/zh/p/LHCWN/dsh-triage-desk/)
 
-一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）插件，每天早上只回答一个问题：**现在有什么需要我处理？** 它把 GitHub 动态汇总成一个收件箱面板：等待你审核的 PR、可以合并的自己的 PR、需要答复的讨论、失败的 CI，以及新的或分配给你的议题。可复制场景提示，或在 DSH、本地智能体或已保存的 SSH 目标中将其作为草稿打开。收件箱通过已登录的本地 GitHub CLI 读取数据。
+一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）插件，每天早上只回答一个问题：**现在有什么需要我处理？** 它把 GitHub 动态汇总成一个收件箱面板：等待你审核的 PR、可以合并的自己的 PR、需要答复的讨论、失败的 CI，以及新的或分配给你的议题。可复制场景提示，或在 DSH、本地智能体或SSH 主机中将其作为草稿打开。收件箱通过已登录的本地 GitHub CLI 读取数据。
 
 <img src="docs/screenshots/inbox.png" width="900" alt="分诊收件箱中显示待复审的 PR、我的 PR 收到的反馈、可以合并的 PR 和分配给我的议题">
 
@@ -78,7 +78,9 @@ dsh plugin --profile <profile> add dsh-triage-desk@latest
 
 发送后，审核类场景会在 GitHub 上提交一次审核，以行内评论给出发现的问题并标注 `[P1]`–`[P3]`，从不批准。修复和回复类场景在推送或发布前会等待你确认；分诊只汇报结果。所有场景都不会添加 AI 署名。
 
-**SSH 目标。** 在「设置 → 启动环境」中从 OpenSSH 配置选择主机，或手动输入别名。保存前即可「检查连接」，查看可用智能体。选择首选智能体并逐行输入仓库文件夹，如 `~/projects` 或 `/srv/git`；主目录在服务器上展开。保存后可「查找仓库」。
+**运行位置。** 在 GitHub 下方的「设置 → 智能体」中选择「本机」或 SSH 主机。打开草稿时也可使用同一个列表，包括已保存的目标和 `~/.ssh/config` 中具名的主机。选择主机后会检查其已安装的智能体。安装新智能体后可「重新扫描」，连接失败时可「重试」。也可通过「添加 SSH 主机…」手动输入别名。每台机器分别保存默认智能体。在设置中切换主机仅切换正在编辑的配置。提示词模板由所有机器共享；已有本机智能体例外的模板可选择「使用机器默认设置」清除例外。
+
+在「启动环境 → 仓库目录所在主机」中选择主机，然后逐行填写目录，例如 `~/projects` 或 `/srv/git`。主目录在服务器上展开。保存后可「查找仓库」查看工作副本。
 
 启动时按 Git 远程地址匹配工作副本，包括派生仓库的 `upstream`。多个副本匹配时可选择并记住路径。找不到副本时，终端提示选择文件夹并显示按回车将使用的目录。智能体不可用时，可选择备选智能体或明确打开远程 shell。
 

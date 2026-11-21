@@ -130,8 +130,9 @@ Other panel features:
 
 Open a row or group to preview and edit its rendered prompt. Select a machine
 and agent, then **Open** or **Copy prompt**. Agent selection and draft edits are
-independent. Settings → **Agents** controls each template's prompt, preferred
-agent, enabled state, order and applicable sections. The saved row default
+independent. Settings → **Agents** controls each template's prompt, enabled state, order and
+applicable sections. Templates use the selected machine’s default agent. An existing
+local override can be cleared with **Use machine default**. The saved row default
 takes precedence where it applies. Built-in task templates cover initial review,
 re-review, repair, replies and issue triage. Group templates use the visible
 items in their own section. Existing scenarios bound to *Needs

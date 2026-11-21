@@ -263,7 +263,15 @@ window.__ModuleLoader__.load({
       'launch.chooseAgent': 'Choose an agent',
       'launch.tooLong': 'Shorten the draft to 16,000 characters.',
       'launch.prompt': 'Prompt',
-      'launch.machine': 'Open on',
+      'settings.addSshHost': 'Add SSH host…',
+      'settings.useHost': 'Use host',
+      'settings.localOverride': 'Local agent override · {agent}',
+      'settings.useMachineDefault': 'Use machine default',
+      'settings.foldersOn': 'Repository folders on',
+      'settings.forgetHost': 'Remove saved host settings',
+      'settings.scanAgain': 'Scan again',
+      'settings.foundAgents': 'Agents found: {n}',
+      'launch.machine': 'Run on',
       'launch.local': 'This computer',
       'settings.environments': 'Launch environments',
       'settings.agentsSection': 'Agents',
@@ -621,7 +629,15 @@ window.__ModuleLoader__.load({
       'launch.chooseAgent': '选择智能体',
       'launch.tooLong': '请将草稿缩短至 16,000 个字符。',
       'launch.prompt': '提示词',
-      'launch.machine': '打开位置',
+      'settings.addSshHost': '添加 SSH 主机…',
+      'settings.useHost': '使用主机',
+      'settings.localOverride': '本机智能体例外 · {agent}',
+      'settings.useMachineDefault': '使用机器默认设置',
+      'settings.foldersOn': '仓库目录所在主机',
+      'settings.forgetHost': '清除此主机的已保存设置',
+      'settings.scanAgain': '重新扫描',
+      'settings.foundAgents': '找到的智能体：{n}',
+      'launch.machine': '运行位置',
       'launch.local': '本机',
       'settings.environments': '启动环境',
       'settings.agentsSection': '智能体',
@@ -1179,6 +1195,10 @@ window.__ModuleLoader__.load({
       .adx-draft, .adx-draft label, .adx-ssh-fields, .adx-ssh-fields .adx-launch-agent { display: grid; gap: 6px; }
       .adx-draft textarea { width: 100%; box-sizing: border-box; resize: vertical; }
       .adx-launch-menu:has(.adx-draft) { width: min(400px, 85vw); max-height: 70vh; overflow-y: auto; }
+      .adx-run-on { display: grid; gap: 6px; font-weight: 500; }
+      .adx-run-on-status, .adx-run-on-add { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .adx-run-on-status { font-size: 12px; color: var(--adx-ink-3); }
+      .adx-alternative { display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; }
       .adx-ssh-fields fieldset { min-width: 0; }
       .adx-ssh-fields fieldset label { display: inline-flex; margin-right: 12px; }
       .adx-ssh-fields [role=status]:empty { display: none; }
@@ -3104,6 +3124,46 @@ window.__ModuleLoader__.load({
       )
     }
 
+    function RunOnPicker({ t, servers, hosts, machine, onChange, disabled, onAdd, label = 'launch.machine' }) {
+      const names = new Map()
+      for (const alias of [...servers.map((server) => server.alias.trim()), ...hosts]) {
+        if (alias && !names.has(alias.toLowerCase())) names.set(alias.toLowerCase(), alias)
+      }
+      return h('label', { className: 'adx-run-on' }, t(label),
+        h('select', { className: 'adx-select', value: machine, disabled, onChange: (event) => {
+          if (event.target.value === ':add') onAdd()
+          else onChange(event.target.value)
+        } }, h('option', { value: '' }, t('launch.local')),
+        [...names.values()].map((alias) => h('option', { key: alias, value: alias }, alias)),
+        onAdd && h('option', { value: ':add' }, t('settings.addSshHost'))))
+    }
+
+    function useRemoteAgents(alias) {
+      const [result, setResult] = useState(null)
+      const [attempt, setAttempt] = useState(0)
+      useEffect(() => {
+        setResult(null)
+        if (!alias) return undefined
+        let current = true
+        postJson('/triage-desk/ssh/check', { alias }).then(({ agents }) => {
+          if (current) setResult({ alias, attempt, agents })
+        }).catch((failure) => {
+          if (current) setResult({ alias, attempt, error: failure.message })
+        })
+        return () => { current = false }
+      }, [alias, attempt])
+      return { result: result?.alias === alias && result.attempt === attempt ? result : null,
+        scan: () => setAttempt((value) => value + 1) }
+    }
+
+    function RemoteScan({ t, probe }) {
+      const { result, scan } = probe
+      return h('div', { className: 'adx-run-on-status' },
+        h('span', { role: 'status' }, result?.error || (result
+          ? t('settings.foundAgents', { n: result.agents.length }) : t('settings.connectionChecking'))),
+        result && outlineButton(t(result.error ? 'launch.retry' : 'settings.scanAgain'), scan))
+    }
+
     function DraftEditor({ t, config, actions, targets, count, group }) {
       const textArea = useRef(null)
       useEffect(() => {
@@ -3114,7 +3174,7 @@ window.__ModuleLoader__.load({
       }, [actions.manualPrompt])
       const [machine, setMachine] = useState('')
       const [choice, setChoice] = useState('')
-      const [probe, setProbe] = useState(null)
+      const probe = useRemoteAgents(machine)
       const [draft, setDraft] = useState(null)
       const [error, setError] = useState('')
       const [attempt, setAttempt] = useState(0)
@@ -3130,56 +3190,44 @@ window.__ModuleLoader__.load({
         }).catch((failure) => { if (current) setError(failure.message) })
         return () => { current = false }
       }, [identity, empty, attempt])
-      useEffect(() => {
-        if (!machine) return undefined
-        let current = true
-        postJson('/triage-desk/ssh/check', { alias: machine }).then(({ agents }) => {
-          if (current) setProbe({ machine, agents })
-        }).catch((failure) => { if (current) setProbe({ machine, error: failure.message }) })
-        return () => { current = false }
-      }, [machine])
-
       const server = targets.servers.find(({ alias }) => alias === machine)
-      const checked = probe?.machine === machine ? probe : null
-      const configured = new Set([server?.agent, ...(server?.alternatives || [])])
-      const remoteAgents = checked?.agents || configList(config, 'sshAgents').filter(({ id }) => configured.has(id))
+      // Batch-mode probing can fail on a host that permits interactive login.
+      const configured = new Set([choice, server?.agent, ...(server?.alternatives || [])])
+      const remoteAgents = probe.result?.agents ?? configList(config, 'sshAgents').filter(({ id }) => configured.has(id))
       const template = configList(config, 'scenarios').find(({ id }) => id === draft?.scenario.id)
       const pinned = template && scenarioPinnedAgent(template, targets.agents)
-      const preferred = server ? server.agent : pinned?.id || targets.selected
-      const options = server ? remoteAgents.map(({ id, label }) => h('option', { key: id, value: id }, label)) :
+      const preferred = machine ? server?.agent : pinned?.id || targets.selected
+      const options = machine ? remoteAgents.map(({ id, label }) => h('option', { key: id, value: id }, label)) :
         [...(targets.dsh ? [h('option', { key: DSH_TARGET, value: DSH_TARGET }, t('launch.dshTarget'))] : []),
           ...agentOptions(t, targets.ordered, targets.detected)]
-      const offered = server ? remoteAgents.map(({ id }) => id) :
+      const offered = machine ? remoteAgents.map(({ id }) => id) :
         [...(targets.dsh ? [DSH_TARGET] : []), ...targets.ordered.map(({ id }) => id)]
-      const selected = [choice, preferred].find((id) => offered.includes(id)) || (server ? '' : offered[0]) || ''
+      const selected = [choice, preferred].find((id) => offered.includes(id)) || (machine && server ? '' : offered[0]) || ''
       const busy = actions.busy
       const tooLong = draft && Array.from(draft.prompt).length > 16000
       const ready = draft?.identity === identity && draft.prompt.trim() && !tooLong && count !== 0
       const open = () => {
         const id = draft.scenario.id || undefined
-        if (!server && selected === DSH_TARGET) actions.launchDsh(id, draft)
-        else actions.launch(id, selected, server?.alias, draft.prompt)
+        if (!machine && selected === DSH_TARGET) actions.launchDsh(id, draft)
+        else actions.launch(id, selected, machine || undefined, draft.prompt)
       }
       return h('div', { className: 'adx-draft' },
-        targets.servers.length > 0 && h('label', null, t('launch.machine'),
-          h('select', { className: 'adx-select', value: machine, disabled: busy, onChange: (event) => {
-            setMachine(event.target.value)
+        (config.supportsRunOn || targets.servers.length > 0) && h(RunOnPicker, { t, servers: targets.servers,
+          hosts: config.supportsRunOn ? configList(config, 'sshHosts') : [], machine, disabled: busy, onChange: (alias) => {
+            setMachine(alias)
             setChoice('')
-            setProbe(null)
-          } }, h('option', { value: '' }, t('launch.local')), targets.servers.map(({ alias }) =>
-            h('option', { key: alias, value: alias }, 'SSH · ' + alias)))),
+          } }),
         h('label', null, t('launch.agent'), h('select', { className: 'adx-select', value: selected, disabled: busy,
           onChange: (event) => setChoice(event.target.value) },
           !selected && h('option', { value: '', disabled: true }, t('launch.chooseAgent')), options)),
-        checked?.error && h('span', { className: 'adx-form-note', role: 'status' }, checked.error),
-        server && checked?.agents?.length === 0 && h('span', { role: 'status' }, t('launch.noAgents')),
+        machine && h(RemoteScan, { t, probe }),
         group && draft && h('span', { className: 'adx-form-note' }, batchActionLabel(t, template || draft.scenario, group, count)),
         h('label', null, t('launch.prompt'), h('textarea', { className: 'adx-textarea', rows: 6, ref: textArea,
           value: draft?.identity === identity ? draft.prompt : '', disabled: busy || draft?.identity !== identity,
           onChange: (event) => setDraft({ ...draft, prompt: event.target.value }) })),
         tooLong && h('div', { role: 'alert' }, t('launch.tooLong')),
         error && h('div', { role: 'alert' }, error, outlineButton(t('launch.retry'), () => setAttempt(attempt + 1))),
-        !server && launchVia(t, config, { ...targets, selected }),
+        !machine && launchVia(t, config, { ...targets, selected }),
         h('div', { className: 'adx-form-actions' },
           h('button', { type: 'button', className: 'adx-btn adx-btn--primary', disabled: !ready || !selected || busy, onClick: open }, t('launch.open')),
           h('button', { type: 'button', className: 'adx-btn adx-btn--outline', disabled: !ready || busy,
@@ -4337,6 +4385,10 @@ window.__ModuleLoader__.load({
       const [refreshCustom, setRefreshCustom] = useState(initial === null ? false : initial.refreshCustom)
       const [picking, setPicking] = useState(null)
       const [openScenario, setOpenScenario] = useState(null)
+      const [machine, setMachine] = useState('')
+      const [folderMachine, setFolderMachine] = useState('')
+      const [newHost, setNewHost] = useState(null)
+      const probe = useRemoteAgents(machine)
       const [findingAgents, setFindingAgents] = useState(false)
       const [invalidAgentKey, setInvalidAgentKey] = useState(null)
       const initialized = useRef(initial !== null)
@@ -4952,7 +5004,9 @@ window.__ModuleLoader__.load({
           const scopeLabel = t(scenario.scope === 'section' ? 'settings.scenarioScopeSection' : 'settings.scenarioScopeItem')
           const agentLabel = scenarioAgentHint(t, scenario, form.agents,
             form.defaultAgent === configValue(config, 'defaultAgent') ? panelDefaultTarget(config, form.agents) : form.defaultAgent)
-          const meta = [scopeLabel, agentLabel].filter((entry) => entry !== '').join(' · ')
+          const override = scenarioAgentValue(scenario) === 'default' ? '' :
+            t('settings.localOverride', { agent: targetLabel(t, scenario.agent, form.agents) })
+          const meta = [scopeLabel, config.supportsRunOn ? override : agentLabel].filter(Boolean).join(' · ')
           const body = isOpen
             ? h(
                 'div',
@@ -4990,7 +5044,9 @@ window.__ModuleLoader__.load({
                           h('option', { value: 'section' }, t('settings.scenarioScopeSection')),
                         ),
                   ),
-                  h(
+                  config.supportsRunOn ? (override && h('div', { className: 'adx-scenario-field' },
+                    h('span', null, override),
+                    outlineButton(t('settings.useMachineDefault'), () => updateScenario(index, { agent: 'default' })))) : h(
                     'label',
                     { className: 'adx-scenario-field' },
                     h('span', { className: 'adx-scenario-field-label' }, t('settings.scenarioAgent')),
@@ -5211,6 +5267,83 @@ window.__ModuleLoader__.load({
         )
       }
 
+      const hostList = configList(config, 'sshHosts')
+      const serverFor = (alias) => form.sshServers.find((row) => row.alias === alias)
+      const remoteCatalog = configList(config, 'sshAgents')
+      const changeServer = (alias, patch) => {
+        const server = serverFor(alias)
+        const rows = server ? form.sshServers.map((row) => row === server ? { ...row, ...patch } : row)
+          : [...form.sshServers, { _key: newAgentRowKey(), alias, agent: remoteCatalog[0].id,
+            folders: '', cwd: '', alternatives: [], ...patch }]
+        update({ sshServers: rows })
+      }
+      const forgetServer = (alias) => {
+        update({ sshServers: form.sshServers.filter((row) => row.alias !== alias) })
+        setMachine('')
+        if (folderMachine === alias) setFolderMachine('')
+      }
+      function renderHostPicker() {
+        const valid = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test((newHost || '').trim())
+        return h('div', { className: 'adx-agents' },
+          h(RunOnPicker, { t, servers: form.sshServers, hosts: hostList, machine,
+            onChange: (alias) => { setMachine(alias); setNewHost(null) }, onAdd: () => setNewHost('') }),
+          newHost !== null && h('div', { className: 'adx-run-on-add' },
+            h('label', { className: 'adx-run-on' }, t('settings.ssh.alias'),
+              h('input', { className: 'adx-input', autoFocus: true, spellCheck: false, value: newHost,
+                onChange: (event) => setNewHost(event.target.value) })),
+            h('button', { type: 'button', className: 'adx-btn adx-btn--outline', disabled: !valid, onClick: () => {
+              const entered = newHost.trim()
+              const aliases = [...form.sshServers.map((row) => row.alias), ...hostList]
+              const alias = aliases.find((name) => name.toLowerCase() === entered.toLowerCase()) || entered
+              if (!serverFor(alias) && !hostList.includes(alias)) changeServer(alias, {})
+              setMachine(alias)
+              setNewHost(null)
+            } }, t('settings.useHost')),
+            outlineButton(t('settings.cancel'), () => setNewHost(null))))
+      }
+
+      function renderRemoteDefault() {
+        const server = serverFor(machine)
+        const found = probe.result?.agents || []
+        const preference = server?.agent || ''
+        const absent = preference && !found.some(({ id }) => id === preference)
+        const savedLabel = remoteCatalog.find(({ id }) => id === preference)?.label || preference
+        return h('div', { className: 'adx-agents' },
+          h('label', { className: 'adx-run-on' }, t('settings.defaultAgent'),
+            h('select', { className: 'adx-select', value: preference, disabled: !found.length,
+              onChange: (event) => changeServer(machine, { agent: event.target.value }) },
+              !preference && h('option', { value: '', disabled: true }, t('launch.chooseAgent')),
+              absent && h('option', { value: preference, disabled: true }, probe.result?.agents
+                ? savedLabel + ' · ' + t('launch.notInstalled') : savedLabel),
+              found.map(({ id, label }) => h('option', { key: id, value: id }, label)))),
+          h(RemoteScan, { t, probe }),
+          server && h('details', { className: 'adx-advanced' },
+            h('summary', { className: 'adx-advanced-summary' }, t('settings.ssh.alternatives')),
+            remoteCatalog.filter(({ id }) => id !== preference && (server.alternatives.includes(id) ||
+              found.some((agent) => agent.id === id))).map(({ id, label }) =>
+              h('label', { key: id, className: 'adx-alternative' }, h('input', {
+                type: 'checkbox', checked: server.alternatives.includes(id),
+                onChange: (event) => changeServer(machine, { alternatives: event.target.checked
+                  ? [...server.alternatives, id] : server.alternatives.filter((other) => other !== id) }),
+              }), label))),
+          server && outlineButton(t(hostList.some((alias) => alias.toLowerCase() === machine.toLowerCase())
+            ? 'settings.forgetHost' : 'settings.sshRemove'), () => forgetServer(machine)))
+      }
+
+      function renderRemoteFolders() {
+        const folders = serverFor(folderMachine)?.folders || ''
+        const saved = config.sshServers.some((row) => row.alias === folderMachine &&
+          sshFolders(row).join('\n') === folderLines(folders).join('\n'))
+        const error = folderError(t, folders)
+        return h('div', { className: 'adx-agents' },
+          h('label', { className: 'adx-run-on' }, t('settings.ssh.folders'),
+            h('textarea', { className: 'adx-textarea', value: folders, rows: 3, placeholder: '~/projects',
+              'aria-invalid': Boolean(error), 'aria-describedby': error ? 'adx-remote-folders-error' : undefined,
+              spellCheck: false, onChange: (event) => changeServer(folderMachine, { folders: event.target.value }) })),
+          error && h('span', { id: 'adx-remote-folders-error', role: 'alert' }, error),
+          h(RepositoryScan, { key: JSON.stringify([folderMachine, folders]), t, alias: folderMachine, disabled: !saved }))
+      }
+
       function renderSshServers() {
         if (!Array.isArray(config.sshServers)) return null
         const rows = form.sshServers
@@ -5402,10 +5535,15 @@ window.__ModuleLoader__.load({
               onAction: () => void store.loadConfig(),
             })
           : null,
+        renderAuth(),
         h('details', { className: 'adx-advanced', open: true },
           h('summary', { className: 'adx-advanced-summary' }, t('settings.agentsSection')),
-          renderDefaultAgent(),
-          h('details', { className: 'adx-advanced' },
+          config.supportsRunOn && renderHostPicker(),
+          machine ? renderRemoteDefault() : renderDefaultAgent(),
+          !machine && config.supportsAgentDiscovery && h('div', { className: 'adx-run-on-status' },
+            h('button', { type: 'button', className: 'adx-btn adx-btn--outline', disabled: findingAgents, onClick: findAgents },
+              t(findingAgents ? 'settings.agentFinding' : 'settings.agentFind'))),
+          !machine && h('details', { className: 'adx-advanced' },
             h('summary', { className: 'adx-advanced-summary' }, t('settings.manageAgents')),
             h(
               'div',
@@ -5473,18 +5611,6 @@ window.__ModuleLoader__.load({
                   { type: 'button', className: 'adx-btn adx-btn--outline adx-agent-add', onClick: addAgent },
                   t('settings.agentAdd'),
                 ),
-                configValue(config, 'supportsAgentDiscovery') === true
-                  ? h(
-                      'button',
-                      {
-                        type: 'button',
-                        className: 'adx-btn adx-btn--outline',
-                        disabled: findingAgents,
-                        onClick: findAgents,
-                      },
-                      findingAgents ? t('settings.agentFinding') : t('settings.agentFind'),
-                    )
-                  : null,
                 h('span', { className: 'adx-spacer' }),
               ),
               h('p', { className: 'adx-form-note' }, t('settings.agentsHint')),
@@ -5495,7 +5621,6 @@ window.__ModuleLoader__.load({
             renderScenarios(),
           ),
         ),
-        renderAuth(),
         h(
           Field,
           {
@@ -5594,63 +5719,67 @@ window.__ModuleLoader__.load({
         h('p', { className: 'adx-form-note' }, t('settings.applyHint')),
         h('details', { className: 'adx-advanced' },
           h('summary', { className: 'adx-advanced-summary' }, t('settings.environments')),
-          h('h3', null, t('launch.local')),
+          !config.supportsRunOn && h('h3', null, t('launch.local')),
           renderTerminalChoice(),
           renderPromptDelivery(),
-        h(
-          Field,
-          {
-            label: t('settings.cloneDirs'),
-            htmlFor: 'adx-clone-dirs',
-            hint: t('settings.cloneDirsHint', {
-              list: configList(config, 'cloneDirsDefault').join(', '),
-            }),
-          },
-          h('div', { className: 'adx-path-edit' },
-            h('textarea', {
-              id: 'adx-clone-dirs',
-              className: 'adx-textarea',
-              rows: 3,
-              value: form.cloneDirs,
-              placeholder: t('settings.cloneDirsPlaceholder'),
-              spellCheck: false,
-              onChange: (event) => update({ cloneDirs: event.target.value }),
-            }),
-            h('div', { className: 'adx-path-actions' },
-              h('button', {
-                type: 'button',
-                className: 'adx-btn adx-btn--outline',
-                disabled: picking !== null,
-                onClick: () => void pickPath('dir'),
-              }, picking === 'dir' ? t('settings.picking') : t('settings.pickFolder')),
+          config.supportsRunOn && h(RunOnPicker, { t, servers: form.sshServers, hosts: hostList, machine: folderMachine,
+            label: 'settings.foldersOn', onChange: setFolderMachine }),
+          folderMachine ? renderRemoteFolders() : h('div', { className: 'adx-agents' },
+            h(
+              Field,
+              {
+                label: t('settings.cloneDirs'),
+                htmlFor: 'adx-clone-dirs',
+                hint: t('settings.cloneDirsHint', {
+                  list: configList(config, 'cloneDirsDefault').join(', '),
+                }),
+              },
+              h('div', { className: 'adx-path-edit' },
+                h('textarea', {
+                  id: 'adx-clone-dirs',
+                  className: 'adx-textarea',
+                  rows: 3,
+                  value: form.cloneDirs,
+                  placeholder: t('settings.cloneDirsPlaceholder'),
+                  spellCheck: false,
+                  onChange: (event) => update({ cloneDirs: event.target.value }),
+                }),
+                h('div', { className: 'adx-path-actions' },
+                  h('button', {
+                    type: 'button',
+                    className: 'adx-btn adx-btn--outline',
+                    disabled: picking !== null,
+                    onClick: () => void pickPath('dir'),
+                  }, picking === 'dir' ? t('settings.picking') : t('settings.pickFolder')),
+                ),
+              ),
+            ),
+            h(RepositoryScan, { t }),
+            h(
+              Field,
+              { label: t('settings.repoPaths'), htmlFor: 'adx-repo-paths', hint: t('settings.repoPathsHint') },
+              h('div', { className: 'adx-path-edit' },
+                h('textarea', {
+                  id: 'adx-repo-paths',
+                  className: 'adx-textarea',
+                  rows: 2,
+                  value: form.repoPaths,
+                  placeholder: t('settings.repoPathsPlaceholder'),
+                  spellCheck: false,
+                  onChange: (event) => update({ repoPaths: event.target.value }),
+                }),
+                h('div', { className: 'adx-path-actions' },
+                  h('button', {
+                    type: 'button',
+                    className: 'adx-btn adx-btn--outline',
+                    disabled: picking !== null,
+                    onClick: () => void pickPath('clone'),
+                  }, picking === 'clone' ? t('settings.picking') : t('settings.pickClone')),
+                ),
+              ),
             ),
           ),
-        ),
-        h(RepositoryScan, { t }),
-        h(
-          Field,
-          { label: t('settings.repoPaths'), htmlFor: 'adx-repo-paths', hint: t('settings.repoPathsHint') },
-          h('div', { className: 'adx-path-edit' },
-            h('textarea', {
-              id: 'adx-repo-paths',
-              className: 'adx-textarea',
-              rows: 2,
-              value: form.repoPaths,
-              placeholder: t('settings.repoPathsPlaceholder'),
-              spellCheck: false,
-              onChange: (event) => update({ repoPaths: event.target.value }),
-            }),
-            h('div', { className: 'adx-path-actions' },
-              h('button', {
-                type: 'button',
-                className: 'adx-btn adx-btn--outline',
-                disabled: picking !== null,
-                onClick: () => void pickPath('clone'),
-              }, picking === 'clone' ? t('settings.picking') : t('settings.pickClone')),
-            ),
-          ),
-        ),
-          renderSshServers(),
+          !config.supportsRunOn && renderSshServers(),
         ),
         h(
           'div',

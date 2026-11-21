@@ -13,7 +13,7 @@ plugin that answers one question every morning: **what needs me right now?** It
 turns GitHub activity into a single inbox panel: reviews waiting on you, your
 merge-ready PRs, threads that need an answer, failing CI, and new or assigned
 issues. Copy a scenario prompt or open it as a draft in DSH, a local agent or
-a saved SSH destination. The inbox reads GitHub through the signed-in local CLI.
+a named SSH host. The inbox reads GitHub through the signed-in local CLI.
 
 <img src="docs/screenshots/inbox.png" width="900" alt="Triage inbox with re-review requests, feedback on my PRs, merge-ready PRs, and an assigned issue">
 
@@ -119,12 +119,18 @@ tagged `[P1]`–`[P3]`, and never approve. The fix and reply scenarios wait for 
 OK before pushing or posting; triage only reports back. None of them add AI
 attribution.
 
-**SSH destinations.** Under **Settings → Launch environments**, choose a host from
-your OpenSSH config or type its alias. **Check connection** tests the selected
-host and lists installed agents before saving. Set a preferred agent and enter
-one repository folder per line, such as `~/projects` or `/srv/git`. Home paths
-resolve on the server. Save the folders and use **Find repositories** to inspect
-the GitHub repositories found there.
+**Run on.** In **Settings → Agents**, below GitHub, choose **This computer** or an
+SSH host. The same list is available when opening a draft. It includes saved
+destinations and named hosts from `~/.ssh/config`. Selecting a host checks its
+installed agents. Use **Scan again** after installing an agent, or **Retry** if
+the connection fails. **Add SSH host…** lets you enter an alias manually.
+Each machine has its own default agent. Viewing a host in Settings only changes
+which preferences you edit. Prompt templates are shared across machines. For a
+template with an existing local agent override, **Use machine default** clears it.
+
+Under **Launch environments → Repository folders on**, select a host and enter one
+folder per line, such as `~/projects` or `/srv/git`. Home paths resolve on the
+server. Save the folders and use **Find repositories** to inspect its working copies.
 
 At launch, Git remotes identify the working copy, including forks with an
 `upstream` remote. When several copies match, choose one and optionally remember

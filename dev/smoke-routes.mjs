@@ -354,7 +354,20 @@ await recordAsync('repository discovery uses only the selected saved destination
   assert.equal((await json(await scan('unknown'))).error.code, 'bad-destination')
 })
 
-await recordAsync('SSH launches resolve only saved destinations and use the remote folder and agent', async () => {
+await recordAsync('a named OpenSSH host launches with the selected remote agent before saving settings', async () => {
+  await fs.mkdir(path.join(fixture, '.ssh'), { recursive: true })
+  await fs.writeFile(path.join(fixture, '.ssh', 'config'), 'Host staging-ci\n  HostName example.invalid\n')
+  await withHome(fixture, async () => {
+    const body = { url: PR_URL, sshAlias: 'staging-ci', agent: 'codex', draft: 'Run the migration' }
+    const result = await json(await callHandler('/triage-desk/launch', 'POST', body))
+    assert.equal(result.sshAlias, 'staging-ci')
+    assert.equal(result.agent.id, 'codex')
+    assert.equal(result.cwdMode, 'ssh')
+    await cleanupLaunches()
+  })
+})
+
+await recordAsync('SSH launches resolve saved destinations and use the remote folder and agent', async () => {
   const body = { url: PR_URL, scenario: 'custom-review', sshAlias: 'builder' }
   const result = await json(await callHandler('/triage-desk/launch', 'POST', body))
   assert.equal(result.cwdMode, 'ssh')
