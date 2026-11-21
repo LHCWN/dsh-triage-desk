@@ -4,6 +4,9 @@
 
 ### Changed
 
+- Group actions show the number of visible items they will send, including in
+  All. First reviews and re-reviews launch separately. Use Select to choose
+  specific PRs or include optional reviews. Trimmed drafts report how many fit.
 - The Reviews tab groups first reviews, repeat reviews and feedback on your PRs.
   A direct re-request offers the re-review scenario on both unchanged and updated heads.
   Feedback rows link to the conversation or the files with requested changes.

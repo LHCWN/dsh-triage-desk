@@ -109,7 +109,7 @@ window.__ModuleLoader__.load({
       'select.count': '{n} selected',
       'select.enter': 'Select',
       'select.done': 'Done',
-      'select.hint': 'Select items to snooze',
+      'select.hint': 'Select items to snooze or run a group scenario',
       'select.hintUnsnooze': 'Select items to unsnooze',
       'select.all': 'Select all',
       'select.none': 'Deselect all',
@@ -342,6 +342,14 @@ window.__ModuleLoader__.load({
       'launch.dshFailed': 'Could not open a DSH session',
       'launch.dshHostOutdated': 'The plugin host is still an older version: turn the plugin off and on, then refresh the page',
       'launch.sectionScenarios': 'Section scenarios',
+      'meta.optionalReview': 'Optional review',
+      'launch.optionalHint': 'Use Select to choose specific PRs, including optional reviews.',
+      'launch.replyFeedbackOne': 'Reply to feedback on {n} PR',
+      'launch.replyFeedback': 'Reply to feedback on {n} PRs',
+      'launch.reviewOne': 'Review {n} PR',
+      'launch.review': 'Review {n} PRs',
+      'launch.rereviewOne': 'Re-review {n} PR',
+      'launch.rereview': 'Re-review {n} PRs',
       'launch.sectionTitle': 'Open a scenario for this section',
       'launch.trimmed': ' · prompt trimmed: {shown} of {total}',
       'launch.countSuffix': ' · {n} items',
@@ -431,7 +439,7 @@ window.__ModuleLoader__.load({
       'select.count': '已选 {n} 项',
       'select.enter': '选择',
       'select.done': '完成',
-      'select.hint': '选择要延后的项',
+      'select.hint': '选择要延后或运行分类场景的条目',
       'select.hintUnsnooze': '选择要取消延后的项',
       'select.all': '全选',
       'select.none': '取消全选',
@@ -664,6 +672,14 @@ window.__ModuleLoader__.load({
       'launch.dshFailed': '无法打开 DSH 会话',
       'launch.dshHostOutdated': '插件主机仍是旧版本：请关闭再启用插件，然后刷新页面',
       'launch.sectionScenarios': '分类场景',
+      'meta.optionalReview': '可选审核',
+      'launch.optionalHint': '使用“选择”可指定 PR，包括可选审核。',
+      'launch.replyFeedbackOne': '回复 {n} 个 PR 的反馈',
+      'launch.replyFeedback': '回复 {n} 个 PR 的反馈',
+      'launch.reviewOne': '审核 {n} 个 PR',
+      'launch.review': '审核 {n} 个 PR',
+      'launch.rereviewOne': '复审 {n} 个 PR',
+      'launch.rereview': '复审 {n} 个 PR',
       'launch.sectionTitle': '为此分类打开场景',
       'launch.trimmed': ' · 提示已截断：{shown}/{total}',
       'launch.countSuffix': ' · {n} 项',
@@ -1682,6 +1698,14 @@ window.__ModuleLoader__.load({
       return haystack.indexOf(query) !== -1
     }
 
+    function isReviewGroup(section) {
+      return section === 'review' || section === 'rereview'
+    }
+
+    function optionalReview(section, item) {
+      return isReviewGroup(section) && item.optional === true
+    }
+
     /**
      * The attention badge (`total`): actionable items, each counted once (a
      * PR in `respond` and `ci` is one item), without snoozed items and without
@@ -1710,7 +1734,7 @@ window.__ModuleLoader__.load({
             quiet.add(item.id)
           } else if (!actionable) {
             issues.add(item.id)
-          } else if ((section.id === 'review' || section.id === 'rereview') && item.optional === true) {
+          } else if (optionalReview(section.id, item)) {
             optional.add(item.id)
           } else {
             rows += 1
@@ -1917,6 +1941,16 @@ window.__ModuleLoader__.load({
       return value === key ? String(scenario.id || '') : value
     }
 
+    function batchActionLabel(t, entry, group, count) {
+      if (!entry.label) {
+        if (entry.id === 'review-all' && isReviewGroup(group)) {
+          return plural(t, group === 'review' ? 'launch.review' : 'launch.rereview', count)
+        }
+        if (entry.id === 'reply-mentions' && group === 'feedback') return plural(t, 'launch.replyFeedback', count)
+      }
+      return scenarioTextLabel(entry, t) + ' (' + count + ')'
+    }
+
     function scenarioAgentValue(scenario) {
       return scenario !== null && scenario !== undefined && typeof scenario.agent === 'string' ? scenario.agent : 'default'
     }
@@ -2003,17 +2037,6 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function scenarioPreviewItems(scenario) {
-      const sections = Array.isArray(scenario.sections) ? scenario.sections : []
-      const wanted = scenario.scope === 'section' ? sections : sections.slice(0, 1)
-      const items = []
-      for (const id of wanted) {
-        const sample = PREVIEW_SAMPLE_ITEMS[id]
-        if (sample !== undefined) items.push(sample)
-      }
-      return items.length > 0 ? items : [PREVIEW_SAMPLE_ITEMS.review]
-    }
-
     /**
      * English prompt label for a section or reason code from the host
      * (`config.labels.sections` / `.reasons`, the tables the host renders
@@ -2027,24 +2050,17 @@ window.__ModuleLoader__.load({
 
     /** Token values and the generated `{links}` block for the preview sample items. */
     function previewVars(scenario, labels) {
-      const items = scenarioPreviewItems(scenario)
+      const sectionId = Array.isArray(scenario.sections) ? scenario.sections[0] : 'review'
+      const item = PREVIEW_SAMPLE_ITEMS[sectionId] || PREVIEW_SAMPLE_ITEMS.review
+      const section = promptLabel(labels, 'sections', item.section)
       const date = new Date().toISOString().slice(0, 10)
-      const sections = []
-      for (const item of items) {
-        const label = promptLabel(labels, 'sections', item.section)
-        if (!sections.includes(label)) sections.push(label)
-      }
-      const lines = ['Items: ' + items.length + ' · sections: ' + sections.join(' + ') + ' · date: ' + date, '']
-      for (const item of items) {
-        const author = item.author && item.author.login ? ', author ' + item.author.login : ''
-        const reason = item.reason ? ', reason: ' + promptLabel(labels, 'reasons', item.reason) : ''
-        lines.push('- [' + item.title + '](' + item.url + ') — ' + item.repo + '#' + item.number + author + reason)
-      }
-      const block = lines.join('\n')
+      const author = item.author && item.author.login ? ', author ' + item.author.login : ''
+      const reason = item.reason ? ', reason: ' + promptLabel(labels, 'reasons', item.reason) : ''
+      const block = 'Items: 1 · sections: ' + section + ' · date: ' + date + '\n\n' +
+        '- [' + item.title + '](' + item.url + ') — ' + item.repo + '#' + item.number + author + reason
       if (scenario.scope === 'section') {
-        return { block, vars: { links: block, count: String(items.length), section: sections.join(' + '), date } }
+        return { block, vars: { links: block, count: '1', section, date } }
       }
-      const item = items[0]
       return {
         block,
         vars: {
@@ -2917,8 +2933,9 @@ window.__ModuleLoader__.load({
       if (mode === 'clipboard' && delivery.pasteBlocked) text += t('launch.pasteBlocked.' + delivery.pasteBlocked)
       if (payload.terminal && payload.terminal.fallback) text += t('launch.terminalFallback')
       if (payload.cloneMissing) text += t('launch.workspaceFallback')
+      if (payload.trimmed) return text + trimmedSuffix(t, payload)
       if (typeof payload.count === 'number' && payload.count > 1) text += t('launch.countSuffix', { n: payload.count })
-      return text + trimmedSuffix(t, payload)
+      return text
     }
 
     /** Opens the rendered prompt as a draft in a new DSH chat; returns the toast text. */
@@ -3126,9 +3143,10 @@ window.__ModuleLoader__.load({
         meta.push(h('span', { key: 'assignee' }, '@' + item.assignees.join(', @')))
       }
       if (reason) meta.push(h('span', { key: 'reason', title: item.reasonDetail || reason }, reason))
-      if ((section === 'review' || section === 'rereview') && item.reviewDecision === 'APPROVED') {
+      if (isReviewGroup(section) && item.reviewDecision === 'APPROVED') {
         meta.push(h('span', { key: 'approved' }, t('meta.approvedByOthers')))
       }
+      if (optionalReview(section, item)) meta.push(h('span', { key: 'optional' }, t('meta.optionalReview')))
       if (when) meta.push(h('span', { key: 'when' }, when))
       if (snoozed) {
         meta.push(
@@ -3471,7 +3489,7 @@ window.__ModuleLoader__.load({
     Row = React.memo(Row)
 
     function Section({
-      section, tone, t, store, collapsed, copiedId, openMenu, showSource, config, sectionItemsById, now, snoozed,
+      section, tone, t, store, collapsed, copiedId, openMenu, showSource, config, now, snoozed,
       snoozedView, selected, selectionAnchor, selectMode,
     }) {
       const id = section.id
@@ -3484,30 +3502,22 @@ window.__ModuleLoader__.load({
 
       const targets = launchTargets(config, menuAgent)
       const menuScenarios = sectionScenarios(config, 'section', id)
-      const itemsById = sectionItemsById !== null && sectionItemsById !== undefined ? sectionItemsById : {}
-      const unionItems = (scenario) => {
-        const out = []
-        const seen = new Set()
-        const wanted = scenario !== null && scenario !== undefined && Array.isArray(scenario.sections) ? scenario.sections : []
-        for (const sectionId of SECTION_ORDER) {
-          if (wanted.indexOf(sectionId) === -1) continue
-          for (const entry of itemsById[sectionId] || []) {
-            if (entry === null || entry === undefined || seen.has(entry.id)) continue
-            seen.add(entry.id)
-            out.push(entry)
-          }
+      const chosen = selected || {}
+      const batchUrls = []
+      const seen = new Set()
+      if (!snoozedView) {
+        for (const item of items) {
+          if (seen.has(item.id)) continue
+          if (selectMode ? !chosen[item.id] : optionalReview(id, item)) continue
+          seen.add(item.id)
+          batchUrls.push(item.url)
         }
-        return out
       }
 
       const { busy, launchError, setLaunchError, launch, launchDsh, retry } = useScenarioLaunch({
         store,
         t,
-        buildRequest: (scenarioId) => {
-          const scenario =
-            configList(config, 'scenarios').find((entry) => entry !== null && entry !== undefined && entry.id === scenarioId) || null
-          return { scenario: scenarioId, section: id, urls: scenario === null ? [] : unionItems(scenario).map((entry) => entry.url) }
-        },
+        buildRequest: (scenarioId) => ({ scenario: scenarioId, section: id, urls: batchUrls }),
         close: () => closeMenu(),
         fallbackScenario: '',
       })
@@ -3557,7 +3567,6 @@ window.__ModuleLoader__.load({
         store.set({ selected: next, selectionAnchor: { section: id, id: item.id } })
       }
       const onSelect = useMemo(() => (item, shift) => selectRef.current(item, shift), [])
-      const chosen = selected !== null && selected !== undefined ? selected : {}
       const chosenHere = selectMode ? items.filter((item) => chosen[item.id] === true).length : 0
       // The header checkbox selects or clears every row of this section.
       const toggleSection = () => {
@@ -3619,16 +3628,16 @@ window.__ModuleLoader__.load({
               : [
                   launchTargetPicker(t, targets, busy, setMenuAgent),
                   launchVia(t, config, targets),
-                  ...menuScenarios.map((entry) => {
-                    const union = unionItems(entry)
-                    return launchScenarioItem(t, entry, targets, {
-                      label: scenarioTextLabel(entry, t) + ' (' + union.length + ')',
-                      disabled: busy || union.length === 0,
-                      isDefault: false,
-                      launch,
-                      launchDsh,
-                    })
-                  }),
+                  !selectMode && !snoozedView && items.some((item) => optionalReview(id, item))
+                    ? h('p', { key: 'optional', className: 'adx-launch-hint' }, t('launch.optionalHint'))
+                    : null,
+                  ...menuScenarios.map((entry) => launchScenarioItem(t, entry, targets, {
+                    label: batchActionLabel(t, entry, id, batchUrls.length),
+                    disabled: busy || batchUrls.length === 0,
+                    isDefault: false,
+                    launch,
+                    launchDsh,
+                  })),
                 ],
           )
       return h(
@@ -3655,8 +3664,8 @@ window.__ModuleLoader__.load({
             { className: 'adx-section-controls' },
             // Same order as a row: terminal, then snooze (or Unsnooze all), then
             // the chevron in the copy button's column, so the columns line up.
-            // Select mode keeps only the chevron.
-            selectMode ? null : h(
+            // A selection can launch from each group with checked rows.
+            selectMode && (snoozedView || !chosenHere) ? null : h(
               'span',
               { className: 'adx-section-launch' },
               h(
@@ -5595,12 +5604,6 @@ window.__ModuleLoader__.load({
           ),
         [listing, activeFilter, snoozedView],
       )
-      // Section launches act on the visible rows, never on snoozed ones.
-      const launchItemsById = useMemo(() => {
-        const map = {}
-        if (!snoozedView) for (const entry of visible) map[entry.id] = entry.items
-        return map
-      }, [visible, snoozedView])
       // The header total is the attention badge for the selected source.
       const attention = useMemo(
         () => attentionSummary(sections, snoozed, (item) => itemMatchesSource(item, activeSource), now),
@@ -6050,7 +6053,6 @@ window.__ModuleLoader__.load({
                       openMenu: state.openMenu,
                       showSource: showSources,
                       config: state.config,
-                      sectionItemsById: launchItemsById,
                       now,
                       snoozed,
                       snoozedView,

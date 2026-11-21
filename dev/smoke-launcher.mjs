@@ -699,9 +699,10 @@ check('section prompts drop bullets from the end and report the trimming', () =>
       reason: 'review-requested',
     })
   }
-  const built = buildScenarioPrompt({ scope: 'section', prompt: 'Review everything:\n{links}' }, { items, section: 'review' })
+  const built = buildScenarioPrompt({ scope: 'section', prompt: 'Review {count} PRs:\n{links}' }, { items, section: 'review' })
   assert.notEqual(built.trimmed, null)
   assert.ok(built.trimmed.shown >= 1 && built.trimmed.shown < built.trimmed.total)
+  assert.ok(built.prompt.startsWith(`Review ${built.trimmed.shown} PRs:`))
   assert.equal(built.trimmed.total, 100)
   assert.ok(built.prompt.includes(`Items: first ${built.trimmed.shown} of 100`))
   assert.ok(
@@ -720,9 +721,9 @@ check('section prompts truncate safely when even one item cannot fit', () => {
     { scope: 'section', prompt: 'x'.repeat(MAX_RENDERED_PROMPT) + ' {links}' },
     { items, section: 'review' },
   )
-  assert.deepEqual(built.trimmed, { shown: 1, total: 2 })
-  assert.equal(Array.from(built.prompt).length, MAX_RENDERED_PROMPT + 1)
-  assert.ok(built.prompt.endsWith('…'))
+  assert.deepEqual(built.trimmed, { shown: 0, total: 2 })
+  assert.ok(Array.from(built.prompt).length <= MAX_RENDERED_PROMPT)
+  assert.ok(built.prompt.includes('Items: first 0 of 2'))
 })
 
 check('scenario titles fall back from label to builtin title to id', () => {
@@ -1697,6 +1698,12 @@ await checkAsync('macOS launch opens an iTerm2 tab and reuses it on re-launch', 
     assert.equal(second.status, 200, JSON.stringify(second.body))
     assert.equal(focusProbes, 2, 'second launch probes again')
     assert.equal(openTabs, 1, 're-launching the same agent+item focuses, not duplicates')
+
+    for (const [section, url] of [['review', PR_URL], ['rereview', PR_URL + '2']]) {
+      const batch = await request('/triage-desk/launch', 'POST', { scenario: 'review-all', section, urls: [url] })
+      assert.equal(batch.status, 200, JSON.stringify(batch.body))
+    }
+    assert.equal(openTabs, 3, 'each batch delivers its own prompt even when its title matches another batch')
   }, {
     agents: [{ id: 'claude', label: 'Claude Code', command: '/offline/bin/claude {prompt}' }],
     defaultAgent: 'claude',

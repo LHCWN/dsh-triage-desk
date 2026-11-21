@@ -91,10 +91,19 @@ After editing the host half, quit and reopen DSH, then refresh the page; see
 The terminal button on a row (or a section header) opens the launch menu: pick a
 target (**DSH — this app** or an installed agent), then a scenario. A row
 scenario opens the agent in the repository's local clone; a section scenario
-launches one agent with the list of every visible row. The prompt is always
+launches one agent for the visible items in that group. The prompt is always
 prepared but **not sent**. A line under the agent picker says where it opens and
 how the prompt arrives, for example *Opens in Ghostty · prompt typed into the
 input box, unsent*.
+
+**Review 3 PRs** opens a draft for those three first reviews, even in **All**.
+Re-reviews have their own action, and **Feedback on my PRs** offers replies.
+The count follows your source filter and search, skips snoozed items and counts
+each PR once. Rows marked **Optional review** are excluded by default. To pick
+individual PRs, including optional ones, click **Select**, check the rows you
+want, then open that group's terminal button. Its count shows how many you
+picked in that group. If the prompt size limit drops any items, the draft and
+notification show how many fit. Each terminal batch opens a fresh tab or window.
 
 Once you send it, the review scenarios post one GitHub review of inline comments
 tagged `[P1]`–`[P3]`, and never approve. The fix and reply scenarios wait for your

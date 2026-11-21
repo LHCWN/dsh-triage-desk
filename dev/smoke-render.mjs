@@ -184,7 +184,7 @@ state.openMenu = 'section:review'
 const withMenu = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
 assert.ok(withMenu.includes('adx-launch-menu'), 'section scenario menu should render when open')
 assert.ok(withMenu.includes('<div class="adx-section-head" data-menu-open="true">'), 'the section header owning the open menu is lifted')
-assert.ok(withMenu.includes('review-all (2)'), 'section menu should list the scenario and count the union of its sections')
+assert.ok(withMenu.includes('launch.reviewOne'), 'the review action counts only its own group in All')
 assert.ok(withMenu.includes('adx-launch-agent-select'), 'section menu should let you pick the agent')
 assert.ok(withMenu.includes('launch.dshTarget'), 'section menu should offer the DSH target')
 
@@ -414,7 +414,7 @@ function shallowEqualProps(previous, next) {
 // simulated; the real-React SSR checks above cover rendering compatibility.
 function settingsHarness({
   agents = state.config.agents, invalidAgents, scenarios, snapshotPayload = null, clock = null, layout = {}, configExtra = {},
-  storage, withPanel = false,
+  storage, withPanel = false, trimmed = null,
 } = {}) {
   const instances = new Map()
   let current
@@ -618,11 +618,12 @@ function settingsHarness({
               mode: 'draft',
               cwd: '/work',
               count: body.urls ? body.urls.length : 1,
+              trimmed,
               agent: { id: 'claude', label: 'Claude Code' },
               terminal: { id: 'iterm', label: 'iTerm2', fallback: false },
               delivery: { mode: 'draft', pasteBlocked: null, platform: 'darwin' },
             }
-          : { ok: true, prompt: 'rendered', trimmed: null }))
+          : { ok: true, prompt: 'rendered', trimmed }))
       }
       if (url === '/triage-desk/config' && options.method === 'POST') {
         return new Promise((resolve, reject) => pending.push({ resolve, reject, body: JSON.parse(options.body) }))
@@ -1308,12 +1309,12 @@ for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-
     && flattenTree(node.props.children).includes('review-all')))
   const preview = flattenTree(harness.nodes().find((node) => node.type === 'pre').props.children).join('')
   if (labels === undefined) {
-    assert.ok(preview.includes('sections: review + rereview'), 'an older host previews section codes')
+    assert.ok(preview.includes('Items: 1 · sections: review ·'), 'an older host previews section codes')
     assert.ok(preview.includes('reason: review-requested'), 'an older host previews reason codes')
   } else {
-    assert.ok(preview.includes('sections: awaiting my review + re-review after changes'), 'host section labels are previewed')
+    assert.ok(preview.includes('Items: 1 · sections: awaiting my review ·'), 'host section labels are previewed')
     assert.ok(preview.includes('reason: my review requested'), 'host reason labels are previewed')
-    assert.ok(preview.includes('reason: changes-after-my-review'), 'a reason without a host label falls back to its code')
+    assert.ok(!preview.includes('changes-after-my-review'), 'the sample represents one group')
   }
   harness.dispose()
 }
@@ -1380,13 +1381,13 @@ for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-
   assert.equal(harness.launches[1].body.reason, 'author-replied', 'a DSH draft sends the author-replied reason')
   assert.equal(harness.store.get().toast.text, 'launch.dshDraft')
   harness.click(harness.nodes().find((node) => node.type === 'button' && node.props['aria-label'] === 'launch.sectionTitle'))
-  harness.click(item('review-all (2)'))
+  harness.click(item('launch.reviewOne'))
   await harness.flush()
   assert.deepEqual(harness.launches[2].body, {
     scenario: 'review-all', section: 'review',
-    urls: ['https://github.com/tester/example/pull/1', 'https://github.com/tester/example/pull/2'],
-  }, 'a section launch sends the union of its sections (no agent: the picker was not touched)')
-  assert.equal(harness.store.get().toast.text, 'launch.draft:Claude Code,iTerm2,/work,⌘V' + 'launch.countSuffix:2')
+    urls: ['https://github.com/tester/example/pull/1'],
+  }, 'the review action sends only the visible first review')
+  assert.equal(harness.store.get().toast.text, 'launch.draft:Claude Code,iTerm2,/work,⌘V')
   harness.dispose()
 }
 
@@ -1674,7 +1675,7 @@ const itemLabel = (node) => flattenTree(node.props.children).find((child) => typ
 
 {
   // Snoozing: id-level hiding, Undo, timed snoozes ending on time and early on
-  // new activity, the Snoozed view, section unions and pruning.
+  // new activity, the Snoozed view, section launches and pruning.
   const storage = memoryStorage()
   const stored = () => JSON.parse(storage.data['triage-desk:snoozed:v2'] || '{}')
   const clock = { now: snoozeNow }
@@ -1705,7 +1706,7 @@ const itemLabel = (node) => flattenTree(node.props.children).find((child) => typ
 
   snoozeChoice(harness, 'PR 4', 'activity')
   const fixAllItem = sectionMenuItem(harness, 'ci', 'Fix all')
-  assert.equal(itemLabel(fixAllItem), 'Fix all (1)', 'the section union leaves out snoozed items')
+  assert.equal(itemLabel(fixAllItem), 'Fix all (1)', 'the section action leaves out snoozed items')
   harness.click(fixAllItem)
   await harness.flush()
   assert.deepEqual(harness.launches.at(-1).body.urls, ['https://github.com/acme/app/commits/main'], 'a section launch never includes snoozed items')
@@ -1938,6 +1939,55 @@ const headerCheckbox = (harness, sectionId) => {
 }
 const barText = (harness) => flattenTree(selectionBar(harness).props.children.find((child) => child?.props?.className === 'adx-selection-count').props.children).join('')
 const allRows = (harness) => harness.nodes().filter((node) => node.props?.className === 'adx-row')
+
+{
+  const harness = settingsHarness({
+    snapshotPayload: inbox({
+      review: [pull('review', 1), pull('review', 1), pull('review', 2, { optional: true }), pull('review', 3, { source: acme })],
+      rereview: [pull('rereview', 8), pull('rereview', 9, { optional: true })],
+      feedback: [pull('feedback', 6)],
+    }),
+    scenarios: defaultScenarios(),
+    configExtra: { defaultTarget: 'dsh' },
+  })
+  await harness.flush()
+  const draft = async (group, label, numbers) => {
+    const action = sectionMenuItem(harness, group, label)
+    assert.ok(action, group + ' menu offers ' + label)
+    harness.click(action)
+    await harness.flush()
+    assert.equal(harness.launches.at(-1).url, '/triage-desk/prompt')
+    assert.equal(harness.launches.at(-1).body.section, group)
+    assert.deepEqual(harness.launches.at(-1).body.urls, numbers.map((n) => 'https://github.com/acme/app/pull/' + n))
+  }
+  assert.ok(flattenTree(rowNodes(harness, 'PR 2')[0].props.children).includes('meta.optionalReview'))
+  await draft('review', 'launch.review:2', [1, 3])
+  await draft('rereview', 'launch.rereviewOne:1', [8])
+  await draft('feedback', 'launch.replyFeedbackOne:1', [6])
+  harness.store.set({ sourceFilter: 'user:tester' })
+  await harness.flush()
+  await draft('review', 'launch.reviewOne:1', [1])
+  harness.change(harness.nodes().find((node) => node.props?.type === 'search'), 'PR 2')
+  assert.equal(sectionMenuItem(harness, 'review', 'launch.review:0').props.disabled, true)
+  harness.click(selectToggle(harness))
+  harness.click(checkbox(harness, 'PR 2'))
+  await draft('review', 'launch.reviewOne:1', [2])
+  harness.dispose()
+}
+
+for (const target of ['dsh', 'claude']) {
+  const harness = settingsHarness({
+    snapshotPayload: inbox(), scenarios: defaultScenarios(), configExtra: { defaultTarget: target },
+    trimmed: { shown: 1, total: 2 },
+  })
+  await harness.flush()
+  harness.click(sectionMenuItem(harness, 'review', 'launch.review:2'))
+  await harness.flush()
+  const toast = harness.store.get().toast.text
+  assert.ok(toast.endsWith('launch.trimmed:1,2'), target + ' reports how many items reached the draft')
+  assert.ok(!toast.includes('launch.countSuffix'), 'a trimmed draft shows a single count')
+  harness.dispose()
+}
 
 {
   // Select mode: explicit entry, a checkbox column before the glyph, rows that

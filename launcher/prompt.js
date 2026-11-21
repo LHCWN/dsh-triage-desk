@@ -197,13 +197,12 @@ export function buildScenarioPrompt(scenario, context) {
   const total = items.length
   const hasLinks = template.includes('{links}')
   const vars = {
-    count: String(total),
     section: scenarioSectionLabel(input, items),
     date: todayStamp(),
   }
   const render = (shown) => {
     const block = itemsBlock(items, shown)
-    let text = renderScenarioTemplate(template, { ...vars, links: block.text }).trim()
+    let text = renderScenarioTemplate(template, { ...vars, count: String(shown), links: block.text }).trim()
     if (!hasLinks) text = text === '' ? block.text : text + '\n\n' + block.text
     if (shown < total) {
       const omitted = total - shown
@@ -214,12 +213,13 @@ export function buildScenarioPrompt(scenario, context) {
     return text
   }
   if (total === 0) return { prompt: truncatePrompt(render(0)), trimmed: null }
-  for (let shown = total; shown >= 1; shown -= 1) {
+  for (let shown = total; shown >= 0; shown -= 1) {
     const text = render(shown)
     if (codePointLength(text) <= MAX_RENDERED_PROMPT) {
       return { prompt: text, trimmed: shown < total ? { shown, total } : null }
     }
-    if (shown === 1) return { prompt: truncatePrompt(text), trimmed: { shown: 1, total } }
   }
-  return { prompt: truncatePrompt(render(0)), trimmed: null }
+  // Even the template without bullets exceeds the limit. Keep the batch
+  // header intact so the draft still reports exactly what it contains.
+  return { prompt: itemsHeader(items, 0, total), trimmed: { shown: 0, total } }
 }
