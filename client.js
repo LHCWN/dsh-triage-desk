@@ -5574,6 +5574,7 @@ window.__ModuleLoader__.load({
           const shown = []
           const hidden = []
           for (const item of section.items) {
+            if (item === null || item === undefined) continue
             const asleep = isSnoozed(snoozed, item, now)
             if (asleep) anySnoozed.add(item.id)
             if (!itemMatchesSource(item, activeSource) || !itemMatchesQuery(item, query)) continue

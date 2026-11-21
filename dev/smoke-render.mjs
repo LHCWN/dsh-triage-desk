@@ -1943,7 +1943,10 @@ const allRows = (harness) => harness.nodes().filter((node) => node.props?.classN
 {
   const harness = settingsHarness({
     snapshotPayload: inbox({
-      review: [pull('review', 1), pull('review', 1), pull('review', 2, { optional: true }), pull('review', 3, { source: acme })],
+      review: [
+        null, pull('review', 1), pull('review', 1), undefined,
+        pull('review', 2, { optional: true }), pull('review', 3, { source: acme }),
+      ],
       rereview: [pull('rereview', 8), pull('rereview', 9, { optional: true })],
       feedback: [pull('feedback', 6)],
     }),
