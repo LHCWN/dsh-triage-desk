@@ -131,4 +131,4 @@ export {
   terminalCatalog,
 } from './launcher/terminals.js'
 
-export { buildSshScripts, normalizeSshServers, SSH_AGENTS } from './launcher/ssh.js'
+export { buildSshScripts, sshRepositoryScan, normalizeSshServers, SSH_AGENTS } from './launcher/ssh.js'

@@ -1,4 +1,5 @@
-import { randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { createHash, randomUUID } from 'node:crypto'
 import { AGENT_PRESETS } from './agents.js'
 import { agentExecutable, shellQuote } from './agent-command.js'
 import { PASTE_WRAPPER_PY, sanitizePastePrompt } from './paste-wrapper.js'
@@ -7,14 +8,33 @@ import { PASTE_WRAPPER_PY, sanitizePastePrompt } from './paste-wrapper.js'
 // executable path, platform-specific command or agent discovery result.
 export const SSH_AGENTS = AGENT_PRESETS.map(({ id, label }) => ({ id, label }))
 
+const scanScript = readFileSync(new URL('./ssh-repositories.sh', import.meta.url), 'utf8')
+const selectFolder = readFileSync(new URL('./ssh-select-folder.sh', import.meta.url), 'utf8')
+const selectAgent = readFileSync(new URL('./ssh-select-agent.sh', import.meta.url), 'utf8')
+
+function repositoryFolders(server) {
+  return server.folders ?? (server.cwd === undefined ? [] : [server.cwd])
+}
+
+export function sshRepositoryScan(server) {
+  const folders = repositoryFolders(server).map(shellQuote).join(' ')
+  return ['ssh', '-T', '-o', 'BatchMode=yes', '--', server.alias,
+    'sh -c ' + shellQuote(scanScript + '\nscan_repositories ' + folders)]
+}
+
 function sshServerError(server, previous) {
   if (!server || typeof server.alias !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(server.alias)) {
     return 'SSH destinations need a literal host alias'
   }
   if (previous.some((entry) => entry.alias.toLowerCase() === server.alias.toLowerCase())) return 'duplicate SSH alias'
   if (!SSH_AGENTS.some((agent) => agent.id === server.agent)) return 'unknown remote agent'
-  if (typeof server.cwd !== 'string' || !server.cwd.startsWith('/') || /[\x00-\x1f\x7f]/.test(server.cwd)
-    || server.cwd.length > 1024) return 'SSH destinations need an absolute remote working folder'
+  const folders = repositoryFolders(server)
+  if (!Array.isArray(folders) || folders.length > 8 || folders.some((folder) =>
+    typeof folder !== 'string' || !folder.startsWith('/') || /[\x00-\x1f\x7f]/.test(folder) || folder.length > 1024)) {
+    return 'SSH repository folders must be a list of up to eight absolute paths'
+  }
+  if (server.alternatives !== undefined && (!Array.isArray(server.alternatives) ||
+    server.alternatives.some((id) => !SSH_AGENTS.some((agent) => agent.id === id)))) return 'unknown remote alternative'
   return ''
 }
 
@@ -27,7 +47,11 @@ export function normalizeSshServers(input, strict = false) {
   for (const server of input) {
     const error = sshServerError(server, servers)
     if (error && strict) throw new Error(error)
-    if (!error) servers.push({ alias: server.alias, cwd: server.cwd, agent: server.agent })
+    if (!error) {
+      const folders = [...new Set(repositoryFolders(server))]
+      servers.push({ alias: server.alias, agent: server.agent, cwd: folders[0] || '', folders,
+        alternatives: [...new Set(server.alternatives || [])].filter((id) => id !== server.agent) })
+    }
   }
   return servers
 }
@@ -39,33 +63,43 @@ export function normalizeSshServers(input, strict = false) {
  * terminal, and the (possibly 16k Unicode characters) draft off the local
  * command line, including PowerShell 5.1's native argument conversion.
  */
-export function buildSshScripts(server, prompt, platform) {
+export function buildSshScripts(server, prompt, platform, repo = '') {
   const preset = AGENT_PRESETS.find((entry) => entry.id === server.agent)
   if (!preset) throw new Error('unknown remote agent')
-  const executable = shellQuote(agentExecutable(preset.command, 'linux'))
+  const alternatives = AGENT_PRESETS.filter((entry) => entry.id !== preset.id && server.alternatives?.includes(entry.id))
+  const executable = (entry) => shellQuote(agentExecutable(entry.command, 'linux'))
+  const candidates = [preset, ...alternatives]
+  const native = candidates.filter((entry) => entry.draftFlag)
+  const pasteAllowed = prompt === sanitizePastePrompt(prompt)
+  const choiceKey = createHash('sha256').update(JSON.stringify([server.alias.toLowerCase(), repo.toLowerCase()])).digest('hex')
   const file = '.triage-desk-' + randomUUID() + '.sh'
   const remote = [
     'set -eu',
     'rm -f "$0"',
-    'cd ' + shellQuote(server.cwd),
-    'printf "SSH %s · %s · %s\\n" ' + shellQuote(server.alias) + ' ' + shellQuote(server.agent) + ' "$(pwd -P)"',
+    'repo=' + shellQuote(repo.toLowerCase()),
+    'server=' + shellQuote(server.alias),
+    'choice_file="$HOME/.triage-desk/working-copies/' + choiceKey + '"',
+    'set -- ' + repositoryFolders(server).map(shellQuote).join(' '),
+    scanScript, selectFolder,
+    'agent=' + executable(preset),
+    'native_agents=' + shellQuote(native.map((entry) => agentExecutable(entry.command, 'linux')).join(' ')),
+    'paste_allowed=' + (pasteAllowed ? 'yes' : 'no'),
+    'set -- ' + alternatives.map(executable).join(' '),
+    selectAgent,
+    "trap ':' INT",
+    'case "$agent" in',
   ]
-  const mode = preset.draftFlag ? 'draft' : 'paste'
-  if (mode === 'draft') {
-    // ssh reports the status of this script. After starting the native
-    // draft, an agent exit (including Ctrl+C) must not offer to replay it.
-    remote.push(
-      'command -v ' + executable + ' >/dev/null || { echo "Remote agent not found: ' + preset.id + '" >&2; exit 127; }',
-      "trap ':' INT",
-      [executable, shellQuote(preset.draftFlag), shellQuote(prompt)].join(' ')
-        + ' || printf "Agent exited with status %s\\n" "$?" >&2',
-    )
-  } else {
-    if (prompt !== sanitizePastePrompt(prompt)) throw new Error('remote paste cannot represent control characters in this prompt')
-    remote.push('umask 077', 'prompt_file=$(mktemp)', 'trap \'rm -f "$prompt_file"\' EXIT',
-      'printf %s ' + shellQuote(prompt) + ' > "$prompt_file"',
-      'python3 -I -c ' + shellQuote(PASTE_WRAPPER_PY) + ' --remote "$prompt_file" ' + executable)
+  for (const entry of native) {
+    remote.push(executable(entry) + ') "$agent" ' + shellQuote(entry.draftFlag) + ' ' + shellQuote(prompt)
+      + ' || printf "Agent exited with status %s\\n" "$?" >&2 ;;')
   }
+  if (pasteAllowed && candidates.some((entry) => !entry.draftFlag)) {
+    remote.push('*)', 'umask 077', 'prompt_file=$(mktemp)', 'trap \'rm -f "$prompt_file"\' EXIT',
+      'printf %s ' + shellQuote(prompt) + ' > "$prompt_file"',
+      'python3 -I -c ' + shellQuote(PASTE_WRAPPER_PY) + ' --remote "$prompt_file" "$agent" ;;')
+  }
+  remote.push('esac')
+  const mode = preset.draftFlag ? 'draft' : 'paste'
   // The staging shell reads the prompt as quoted data. An interrupted
   // transfer cannot execute the incomplete payload. The random name belongs
   // to this launch and the interactive shell unlinks it as soon as it starts.

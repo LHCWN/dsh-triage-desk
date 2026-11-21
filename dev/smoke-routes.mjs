@@ -112,6 +112,11 @@ function fakeHandle(exitCode, stdout, stderr) {
 
 function fakeSpawn(spec) {
   const argv = spec.argv
+  if (argv[0] === 'ssh') {
+    assert.deepEqual(argv.slice(0, -1), ['ssh', '-T', '-o', 'BatchMode=yes', '--', 'builder'])
+    assert.ok(argv.at(-1).includes('/work/remote'))
+    return fakeHandle(0, 'acme/widgets\t/work/remote/fork\n', '')
+  }
   if (argv[0] === '/usr/bin/pbcopy') {
     captured.clipboard = spec.stdio && spec.stdio.stdin ? spec.stdio.stdin.data : null
     return fakeHandle(0, '', '')
@@ -243,7 +248,7 @@ apply(ctx, {
 })
 
 async function callHandler(routePath, method, body, routes = captured.routes) {
-  const route = routes.get(routePath)
+  const route = routes.get(routePath.split('?')[0])
   if (!route || typeof route.handler !== 'function') throw new Error('missing route ' + routePath)
   const req = Readable.from(body === undefined ? [] : [Buffer.from(JSON.stringify(body))])
   req.method = method
@@ -327,11 +332,20 @@ await recordAsync('config GET exposes launcher settings, scenarios, and detectio
   assert.equal(payload.limits.prompt, 16_000)
 })
 
+await recordAsync('repository discovery uses only the selected saved destination', async () => {
+  const scan = (alias) => callHandler('/triage-desk/clones?sshAlias=' + alias, 'GET')
+  const config = (await json(await callHandler('/triage-desk/config', 'GET'))).config
+  assert.equal(config.supportsSshRepositoryFolders, true)
+  assert.deepEqual(config.sshServers[0].folders, ['/work/remote'])
+  assert.deepEqual((await json(await scan('builder'))).clones, [{ repo: 'acme/widgets', path: '/work/remote/fork' }])
+  assert.equal((await json(await scan('unknown'))).error.code, 'bad-destination')
+})
+
 await recordAsync('SSH launches resolve only saved destinations and use the remote folder and agent', async () => {
   const body = { url: PR_URL, scenario: 'custom-review', sshAlias: 'builder' }
   const result = await json(await callHandler('/triage-desk/launch', 'POST', body))
   assert.equal(result.cwdMode, 'ssh')
-  assert.equal(result.cwd, '/work/remote')
+  assert.equal(result.cwd, null, 'the SSH terminal resolves the actual directory')
   assert.equal(result.agent.id, 'claude')
   const unknown = await json(await callHandler('/triage-desk/launch', 'POST', { ...body, sshAlias: 'unknown' }))
   assert.equal(unknown.error.code, 'bad-destination')
@@ -688,6 +702,8 @@ await recordAsync('config POST rejects invalid scenarios', async () => {
   const cases = [
     ['unsafe ssh alias', { sshServers: [{ alias: '-V', agent: 'claude', cwd: '/work' }] }],
     ['duplicate ssh alias', { sshServers: ['build', 'BUILD'].map((alias) => ({ alias, agent: 'codex', cwd: '/work' })) }],
+    ['invalid remote alternative', { sshServers: [{ alias: 'build', agent: 'claude', alternatives: ['unknown'] }] }],
+    ['invalid remote folder list', { sshServers: [{ alias: 'build', agent: 'claude', folders: ['relative'] }] }],
     ['relative remote cwd', { sshServers: [{ alias: 'build', agent: 'claude', cwd: 'work' }] }],
     ['scenarios is not an array', { scenarios: 'nope' }],
     ['empty scenario list', { scenarios: [] }],

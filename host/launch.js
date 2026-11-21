@@ -194,6 +194,12 @@ export function createLaunch({
     return { scenario, scope: 'item', parsed, item, prompt: built.prompt, trimmed: null, count: 1 }
   }
 
+  const reviewRepository = (rendered) => {
+    if (rendered.scope === 'item') return rendered.parsed.slug
+    const first = parseRepoUrl(rendered.items[0].url).slug
+    return rendered.items.every((entry) => parseRepoUrl(entry.url).slug.toLowerCase() === first.toLowerCase()) ? first : ''
+  }
+
   const launchSsh = async (alias, rendered, signal) => {
     const server = launcherSettings.sshServers.find((entry) => entry.alias === alias)
     if (!server) throw new LaunchError('bad-destination', 'choose a saved SSH destination')
@@ -202,14 +208,14 @@ export function createLaunch({
     void cleanupStaleTempDirs()
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'triage-desk-ssh-'))
     try {
-      const { stage, local, mode } = buildSshScripts(server, rendered.prompt, platform)
+      const { stage, local, mode } = buildSshScripts(server, rendered.prompt, platform, reviewRepository(rendered))
       const file = path.join(dir, platform === 'win32' ? 'launch.ps1' : 'launch.command')
       await fs.writeFile(path.join(dir, 'stage.sh'), stage, { mode: 0o600 })
       await writeLauncherScript(file, local)
       if (signal?.aborted) throw new LaunchError('aborted', 'the launch was cancelled')
       const opened = await openTerminal(file, title, signal, launcherSettings.terminal, false)
       return {
-        ok: true, sshAlias: alias, cwd: server.cwd, cwdMode: 'ssh', agent,
+        ok: true, sshAlias: alias, cwd: null, cwdMode: 'ssh', agent,
         scenario: { id: rendered.scenario.id, label: scenarioTitle(rendered.scenario) },
         count: rendered.count, trimmed: rendered.trimmed, terminal: opened?.terminal || null,
         mode,
@@ -260,12 +266,11 @@ export function createLaunch({
     const bareCommand = () => bareAgentCommand(launchCommand, platform)
     const binDir = platform !== 'win32' && detectedPath !== '' ? path.dirname(detectedPath) : undefined
     const { count, trimmed, prompt } = rendered
-    let repo = ''
+    const repo = reviewRepository(rendered)
     let clonePath = ''
     let cloneMissing = false
     let windowTitle = ''
     if (rendered.scope === 'item') {
-      repo = rendered.parsed.slug
       ;({ cwd: clonePath, cloneMissing } = await resolveClone(repo))
       const number = rendered.item.number
       const suffix = number === undefined || number === null || String(number).trim() === '' ? '' : ` #${number}`
@@ -274,13 +279,7 @@ export function createLaunch({
       // re-launching the same agent focuses its own tab instead of duplicating.
       windowTitle = `Triage Desk: ${scenarioTitle(scenario)} — ${repo}${suffix} [${agent.label}]`
     } else {
-      const repos = []
-      for (const entry of rendered.items) {
-        const itemRepo = parseRepoUrl(entry.url)
-        if (itemRepo !== null && !repos.includes(itemRepo.slug)) repos.push(itemRepo.slug)
-      }
-      if (repos.length === 1) {
-        repo = repos[0]
+      if (repo) {
         ;({ cwd: clonePath, cloneMissing } = await resolveClone(repo))
       } else {
         clonePath = await workspaceDirectory()

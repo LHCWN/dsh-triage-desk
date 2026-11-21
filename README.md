@@ -107,9 +107,25 @@ OK before pushing or posting; triage only reports back. None of them add AI
 attribution.
 
 **SSH destinations.** Under **Settings → Terminal and agents → SSH destinations**,
-add the alias you use with OpenSSH, an absolute folder on the server and the
-installed agent. Pick that destination in the launch menu. The terminal uses
-your SSH configuration and shows the alias, agent and resolved working folder.
+add your OpenSSH alias, preferred agent, and any alternative agents you want to use
+on that server. Under **Repository folders**, enter one absolute remote path per
+line. Save, then use **Find repositories** to see GitHub repository names and
+paths. This optional search uses non-interactive SSH. Local repository folders
+have their own search and keep their existing settings.
+
+At launch, the terminal matches the review’s `owner/repo` against Git remotes
+in those folders, including a fork’s `upstream`. If several working copies
+match, choose a path and optionally remember it for this repository and alias.
+Each launch checks the remembered path against the current matches. With no match,
+or for a review spanning repositories, the terminal explains the fallback and
+shows the first accessible configured folder, or your remote home. The launcher
+never clones a repository.
+
+If the preferred agent is missing, the terminal names the server and agent.
+Enter an available alternative’s name to open the same draft in the same folder,
+or press Enter for a remote shell. When none is available, the shell opens
+directly. The panel keeps the scenario selected.
+
 A failed connection offers a retry in the same terminal with the same draft.
 If you leave before the agent starts, the launcher tries to delete its private
 staging file over SSH. If the server is unreachable or requires another
@@ -118,7 +134,7 @@ reconnecting. A force-closed launcher can also leave a staging file named
 `.triage-desk-<uuid>.sh` in your remote home directory.
 
 The local machine needs OpenSSH. The server needs a POSIX shell, a writable home
-directory and the agent on its SSH command PATH. Claude Code uses its native
+directory and Git for repository discovery. Agent lookup uses the SSH command PATH. Claude Code uses its native
 `--prefill` flag, which puts the prompt in its command-line arguments. On a
 shared server, users who can inspect that process can read the draft. To keep
 it out of the process list, open Claude yourself and use **Copy prompt**.
@@ -193,7 +209,7 @@ available while you save. The most used fields:
 | `requireGreenChecks` | `true` | Turn off to allow otherwise eligible PRs with pending or failing checks in *Ready to merge*. PRs GitHub marks `BLOCKED` are excluded with either setting. |
 | `defaultAgent` | `dsh` | Target selected in the launch menu: `dsh` (a new DSH chat) or an agent id |
 | `defaultScenario` | empty | Choose by task, or save an applicable row scenario ID |
-| `sshServers` | `[]` | Saved SSH destinations with `alias`, `agent` and absolute remote `cwd` |
+| `sshServers` | `[]` | SSH alias, preferred `agent`, optional `alternatives` and ordered absolute `folders`. An existing `cwd` is read as one folder. |
 | `terminal` | `auto` | Terminal for launches: `auto` or a terminal id |
 | `promptDelivery` | `paste` | `paste` (type into the agent) or `clipboard` |
 
