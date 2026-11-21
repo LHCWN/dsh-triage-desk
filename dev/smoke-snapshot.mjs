@@ -8,6 +8,7 @@
  * Run with `npm run smoke:snapshot`. Not shipped in the npm package.
  */
 import assert from 'node:assert/strict'
+import { Readable } from 'node:stream'
 import { apply } from '../index.js'
 import { buildSnapshot, NEW_ISSUE_WINDOW_DAYS, normalizeSettings } from '../github.js'
 import { formatToolText, snapshotAge } from '../host/tool-text.js'
@@ -261,10 +262,14 @@ await check('re-review compares the reviewed commit with the head, not dates', a
 })
 
 await check('an explicit re-request after my review lands in re-review', async () => {
+  const pending = pull({ number: 7, headOid: 'h7', requested: true })
+  pending.reviews.nodes = [{ author: { login: ME }, state: 'PENDING', submittedAt: null, commit: { oid: 'old' } }]
   const prs = [
     pull({ number: 4, headOid: 'e4', headAt: '2026-01-01T09:00:00Z', review: { at: '2026-01-01T10:30:00Z', oid: 'e4' }, requested: true }),
     // Requested and never reviewed: an ordinary review request.
     pull({ number: 5, headOid: 'f5', headAt: '2026-01-01T09:00:00Z', requested: true }),
+    // A pending draft review has no submission, so this is still a first request.
+    pending,
     // Requested again after new commits: still a repeat review.
     pull({ number: 6, headOid: 'g6', headAt: '2026-01-01T09:00:00Z', review: { at: '2026-01-01T10:30:00Z', oid: 'old' }, requested: true }),
   ]
@@ -276,9 +281,7 @@ await check('an explicit re-request after my review lands in re-review', async (
   assert.equal(item.reason, 're-review-requested')
   assert.match(find(snapshot, 'rereview', 6).reasonDetail, /new head g6/)
   assert.equal(find(snapshot, 'rereview', 6).reason, 're-review-requested')
-  assert.deepEqual(ids(snapshot, 'review'), [5])
-  // PRs 4 and 6 are in both the review-requested and reviewed-by results.
-  assert.equal(snapshot.sections.find((entry) => entry.id === 'review').items.length, 1, 'search duplicates are merged')
+  assert.deepEqual(ids(snapshot, 'review').sort(), [5, 7])
 })
 
 /* -------------------------------------------- merge readiness and replies */
@@ -318,11 +321,14 @@ await check('new inline reviewer replies need action until the author answers', 
   const conflict = ownPull(97, false)
   conflict.mergeable = 'CONFLICTING'
   const conflictOnly = { ...approval, number: 98, mergeable: 'CONFLICTING' }
-  const prs = [ownPull(94, false), ownPull(95, true), approval, conflict, conflictOnly]
+  const laterApproval = ownPull(99, false)
+  laterApproval.reviews.nodes[0].submittedAt = '2026-01-01T11:30:00Z'
+  laterApproval.reviews.nodes[0].author.login = 'another-reviewer'
+  const prs = [ownPull(94, false), ownPull(95, true), approval, conflict, conflictOnly, laterApproval]
   const { ctx } = fakeCtx({ prs: () => prs })
   const snapshot = await buildSnapshot(ctx, settings())
   assert.deepEqual(ids(snapshot, 'respond'), [98])
-  assert.deepEqual(ids(snapshot, 'feedback'), [94, 97])
+  assert.deepEqual(ids(snapshot, 'feedback'), [94, 97, 99])
   assert.equal(find(snapshot, 'feedback', 97).reason, 'review-feedback')
   assert.equal(find(snapshot, 'feedback', 94).reason, 'review-feedback')
   assert.equal(find(snapshot, 'feedback', 94).lastActivity.at, '2026-01-01T11:00:00Z')
@@ -382,8 +388,11 @@ await check('mentions on my own issues and PRs need a reply when another person 
     // Someone else can mention me in the issue body, before any comments exist.
     mention(106, 'teammate', []),
   ]
-  const { ctx } = fakeCtx({ issues: () => ok(data) })
+  const authored = pull({ number: 102, repo: 'me/app', author: ME })
+  authored.comments = data.mentions.nodes[1].comments
+  const { ctx } = fakeCtx({ prs: () => [authored], issues: () => ok(data) })
   const snapshot = await buildSnapshot(ctx, settings())
+  assert.deepEqual(ids(snapshot, 'feedback'), [102])
   assert.deepEqual(ids(snapshot, 'respond'), [102, 101, 106])
   assert.equal(find(snapshot, 'respond', 101).reason, 'mentioned')
   assert.equal(find(snapshot, 'respond', 102).kind, 'pull')
@@ -543,9 +552,12 @@ await check('a review request is optional only while another approval satisfies 
     if (approved) pr.reviews.nodes = [approval]
     return pr
   }
-  const prs = [make(171, 'APPROVED', true), make(172, null, true), make(173, 'REVIEW_REQUIRED', true), make(174, 'APPROVED', false)]
+  const repeat = make(175, 'APPROVED', true)
+  repeat.viewerLatestReview = { state: 'COMMENTED', submittedAt: '2026-01-01T10:00:00Z', commit: { oid: 'previous' } }
+  const prs = [repeat, make(171, 'APPROVED', true), make(172, null, true), make(173, 'REVIEW_REQUIRED', true), make(174, 'APPROVED', false)]
   const { ctx } = fakeCtx({ prs: () => prs })
   const snapshot = await buildSnapshot(ctx, settings())
+  assert.equal(find(snapshot, 'rereview', 175).optional, true, 'another approval also satisfies a repeat request')
   assert.equal(find(snapshot, 'review', 171).optional, true, 'approved by someone else and satisfied')
   assert.equal(find(snapshot, 'review', 172).optional, true, 'no required reviews and another approval')
   assert.equal(find(snapshot, 'review', 173).optional, false, 'GitHub still requires a review')
@@ -1348,6 +1360,23 @@ function hostCtx(fake) {
   }
   return { ctx, captured }
 }
+
+await check('bulk scenarios use the selected queue for a PR with feedback and failing CI', async () => {
+  const pr = pull({ number: 176, author: ME })
+  pr.reviewDecision = 'CHANGES_REQUESTED'
+  pr.commits.nodes[0].commit.statusCheckRollup = { state: 'FAILURE' }
+  const { ctx, captured } = hostCtx(fakeCtx({ prs: () => [pr] }))
+  apply(ctx, { cwd: process.cwd() })
+  assert.equal((await captured.tool.execute({})).status, 'ok')
+  const req = Readable.from([Buffer.from(JSON.stringify({ scenario: 'fix-mine', section: 'ci', urls: [pr.url] }))])
+  req.method = 'POST'
+  let body
+  await captured.routes.get('/triage-desk/prompt').handler(req, {
+    setHeader() {}, end(text) { body = JSON.parse(text) },
+  })
+  assert.match(body.prompt, /sections: failing CI/)
+  assert.match(body.prompt, /reason: checks are failing/)
+})
 
 await check('a refresh that loses every source keeps the previous snapshot as stale', async () => {
   let failing = false

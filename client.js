@@ -1710,7 +1710,7 @@ window.__ModuleLoader__.load({
             quiet.add(item.id)
           } else if (!actionable) {
             issues.add(item.id)
-          } else if (section.id === 'review' && item.optional === true) {
+          } else if ((section.id === 'review' || section.id === 'rereview') && item.optional === true) {
             optional.add(item.id)
           } else {
             rows += 1
@@ -3157,6 +3157,7 @@ window.__ModuleLoader__.load({
       }
       const configuredDefault = configValue(config, 'defaultScenario')
       const defaultScenarioId = typeof configuredDefault === 'string' && configuredDefault !== '' ? configuredDefault : 'link'
+      const addressChanges = item.reason === 'changes-requested'
       const itemScenarios = scenarioItemScenarios(config, section)
       const hasUrl = isGithubUrl(item.url)
       const triggerRef = useRef(null)
@@ -3366,10 +3367,10 @@ window.__ModuleLoader__.load({
           h('span', { className: 'adx-row-meta' }, meta),
           section === 'feedback' && !selectMode && hasUrl ? h('a', {
             className: 'adx-link adx-feedback-action',
-            href: item.url + (item.reason === 'changes-requested' ? '/files' : '#issuecomment-new'),
+            href: item.url + (addressChanges ? '/files' : '#issuecomment-new'),
             target: '_blank',
             rel: 'noreferrer noopener',
-          }, t(item.reason === 'changes-requested' ? 'action.addressChanges' : 'action.reply')) : null,
+          }, t(addressChanges ? 'action.addressChanges' : 'action.reply')) : null,
         ),
         h(
           'span',

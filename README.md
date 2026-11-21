@@ -26,7 +26,7 @@ plugin never stores or forwards a token.
 - **CI is failing**: red checks on your PRs, on default branches you maintain, and on branches whose latest commit you authored in the last week.
 - **New in your repositories**: unassigned issues from the last 30 days, kept out of the attention counter.
 - **Snooze**: per row, per section, or a selection, until new activity, tomorrow, or next week.
-- **Launch scenarios**: named, editable prompts that open a coding agent in the local clone or a new DSH chat.
+- **Launch scenarios**: named, editable prompts that open a coding agent in the local clone or a new DSH chat. On upgrade, saved scenarios for **Needs your action** also apply to **Feedback on my PRs**. You can edit either binding in Settings.
 - **Agent tool**: `triage_desk` gives a DSH agent the same snapshot and can open a terminal on request.
 - **Sources and languages**: personal repositories plus up to 10 organizations; the panel follows the DSH language (English or Chinese).
 - **Large organizations**: organizations as big as `llvm` load in a lighter mode instead of failing ([details](docs/REFERENCE.md#large-sources)).

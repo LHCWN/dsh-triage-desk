@@ -20,6 +20,7 @@ import {
   REPO_PATTERN,
   SCENARIO_REASON_LABELS,
   SCENARIO_SECTION_LABELS,
+  SCENARIOS_VERSION,
   TERMINAL_AUTO,
   TERMINAL_IDS,
   BUILTIN_SCENARIOS,
@@ -304,7 +305,7 @@ export function sanitizePatch(input, currentLauncher) {
   if (input.scenarios !== undefined) {
     const agents = patch.agents !== undefined ? patch.agents : currentLauncher.agents
     patch.scenarios = sanitizeScenarios(input.scenarios, agents)
-    patch.scenariosVersion = 2
+    patch.scenariosVersion = SCENARIOS_VERSION
   }
   if (input.defaultScenario !== undefined) {
     const scenarios = patch.scenarios !== undefined ? patch.scenarios : currentLauncher.scenarios

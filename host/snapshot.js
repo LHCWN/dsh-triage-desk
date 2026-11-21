@@ -62,7 +62,7 @@ export function createSnapshotStore({ ctx, settings, resolveGh, log: safeLog, pr
         orgs: settings.orgs,
         org: '',
         user: null,
-        counts: { review: 0, rereview: 0, feedback: 0, merge: 0, respond: 0, ci: 0, issues: 0, total: 0 },
+        counts: { ...Object.fromEntries(SECTION_IDS.map((id) => [id, 0])), total: 0 },
         sections: SECTION_IDS.map((id) => ({ id, items: [] })),
         warnings: [],
         error: { code: `gh-${code}`, message },
@@ -82,11 +82,14 @@ export function createSnapshotStore({ ctx, settings, resolveGh, log: safeLog, pr
     return own
   }
 
-  /** Snapshot row for an exact URL, with its section id, or null. */
-  const findSnapshotEntry = (url) => {
+  /** Snapshot row for a URL, preferring the section the user launched from. */
+  const findSnapshotEntry = (url, preferredSections) => {
     const snapshot = fallbackSnapshot()
     if (snapshot === null || !Array.isArray(snapshot.sections)) return null
-    for (const section of snapshot.sections) {
+    const sections = preferredSections
+      ? preferredSections.map((id) => snapshot.sections.find((section) => section.id === id))
+      : snapshot.sections
+    for (const section of sections) {
       for (const item of (section && section.items) || []) {
         if (item && item.url === url) return { section: section.id, item }
       }

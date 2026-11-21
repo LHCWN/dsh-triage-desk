@@ -32,8 +32,8 @@ button opens an interactive `gh auth login` in a terminal.
 
 The **Reviews** tab groups the three review queues. Select a group to filter further.
 
-- **Awaiting my review**: open PRs where your review is requested directly
-  or through a team, and you have not reviewed the current head yet.
+- **Awaiting my review** lists direct requests on PRs you have never reviewed
+  and team requests on a head you have yet to review.
 - **Awaiting my re-review**: PRs you already reviewed whose head commit is no longer
   the one you reviewed (new commits, a rebase, or a force-push; matched by commit
   id, not by commit date), PRs where the author clicked **Re-request review** for
@@ -139,7 +139,9 @@ its own agent: it then shows that agent as a badge and ignores the picker.
 
 All scenarios are editable in Settings: name, scope (row or section), bound
 sections, prompt, preferred agent, order, and an enabled toggle. *Just the link*
-cannot be removed and must contain `{url}`.
+cannot be removed and must contain `{url}`. Existing scenarios bound to *Needs
+your action* also apply to *Feedback on my PRs* after upgrading. You can edit
+the two bindings independently.
 
 **What the built-in prompts ask for.** They use `gh` and work with any agent.
 The review scenarios (*Review this PR*, *Re-review after changes*, *Review

@@ -3,8 +3,9 @@
 ## Unreleased
 
 - The Reviews tab groups first reviews, repeat reviews and feedback on your PRs.
-  A direct re-request opens the re-review scenario on both unchanged and updated heads.
+  A direct re-request offers the re-review scenario on both unchanged and updated heads.
   Feedback rows link to the conversation or the files with requested changes.
+  Saved scenarios for *Needs your action* also apply to the new feedback group.
 
 ## [0.1.4](https://github.com/LHCWN/dsh-triage-desk/releases/tag/v0.1.4) — 2026-11-20
 

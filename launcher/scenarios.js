@@ -7,6 +7,7 @@
 import { AGENT_ID_PATTERN } from './agents.js'
 
 export const DEFAULT_SCENARIO_ID = 'link'
+export const SCENARIOS_VERSION = 2
 export const MAX_SCENARIOS = 30
 export const MAX_SCENARIO_LABEL = 60
 export const MAX_SCENARIO_TEMPLATE = 4000

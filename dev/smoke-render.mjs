@@ -15,6 +15,7 @@ import vm from 'node:vm'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { snapshot } from './fixtures/snapshot.mjs'
+import { defaultScenarios } from '../launcher.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const registry = []
@@ -1545,23 +1546,35 @@ const rowButton = (harness, title, label, nth = 0) => {
 
 {
   const harness = settingsHarness({ snapshotPayload: inbox({
-    rereview: [pull('rereview', 8, { reason: 're-review-requested' })],
+    rereview: [pull('rereview', 8, { reason: 're-review-requested' }), pull('rereview', 9, { optional: true })],
     feedback: [pull('feedback', 4, { reason: 'changes-requested' }), pull('feedback', 6, { reason: 'review-feedback' })],
     respond: [pull('respond', 7, { reason: 'conflict' })],
-  }), withPanel: true })
+  }), scenarios: defaultScenarios(), withPanel: true })
   await harness.flush()
   const chip = (id) => harness.nodes().find((node) => node.props?.className === 'adx-chip'
     && flattenTree(node.props.children).includes('section.' + id))
-  assert.equal(inboxView(harness).chip('reviews'), '6')
+  assert.equal(inboxView(harness).chip('reviews'), '7')
   harness.click(chip('reviews'))
-  assert.deepEqual(inboxView(harness).rows, ['PR 1', 'PR 2', 'PR 3', 'PR 8', 'PR 4', 'PR 6'])
+  assert.deepEqual(inboxView(harness).rows, ['PR 1', 'PR 2', 'PR 3', 'PR 8', 'PR 9', 'PR 4', 'PR 6'])
   assert.equal(inboxView(harness).total, '8', 'feedback and CI on PR 4 count once')
+  harness.click(rowButton(harness, 'PR 8', 'launch.title'))
+  const repeatScenario = harness.nodes().find((node) => node.props?.role === 'menuitem'
+    && flattenTree(node.props.children).includes('rereview-pr'))
+  harness.click(repeatScenario)
+  await harness.flush()
+  assert.equal(harness.launches[0].body.scenario, 'rereview-pr')
+  assert.equal(harness.launches[0].body.reason, 're-review-requested')
   harness.click(chip('feedback'))
   assert.deepEqual(inboxView(harness).rows, ['PR 4', 'PR 6'])
   assert.ok(harness.nodes().some((node) => node.type === 'a' && node.props.href.endsWith('/4/files')
     && node.props.children.includes('action.addressChanges')))
   assert.ok(harness.nodes().some((node) => node.type === 'a' && node.props.href.endsWith('/6#issuecomment-new')
     && node.props.children.includes('action.reply')))
+  harness.click(rowButton(harness, 'PR 4', 'snooze.button'))
+  harness.click(harness.nodes().find((node) => node.props?.['data-choice'] === 'activity'))
+  assert.deepEqual(inboxView(harness).rows, ['PR 6'])
+  assert.equal(inboxView(harness).chip('reviews'), '6')
+  assert.equal(inboxView(harness).total, '7', 'one snooze hides feedback and CI together')
   harness.dispose()
 }
 
