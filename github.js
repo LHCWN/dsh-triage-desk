@@ -1442,13 +1442,6 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
           reason: 'ready-to-merge',
           reasonDetail: `review decision ${base.reviewDecision === null ? 'none required' : 'approved'}; checks ${checks.state}`,
         })
-      } else if (approved && checks.state === 'failure') {
-        sections.merge.push({
-          ...base,
-          section: 'merge',
-          reason: 'approved-checks-failing',
-          reasonDetail: 'approved, but checks are red; this repository may not require green checks',
-        })
       }
     }
 

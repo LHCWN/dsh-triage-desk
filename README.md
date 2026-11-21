@@ -21,7 +21,7 @@ plugin never stores or forwards a token.
 ## What it shows
 
 - **Reviews** shows whose turn it is on a PR. **Awaiting my review** lists direct or team requests. **Awaiting my re-review** offers a pass over changes and replies since your review when the author re-requests you (even on the same commit), pushes new commits, or replies to you. **Feedback on my PRs** lets you reply to comments or open the changed files to address requested changes.
-- **Ready to merge**: your approved, mergeable PRs; by default only with green checks.
+- **Ready to merge** lists your mergeable PRs that have approval or need none. By default, checks must pass or be absent. A PR with failing checks appears under *CI is failing*. Once its checks pass, it enters *Ready to merge* on the next refresh if otherwise eligible.
 - **Needs your action**: merge conflicts, assigned issues, and unanswered mentions.
 - **CI is failing**: red checks on your PRs, on default branches you maintain, and on branches whose latest commit you authored in the last week.
 - **New in your repositories**: unassigned issues from the last 30 days, kept out of the attention counter.
@@ -165,7 +165,7 @@ available while you save. The most used fields:
 | `orgs` | `[]` | Organizations to scan (at most 10); empty auto-detects them |
 | `includePersonal` | `true` | Include your personal repositories |
 | `refreshSeconds` | `1200` | Auto-refresh interval, 15–3600 s |
-| `requireGreenChecks` | `true` | *Ready to merge* only with green or no checks |
+| `requireGreenChecks` | `true` | Turn off to allow otherwise eligible PRs with pending or failing checks in *Ready to merge*. PRs GitHub marks `BLOCKED` are excluded with either setting. |
 | `defaultAgent` | `dsh` | Target selected in the launch menu: `dsh` (a new DSH chat) or an agent id |
 | `terminal` | `auto` | Terminal for launches: `auto` or a terminal id |
 | `promptDelivery` | `paste` | `paste` (type into the agent) or `clipboard` |
