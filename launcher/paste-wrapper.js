@@ -190,10 +190,13 @@ def main():
         if saved is not None:
             termios.tcsetattr(0, termios.TCSAFLUSH, saved)
     _, status = os.waitpid(pid, 0)
-    if remote and not pasted:
+    if remote:
+        # SSH retries draft delivery. After paste or the manual-copy fallback,
+        # the agent's eventual exit status belongs to the user's session.
+        if pasted:
+            return 0
         sys.stderr.write("Triage Desk: the agent closed before accepting the draft. Use Copy prompt in the panel or retry.\n")
-        if status == 0:
-            return 1
+        return 1
     if os.WIFEXITED(status):
         return os.WEXITSTATUS(status)
     if os.WIFSIGNALED(status):

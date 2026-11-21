@@ -52,7 +52,14 @@ export function buildSshScripts(server, prompt, platform) {
   ]
   const mode = preset.draftFlag ? 'draft' : 'paste'
   if (mode === 'draft') {
-    remote.push(['exec', executable, shellQuote(preset.draftFlag), shellQuote(prompt)].join(' '))
+    // ssh reports the status of this script. After starting the native
+    // draft, an agent exit (including Ctrl+C) must not offer to replay it.
+    remote.push(
+      'command -v ' + executable + ' >/dev/null || { echo "Remote agent not found: ' + preset.id + '" >&2; exit 127; }',
+      "trap ':' INT",
+      [executable, shellQuote(preset.draftFlag), shellQuote(prompt)].join(' ')
+        + ' || printf "Agent exited with status %s\\n" "$?" >&2',
+    )
   } else {
     if (prompt !== sanitizePastePrompt(prompt)) throw new Error('remote paste cannot represent control characters in this prompt')
     remote.push('umask 077', 'prompt_file=$(mktemp)', 'trap \'rm -f "$prompt_file"\' EXIT',

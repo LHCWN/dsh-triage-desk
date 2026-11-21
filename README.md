@@ -91,7 +91,7 @@ Open the terminal button on a row or section header. The scenario picker starts
 on **Review this PR** for a first review, **Re-review after changes** for a repeat
 review, or **Triage this issue** for a new or assigned issue. A saved, enabled
 default takes priority on rows where it applies, including **Just the link**.
-You can change the scenario before choosing either action.
+An upgraded profile keeps its saved default and scenario bindings. To enable task-based selection, choose **Choose by task** in Settings. If your saved **Triage this issue** scenario applies only to new issues, add **Needs your action** to use it for assigned issues. You can change the scenario before choosing either action.
 
 - **Copy prompt** copies the rendered text for use in an existing session.
   It includes your edited instructions and the same links, order and size limit

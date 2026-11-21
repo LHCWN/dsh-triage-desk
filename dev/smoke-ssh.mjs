@@ -37,7 +37,7 @@ shift 2
 if [ "$mode" = -tt ] && [ ! -e failed-once ]; then touch failed-once; exit 255; fi
 exec "$@"
 `)
-  await writeTool('claude', '#!/bin/sh\npwd -P > "$RECORD.cwd"\nprintf "%s\\0" "$@" > "$RECORD"\n')
+  await writeTool('claude', '#!/bin/sh\npwd -P > "$RECORD.cwd"\nprintf "%s\\0" "$@" > "$RECORD"\nexit 130\n')
   await writeTool('codex', '#!/bin/sh\nexec node "$FAKE_AGENT" plain "$RECORD"\n')
 }
 
@@ -73,7 +73,7 @@ async function checkLaunch(agent, decline = false) {
     if (decline) assert.deepEqual(cleanup?.slice(-4), ['build-one', 'rm', '-f', connect[4]])
     else assert.equal(calls.length, 2)
   } else {
-    assert.ok(result.stdout.includes('Retry the same draft?'), result.stdout)
+    assert.equal(result.stdout.split('Retry the same draft?').length - 1, 1, result.stdout)
     if (decline) {
       await assert.rejects(fs.access(record), { code: 'ENOENT' })
     } else if (agent === 'claude') {
