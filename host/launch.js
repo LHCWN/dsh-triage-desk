@@ -201,7 +201,7 @@ export function createLaunch({
     void cleanupStaleTempDirs()
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'triage-desk-ssh-'))
     try {
-      const { stage, local } = buildSshScripts(server, rendered.prompt, platform)
+      const { stage, local, mode } = buildSshScripts(server, rendered.prompt, platform)
       const file = path.join(dir, platform === 'win32' ? 'launch.ps1' : 'launch.command')
       await fs.writeFile(path.join(dir, 'stage.sh'), stage, { mode: 0o600 })
       await writeLauncherScript(file, local)
@@ -211,7 +211,7 @@ export function createLaunch({
         ok: true, sshAlias: alias, cwd: server.cwd, cwdMode: 'ssh', agent,
         scenario: { id: rendered.scenario.id, label: scenarioTitle(rendered.scenario) },
         count: rendered.count, trimmed: rendered.trimmed, terminal: opened?.terminal || null,
-        mode: agent.id === 'claude' ? 'draft' : 'paste',
+        mode,
       }
     } catch (error) {
       await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined)

@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Triage Desk",
-    "description": "A GitHub inbox for what needs you now: reviews and re-reviews waiting on you, pull requests ready to merge, threads to answer, failing CI and new issues across your personal repositories and organizations. One click opens a coding agent in the local clone with a prepared prompt you review before sending; everything runs locally through the signed-in GitHub CLI."
+    "description": "A GitHub inbox for what needs you now: reviews and re-reviews waiting on you, pull requests ready to merge, threads to answer, failing CI and new issues across your personal repositories and organizations. Copy the scenario prompt or open it as an unsent draft in DSH, a local agent or a saved SSH destination."
   }
 }

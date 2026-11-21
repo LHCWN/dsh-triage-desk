@@ -62,7 +62,7 @@ for (const agent of windows ? ['claude'] : ['claude', 'codex']) {
     const [upload, connect] = data.trim().split('\n').map((line) => JSON.parse(line))
     assert.deepEqual(upload, ['-T', '--', 'build-one', 'sh', '-s'])
     assert.deepEqual(connect.slice(0, 4), ['-tt', '--', 'build-one', 'sh'])
-    assert.ok((await fs.readFile(path.join(root, 'upload'), 'utf8')).startsWith(stage))
+    assert.equal(await fs.readFile(path.join(root, 'upload'), 'utf8'), stage)
   } else if (agent === 'claude') {
     assert.ok(result.stdout.includes('Retry the same draft?'), result.stdout)
     assert.equal(data, '--prefill\0' + prompt + '\0')

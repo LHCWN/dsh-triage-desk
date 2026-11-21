@@ -215,6 +215,7 @@ state.copied = null
 state.openMenu = null
 state.view = 'settings'
 const settingsHtml = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+assert.ok(!settingsHtml.includes('settings.sshServers') && !settingsHtml.includes('settings.byTask'), 'older hosts only offer supported launcher settings')
 assert.ok(settingsHtml.includes('adx-scenarios'), 'settings should render the scenario editor')
 assert.ok(settingsHtml.includes('settings.scenarios'), 'settings should group scenarios')
 assert.ok(settingsHtml.includes('settings.agentAdd'), 'settings should render the agent editor')
@@ -1327,6 +1328,52 @@ function scenarioPicker(harness) {
 }
 function menuAction(harness, label) {
   return harness.nodes().find((node) => node.props?.role === 'menuitem' && node.props.children.includes(label))
+}
+
+{
+  const harness = settingsHarness({ agents: [], configExtra: { defaultAgent: 'dsh', defaultScenario: '',
+    supportsTaskDefault: true, sshServers: [{ alias: 'old', cwd: '/original', agent: 'claude' }],
+    sshAgents: [{ id: 'claude', label: 'Claude' }, { id: 'codex', label: 'Codex' }] } })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+  const action = (label) => harness.nodes().find((node) => node.type === 'button' && node.props.children.includes(label))
+  const fields = (label, type) => harness.nodes().filter((node) => node.type === 'label' && node.props.children.includes(label))
+    .map((node) => flattenTree(node.props.children).find((child) => child.type === type))
+  assert.ok(harness.text().includes('settings.byTask'))
+  assert.equal(harness.nodes().find((node) => node.props?.id === 'adx-default-scenario').props.value, '')
+  harness.click(action('settings.sshAdd'))
+  harness.click(action('settings.sshRemove'))
+  harness.change(fields('settings.ssh.alias', 'input')[0], 'build')
+  harness.change(fields('settings.ssh.cwd', 'input')[0], '/work one')
+  harness.change(fields('launch.agent', 'select')[0], 'codex')
+  harness.click(action('settings.sshAdd'))
+  harness.change(fields('settings.ssh.alias', 'input')[1], 'test')
+  harness.change(fields('settings.ssh.cwd', 'input')[1], '/work two')
+  harness.click(action('settings.save'))
+  assert.equal(harness.pending[0].body.defaultScenario, '')
+  assert.deepEqual(harness.pending[0].body.sshServers, [
+    { alias: 'build', cwd: '/work one', agent: 'codex' }, { alias: 'test', cwd: '/work two', agent: 'claude' },
+  ])
+  harness.dispose()
+}
+
+{
+  // An assigned issue can appear as a mention in Needs your action. A PR in
+  // that same section cannot use the saved issue-triage default.
+  const mentioned = { ...snapshot.sections.at(-1).items[0], section: 'respond', reason: 'mentioned', assignees: ['tester'] }
+  const sections = snapshot.sections.map((entry) => entry.id === 'respond' ? { ...entry, items: [...entry.items, mentioned] } : entry)
+  for (const saved of ['', 'triage-issue']) {
+    const harness = settingsHarness({ snapshotPayload: { ...snapshot, sections }, scenarios: defaultScenarios(), configExtra: { defaultScenario: saved } })
+    await harness.flush()
+    const triggers = () => flattenTree(harness.nodes().find((node) => node.props?.['data-section'] === 'respond').props.children)
+      .filter((node) => node.props?.['aria-label'] === 'launch.title')
+    harness.click(triggers()[0])
+    assert.equal(scenarioPicker(harness).props.value, 'link')
+    assert.ok(!scenarioPicker(harness).props.children.flat().some((node) => node.props.value === 'triage-issue'))
+    harness.click(triggers()[1])
+    assert.equal(scenarioPicker(harness).props.value, 'triage-issue')
+    harness.dispose()
+  }
 }
 
 {

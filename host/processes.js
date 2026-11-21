@@ -129,7 +129,7 @@ export function createProcesses({ ctx, settings, platform }) {
     const handle = ctx.subprocess.spawn({
       argv,
       cwd: settings.cwd,
-      stdio: { stdin: { data: text + '\n' }, stdout: 'ignore', stderr: 'ignore' },
+      stdio: { stdin: { data: text }, stdout: 'ignore', stderr: 'ignore' },
       graceMs: 5000,
     })
     const outcome = await handle.done

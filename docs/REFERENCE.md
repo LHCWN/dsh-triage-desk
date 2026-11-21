@@ -174,9 +174,7 @@ and the scenario text.
 (respecting the active section/source filter and search, and leaving out snoozed
 items), build one prompt with the list, and launch **one** agent; the menu shows
 the count, for example "Review everything awaiting me (12)". The prompt asks the
-agent to delegate each item to a separate sub-agent where that makes sense. When
-every item is from one repository the agent opens in that clone; otherwise it
-opens in the workspace.
+agent to delegate each item to a separate sub-agent where that makes sense. A local agent opens in the matching clone for one repository, or in the workspace for a group spanning repositories. SSH uses the saved remote folder.
 
 **Placeholders** use single braces. Row scenarios: `{url}`, `{repo}`, `{owner}`,
 `{name}`, `{number}`, `{title}`, `{branch}`, `{kind}`, `{ref}`, `{author}`,
@@ -194,7 +192,7 @@ and the panel warns in a toast.
 
 ## Terminal launcher
 
-A terminal launch opens the agent in the repository's local clone (see [Clone
+A local terminal launch opens the agent in the repository's local clone (see [Clone
 discovery](#clone-discovery)) with the prompt prepared but **not sent**. The
 terminal stays open with a shell after the agent exits, survives a plugin
 reload, and is closed when DSH quits. The **Sign in to GitHub** button uses the

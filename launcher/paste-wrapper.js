@@ -97,8 +97,11 @@ def write_all(fd, data):
 
 
 def main():
-    prompt = read_prompt(sys.argv[1])
-    argv = sys.argv[2:]
+    # A remote launch has no clipboard fallback during a long trust dialog.
+    wait_for_agent = sys.argv[1] == "--wait-for-agent"
+    args = sys.argv[2:] if wait_for_agent else sys.argv[1:]
+    prompt = read_prompt(args[0])
+    argv = args[1:]
     stdin_tty = os.isatty(0)
     rows, cols = window_size(0 if stdin_tty else 1)
     pid, master = pty.fork()
@@ -170,7 +173,7 @@ def main():
                         last_output = now
                         ready_since = now
             if not pasted:
-                if now - start > DEADLINE:
+                if not wait_for_agent and now - start > DEADLINE:
                     pasted = True
                 elif paste_mode and not waiting_for_user and (
                     now - last_output >= QUIET or now - ready_since >= SETTLE

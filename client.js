@@ -2005,7 +2005,7 @@ window.__ModuleLoader__.load({
     function taskScenario(section, item) {
       if (section === 'review') return 'review-pr'
       if (section === 'rereview') return 'rereview-pr'
-      if (item.kind === 'issue' && (section === 'issues' || item.reason === 'assigned-to-you')) return 'triage-issue'
+      if (item.kind === 'issue') return 'triage-issue'
       return 'link'
     }
 
@@ -3208,7 +3208,9 @@ window.__ModuleLoader__.load({
           () => store.showToast(t('page.copyFailed'), 'warning'),
         )
       }
-      const itemScenarios = sectionScenarios(config, 'item', section)
+      const itemScenarios = sectionScenarios(config, 'item', section).filter(
+        (entry) => entry.id !== 'triage-issue' || item.kind === 'issue',
+      )
       const hasUrl = isGithubUrl(item.url)
       const triggerRef = useRef(null)
       const menuRef = useRef(null)

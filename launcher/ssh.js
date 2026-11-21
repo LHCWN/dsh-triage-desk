@@ -47,13 +47,14 @@ export function buildSshScripts(server, prompt, platform) {
     'cd ' + shellQuote(server.cwd),
     'printf "SSH %s · %s · %s\\n" ' + shellQuote(server.alias) + ' ' + shellQuote(server.agent) + ' "$(pwd -P)"',
   ]
-  if (server.agent === 'claude') {
+  const mode = server.agent === 'claude' ? 'draft' : 'paste'
+  if (mode === 'draft') {
     remote.push('exec claude --prefill ' + shellQuote(prompt))
   } else {
     if (prompt !== sanitizePastePrompt(prompt)) throw new Error('remote paste cannot represent control characters in this prompt')
     remote.push('umask 077', 'prompt_file=$(mktemp)', 'trap \'rm -f "$prompt_file"\' EXIT',
       'printf %s ' + shellQuote(prompt) + ' > "$prompt_file"',
-      'python3 -I -c ' + shellQuote(PASTE_WRAPPER_PY) + ' "$prompt_file" ' + shellQuote(server.agent))
+      'python3 -I -c ' + shellQuote(PASTE_WRAPPER_PY) + ' --wait-for-agent "$prompt_file" ' + shellQuote(server.agent))
   }
   // The staging shell reads the prompt as quoted data. An interrupted
   // transfer cannot execute the incomplete payload. The random name belongs
@@ -65,14 +66,20 @@ export function buildSshScripts(server, prompt, platform) {
   const local = platform === 'win32'
     ? [
         "$ErrorActionPreference = 'Stop'",
-        '$OutputEncoding = New-Object System.Text.UTF8Encoding($false)',
         "$stage = Join-Path $PSScriptRoot 'stage.sh'",
+        'Push-Location -LiteralPath $PSScriptRoot',
         'try {', '  do {',
-        '    Get-Content -LiteralPath $stage -Raw -Encoding UTF8 | ' + upload,
+        // cmd's file redirection passes the UTF-8 file directly to ssh.
+        // Both the alias and the relative filename are plain command words.
+        "    cmd.exe /d /c '" + upload + " < stage.sh'",
         '    if ($LASTEXITCODE -eq 0) { ' + connect + ' }',
         '    if ($LASTEXITCODE -eq 0) { break }',
         "  } while ((Read-Host '" + retry + "') -eq 'y')",
-        '} finally { Remove-Item -LiteralPath $stage, $PSCommandPath -Force }',
+        '} finally {',
+        '  Pop-Location',
+        '  Remove-Item -LiteralPath $stage, $PSCommandPath -Force',
+        '  [System.IO.Directory]::Delete($PSScriptRoot)',
+        '}',
       ].join('\r\n')
     : [
         '#!/bin/sh', 'stage="$(dirname "$0")/stage.sh"', 'trap \'rm -f "$stage" "$0"; rmdir "$(dirname "$0")" 2>/dev/null || :\' EXIT',
@@ -80,5 +87,5 @@ export function buildSshScripts(server, prompt, platform) {
         "  printf '%s ' '" + retry + "'", '  IFS= read -r answer || break',
         '  case "$answer" in y|Y) ;; *) break ;; esac', 'done',
       ].join('\n')
-  return { stage, local }
+  return { stage, local, mode }
 }
