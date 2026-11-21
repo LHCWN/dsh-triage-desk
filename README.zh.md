@@ -6,7 +6,7 @@
 [![已收录于 DSH 1024Store](https://img.shields.io/badge/DSH_1024Store-listed-0969da.svg)](https://deepseek1024.com/plugins/LHCWN/dsh-triage-desk)
 [![已收录于 dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/zh/plugins/lhcwn/dsh-triage-desk)
 
-一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）插件，每天早上只回答一个问题：**现在有什么需要我处理？** 它把 GitHub 动态汇总成一个收件箱面板：等待你审核的 PR、可以合并的自己的 PR、需要答复的讨论、失败的 CI，以及新的或分配给你的议题。只需一次点击，就能针对任意条目打开编码智能体，并带好准备好的提示，由你检查后再发送。所有操作都通过 GitHub CLI 在本地完成；插件从不存储或转发访问令牌。
+一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）插件，每天早上只回答一个问题：**现在有什么需要我处理？** 它把 GitHub 动态汇总成一个收件箱面板：等待你审核的 PR、可以合并的自己的 PR、需要答复的讨论、失败的 CI，以及新的或分配给你的议题。可复制场景提示，或在 DSH、本地智能体或已保存的 SSH 目标中将其作为草稿打开。收件箱通过已登录的本地 GitHub CLI 读取数据。
 
 <img src="docs/screenshots/inbox.png" width="900" alt="DSH 中的分诊面板：关注计数、分类标签、来源筛选，以及等待审核的拉取请求及其 CI 状态">
 
@@ -16,12 +16,12 @@
 
 - **等待你审核**：直接或通过团队请求你审核、且你尚未审核当前 head 的 PR。
 - **需要重新审核**：自你审核后有新提交、被重新请求审核，或作者回复了你的 PR。
-- **可以合并**：你的已获批准且可以合并的 PR；默认仅限检查通过的。
+- **可以合并**列出你已获批准或无需批准且可以合并的 PR。默认仅列出检查通过或没有检查的 PR。检查失败的 PR 会出现在“CI 失败”中。检查通过后，只要满足其他合并条件，下次刷新时该 PR 就会出现在“可以合并”中。
 - **需要你处理**：被要求修改、存在冲突、有审核者评论的 PR，分配给你的议题，以及尚未回复的提及。
 - **CI 失败**：你的 PR、你维护的默认分支，以及最新提交由你在过去一周内提交的分支上的红色检查。
 - **你仓库中的新议题**：最近 30 天内未分配的议题，不计入关注计数。
 - **延后**：按行、按分类或按所选条目延后，直到有新动态、明天或下周。
-- **启动场景**：命名的可编辑提示，可在本地克隆中打开编码智能体，或打开新的 DSH 对话。
+- **启动场景**：可针对单行或一组条目自定义场景提示。
 - **智能体工具**：`triage_desk` 把同一份快照提供给 DSH 智能体，并可按要求打开终端。
 - **来源与语言**：个人仓库加最多 10 个组织；面板跟随 DSH 的界面语言（英文或中文）。
 - **大型组织**：像 `llvm` 这样大的组织会以精简模式加载，而不是直接失败（[详情](docs/REFERENCE.md#large-sources)）。
@@ -112,7 +112,7 @@ Toast 提示会写明智能体和终端，例如*已在 Ghostty 中打开 Codex�
 | `orgs` | `[]` | 要扫描的组织（最多 10 个）；留空则自动检测 |
 | `includePersonal` | `true` | 包含你的个人仓库 |
 | `refreshSeconds` | `1200` | 自动刷新间隔，15–3600 秒 |
-| `requireGreenChecks` | `true` | 仅在检查通过或没有检查时列入*可以合并* |
+| `requireGreenChecks` | `true` | 关闭后，检查尚未完成或已失败但满足其他条件的 PR 也会列入“可以合并”。无论此设置是否开启，GitHub 标记为 `BLOCKED` 的 PR 都不会列入。 |
 | `defaultAgent` | `dsh` | 启动菜单中选中的目标：`dsh`（新的 DSH 对话）或智能体 ID |
 | `defaultScenario` | 空 | 按任务选择，或保存适用于该行的场景 ID |
 | `sshServers` | `[]` | 保存 SSH 别名 `alias`、智能体 `agent` 和远程绝对目录 `cwd` |
