@@ -1393,7 +1393,8 @@ await check('bulk scenarios use the selected queue for a PR with feedback and fa
   // group even though the cached snapshot now has it in CI and feedback.
   const merge = await promptFor('merge')
   assert.match(merge, /sections: ready to merge/)
-  assert.doesNotMatch(merge, /reason: checks are failing/)
+  assert.ok(merge.includes(`- [PR 176](${pr.url}) — acme/app#176, author ${ME}`))
+  assert.doesNotMatch(merge, /, reason:/)
 })
 
 await check('a refresh that loses every source keeps the previous snapshot as stale', async () => {

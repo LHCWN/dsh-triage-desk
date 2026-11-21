@@ -103,7 +103,9 @@ each PR once. Rows marked **Optional review** are excluded by default. To pick
 individual PRs, including optional ones, click **Select**, check the rows you
 want, then open that group's terminal button. Its count shows how many you
 picked in that group. If the prompt size limit drops any items, the draft and
-notification show how many fit. Each terminal batch opens a fresh tab or window.
+notification show how many fit. If even the first item exceeds the limit, the
+panel shows an error before opening a draft. Each terminal batch opens a fresh
+tab or window.
 
 Once you send it, the review scenarios post one GitHub review of inline comments
 tagged `[P1]`–`[P3]`, and never approve. The fix and reply scenarios wait for your

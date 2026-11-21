@@ -712,18 +712,13 @@ check('section prompts drop bullets from the end and report the trimming', () =>
   assert.ok(Array.from(built.prompt).length <= MAX_RENDERED_PROMPT)
 })
 
-check('section prompts truncate safely when even one item cannot fit', () => {
-  const items = [
-    { url: 'https://github.com/acme/app/pull/1', number: 1, title: 'One', section: 'review' },
-    { url: 'https://github.com/acme/app/pull/2', number: 2, title: 'Two', section: 'review' },
-  ]
-  const built = buildScenarioPrompt(
-    { scope: 'section', prompt: 'x'.repeat(MAX_RENDERED_PROMPT) + ' {links}' },
-    { items, section: 'review' },
-  )
-  assert.deepEqual(built.trimmed, { shown: 0, total: 2 })
-  assert.ok(Array.from(built.prompt).length <= MAX_RENDERED_PROMPT)
-  assert.ok(built.prompt.includes('Items: first 0 of 2'))
+check('a nonempty batch needs room for at least one complete item', () => {
+  // Both templates fit in Settings. The shorter one can fit a zero-item
+  // header and omission notice, the longer one cannot even fit the headers.
+  for (const repeats of [150, 420]) {
+    const scenario = { scope: 'section', prompt: 'Review these PRs.\n' + '{links}\n'.repeat(repeats) }
+    assert.throws(() => buildScenarioPrompt(scenario, { items: [prItem], section: 'review' }), /no items fit/i)
+  }
 })
 
 check('scenario titles fall back from label to builtin title to id', () => {

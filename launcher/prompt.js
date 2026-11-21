@@ -213,13 +213,11 @@ export function buildScenarioPrompt(scenario, context) {
     return text
   }
   if (total === 0) return { prompt: truncatePrompt(render(0)), trimmed: null }
-  for (let shown = total; shown >= 0; shown -= 1) {
+  for (let shown = total; shown >= 1; shown -= 1) {
     const text = render(shown)
     if (codePointLength(text) <= MAX_RENDERED_PROMPT) {
       return { prompt: text, trimmed: shown < total ? { shown, total } : null }
     }
   }
-  // Even the template without bullets exceeds the limit. Keep the batch
-  // header intact so the draft still reports exactly what it contains.
-  return { prompt: itemsHeader(items, 0, total), trimmed: { shown: 0, total } }
+  throw new Error('No items fit within the prompt limit. Shorten the scenario template or include {links} only once.')
 }

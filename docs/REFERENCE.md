@@ -194,7 +194,9 @@ built-in English prompts.
 **Limits.** Prompts are rendered on the host from the snapshot. Templates are
 capped at 4 000 characters and the rendered prompt at 16 000. When a section
 list does not fit, `{count}` gives the number of items included. The draft
-and the panel notification both report how many fit.
+and the panel notification both report how many fit. If the first item cannot
+fit, the panel reports an error before opening a draft or terminal. Shorten
+the template or remove repeated `{links}` placeholders.
 
 ## Terminal launcher
 

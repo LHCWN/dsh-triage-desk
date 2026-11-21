@@ -71,6 +71,15 @@ const codex = { id: 'codex', label: 'Codex', command: 'codex {prompt}' }
 
 const customScenarios = [
   {
+    id: 'repeated-links',
+    label: 'Repeated links',
+    scope: 'section',
+    sections: ['review'],
+    prompt: 'Review the following PRs.\n' + '{links}\n'.repeat(420),
+    agent: 'default',
+    enabled: true,
+  },
+  {
     id: 'custom-review',
     label: 'Custom review',
     scope: 'item',
@@ -453,6 +462,20 @@ await recordAsync('prompt route renders item and section prompts without launchi
   assert.equal(badUrl.statusCode, 400)
   assert.equal((await json(badUrl)).error.code, 'bad-url')
   assert.equal(captured.opens.length, 0)
+})
+
+await recordAsync('an oversized section prompt fails before draft delivery or terminal launch', async () => {
+  captured.opens.length = 0
+  captured.clipboard = null
+  for (const route of ['/triage-desk/prompt', '/triage-desk/launch']) {
+    const res = await callHandler(route, 'POST', { scenario: 'repeated-links', section: 'review', urls: [PR_URL] })
+    assert.equal(res.statusCode, 400)
+    const { error } = await json(res)
+    assert.equal(error.code, 'bad-prompt')
+    assert.match(error.message, /no items fit/i)
+  }
+  assert.equal(captured.opens.length, 0)
+  assert.equal(captured.clipboard, null)
 })
 
 await recordAsync('an unknown scenario is rejected with bad-scenario', async () => {

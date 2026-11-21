@@ -154,9 +154,15 @@ export function createLaunch({
       const url = raw.trim()
       if (url === '' || seen.has(url) || parseRepoUrl(url) === null) continue
       seen.add(url)
-      const snapshotEntry = findSnapshotEntry(url, section)
-      if (snapshotEntry !== null) items.push({ ...snapshotEntry.item, url, section: snapshotEntry.section })
-      else items.push({ url, section })
+      const entry = findSnapshotEntry(url, section) ?? findSnapshotEntry(url)
+      const item = { url, section }
+      if (entry !== null) {
+        // A moved PR keeps its descriptive fields. Its reason belongs to its new group.
+        for (const key of ITEM_FIELDS) {
+          if (key !== 'reason' || entry.section === section) item[key] = entry.item[key]
+        }
+      }
+      items.push(item)
     }
     return items
   }
