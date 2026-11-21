@@ -216,8 +216,9 @@ await check('draft launcher keeps quoted-only spaces, bare trailing backslashes 
 
 await check('plain terminal leaves PowerShell in the working copy', async () => {
   const run = await runLauncher(() => buildWindowsShellLauncherScript({ cwd: clone }) +
-    'if ((Get-Location).Path -ne ' + windowsQuote(clone) + ') { exit 1 }')
+    '[System.IO.File]::WriteAllText($env:TD_RECORD, (ConvertTo-Json -InputObject (Get-Location).Path))')
   assert.equal(run.result.status, 0, run.result.stderr)
+  assert.equal(realpathSync.native(run.recorded), realpathSync.native(clone))
   assert.equal(run.dirLeft, false)
 })
 
