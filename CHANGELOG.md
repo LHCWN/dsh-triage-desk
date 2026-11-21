@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- *Ready to merge* honors the green-check requirement for approved PRs even
+  when GitHub reports their merge state as `UNSTABLE`.
+
 ## [0.1.4](https://github.com/LHCWN/dsh-triage-desk/releases/tag/v0.1.4) — 2026-11-20
 
 ### Changed
