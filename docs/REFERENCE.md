@@ -95,7 +95,7 @@ Other panel features:
 - **Settings in the panel**: organizations, personal repositories, auto-refresh
   interval, green-CI merge rule, bot-review handling, terminal, prompt delivery,
   agents, launch scenarios, and clone search. Terminal settings are grouped under
-  *Terminal and agents*; clone search under *Advanced: repository folders*. The
+  *Launch environments* alongside clone search. The
   auto-refresh select accepts **Custom…** in minutes (1–60).
 - Light and dark themes both use the host theme tokens.
 
@@ -128,22 +128,13 @@ Other panel features:
 
 ## Launch scenarios
 
-Every row with a GitHub link has a terminal button. It opens a compact menu: a
-**target picker** first (DSH, local agents and saved SSH destinations),
-a line saying where the selected agent opens and how it gets the prompt, then the
-applicable scenarios with a task-based or saved selection. Choose **Copy prompt** or **Prepare draft**.
-
-A scenario is a named prompt template. The built-in row scenarios are *Just the
-link*, *Review this PR* (only on rows waiting for your review), *Re-review after
-changes* (only on re-review rows), *Fix this PR*, *Reply in the thread*, and
-*Triage this issue*. Section headers have their own terminal button with
-section-wide scenarios (*Review everything awaiting me*, *Fix my PRs*, *Triage
-new issues*, *Answer mentions*) and the same target picker. A scenario can pin
-its own agent: the badge identifies the pinned local agent. An explicit DSH or SSH destination takes precedence.
-
-All scenarios are editable in Settings: name, scope (row or section), bound
-sections, prompt, preferred agent, order, and an enabled toggle. *Just the link*
-cannot be removed and must contain `{url}`. Existing scenarios bound to *Needs
+Open a row or group to preview and edit its rendered prompt. Select a machine
+and agent, then **Open** or **Copy prompt**. Agent selection and draft edits are
+independent. Settings → **Agents** controls each template's prompt, preferred
+agent, enabled state, order and applicable sections. The saved row default
+takes precedence where it applies. Built-in task templates cover initial review,
+re-review, repair, replies and issue triage. Group templates use the visible
+items in their own section. Existing scenarios bound to *Needs
 your action* also apply to *Feedback on my PRs* after upgrading and restarting
 the host. Settings offers the bindings supported by the running host. You can
 edit the two bindings independently.
@@ -191,8 +182,7 @@ that makes sense.
 When all items that fit in the draft belong to one repository, a local agent
 opens in the matching clone and SSH looks for a working copy by its Git remotes.
 If a working copy is missing or the included items span repositories, a local
-agent opens in the workspace. SSH uses the first accessible repository folder
-configured for that server, falling back to the remote user's home directory.
+agent opens in the workspace. For an unmatched repository SSH asks for a folder and suggests the first accessible root or remote home. Mixed-repository groups open at the first accessible root or remote home.
 
 **Placeholders** use single braces. Row scenarios: `{url}`, `{repo}`, `{owner}`,
 `{name}`, `{number}`, `{title}`, `{branch}`, `{kind}`, `{ref}`, `{author}`,
@@ -220,7 +210,7 @@ same terminal.
 
 ### Choosing a terminal
 
-Settings → *Terminal and agents* → **Open agents in** offers *Automatic* or one
+Settings → *Launch environments* → **Open agents in** offers *Automatic* or one
 of this platform's terminals; terminals that are not installed are shown
 disabled. The config key is `terminal`: `auto` (default) or a terminal id. A
 saved terminal that is not installed falls back to Automatic at launch, and the
@@ -249,7 +239,7 @@ launch toast says so.
   `alacritty`, `x-terminal-emulator`, `xterm`.
 - **Windows**: Windows Terminal when installed, otherwise a PowerShell window.
 
-Re-launching the *same* agent on the *same* item switches to its existing tab
+Opening a draft from the panel uses a fresh tab or window to deliver the edited text. For a tool launch without edited text, re-launching the *same* agent on the *same* item switches to its existing tab
 instead of opening a duplicate where the terminal allows it. This
 focus-or-reuse is best-effort and falls back to a fresh tab or window.
 A section launch always opens a fresh tab or window for its batch.
@@ -372,8 +362,7 @@ opened in Ghostty (/path): the prompt will appear in its input box, not sent —
 review it and press Enter*.
 
 **Security note.** Native `--prefill` passes the prompt as an agent argument, so
-it is visible in the process list. The Just the link scenario contains the
-GitHub URL; longer scenario prompts and section lists are visible there as well.
+the draft text and its URLs are visible in the process list.
 The paste wrapper reads the prompt from a temporary file that it deletes once
 read; local terminal launches also copy to the clipboard. Each launch writes its script into
 its own `triage-desk-*` temporary directory; the script removes itself and the
@@ -573,11 +562,11 @@ Fields:
 | `defaultAgent` | `dsh` | What a launch opens unless another target is picked: `dsh` (a new DSH chat) or an agent id. An agent that cannot start opens a DSH chat instead, and Settings says so. Launches the host runs (the agent tool) cannot open DSH and use the first installed agent |
 | `terminal` | `auto` | Terminal for launches: `auto` or one of `terminal`, `iterm`, `ghostty`, `gnome-terminal`, `konsole`, `xfce4-terminal`, `kitty`, `alacritty`, `xterm`, `windows-terminal`, `console` (see [Choosing a terminal](#choosing-a-terminal)) |
 | `promptDelivery` | `paste` | How agents without a native draft get the prompt: `paste` (typed into the input box, unsent) or `clipboard` (see [Prompt delivery](#prompt-delivery)) |
-| `cloneDirs` | `[]` | Optional base directories for clone discovery, up to 8 (under *Advanced: repository folders*); empty searches the typical dirs that exist (`~/Projects`, `~/Developer`, …) plus project roots detected in your home |
-| `repoPaths` | `{}` | Optional `owner/repo` → absolute clone path exceptions, up to 50, matched case-insensitively (under *Advanced: repository folders*) |
-| `scenarios` | built-in set | Named launch scenarios: `{ id, label?, scope: 'item' \| 'section', sections, prompt, agent: 'default' \| <agent id>, enabled }`; array order is menu order; an empty `prompt` on a built-in scenario means its current default; the `link` scenario must exist, stay enabled, and contain `{url}` |
+| `cloneDirs` | `[]` | Optional base directories for clone discovery, up to 8 (under *Launch environments*); empty searches the typical dirs that exist (`~/Projects`, `~/Developer`, …) plus project roots detected in your home |
+| `repoPaths` | `{}` | Optional `owner/repo` → absolute clone path exceptions, up to 50, matched case-insensitively (under *Launch environments*) |
+| `scenarios` | built-in set | Named launch scenarios: `{ id, label?, scope: 'item' \| 'section', sections, prompt, agent: 'default' \| <agent id>, enabled }`; array order resolves competing templates; an empty `prompt` on a built-in scenario means its current default |
 | `defaultScenario` | empty string | Task-based preselection, or an enabled row scenario ID where applicable |
-| `sshServers` | `[]` | Remote destinations. Each entry has a literal OpenSSH `alias`, built-in `agent` ID, optional built-in `alternatives` and ordered absolute POSIX `folders` (up to eight). A legacy `cwd` supplies one folder |
+| `sshServers` | `[]` | Remote destinations. Each entry has a literal OpenSSH `alias`, built-in `agent` ID, optional built-in `alternatives` and ordered remote `folders` (absolute or `~/…`) (up to eight). A legacy `cwd` supplies one folder |
 | `ghCommand` | `gh` | Path to the GitHub CLI |
 | `timeoutMs` | `30000` | Timeout of one `gh` invocation |
 | `meLogins` | `[]` | Extra self logins: decide ownership, direct review requests, your activity, and recent branch authors on the items the signed-in account's searches find. PRs that involve only an alias are not found; aliases add no sources or team memberships |

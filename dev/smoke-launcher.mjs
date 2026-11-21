@@ -277,14 +277,8 @@ check('default config is neutral', () => {
   assert.equal(config.agentsAuto, true, 'no saved list: agents come from discovery')
   assert.equal(config.defaultScenario, '', 'fresh profiles select a scenario by task')
   assert.equal(config.scenarios.length, BUILTIN_SCENARIOS.length)
-  const link = config.scenarios[0]
-  assert.equal(link.id, 'link')
-  assert.equal(link.label, '')
-  assert.equal(link.scope, 'item')
-  assert.equal(link.agent, 'default')
-  assert.equal(link.enabled, true)
-  assert.equal(link.prompt, '{url}')
-  assert.deepEqual(link.sections, SCENARIO_SECTION_IDS)
+  assert.equal(config.scenarios.some(({ id }) => id === 'link'), false)
+  assert.equal(normalizeLauncherConfig({ defaultScenario: 'link' }).defaultScenario, '')
   assert.equal(config.promptTemplate, undefined)
   assert.equal(config.agents.find((agent) => agent.id === 'claude').draftFlag, '--prefill')
   assert.equal(config.cloneDirs.length, 0)
@@ -304,10 +298,10 @@ function builtinScenario(id) {
 }
 
 check('builtin scenarios are complete and titled', () => {
-  assert.equal(BUILTIN_SCENARIOS.length, 10)
+  assert.equal(BUILTIN_SCENARIOS.length, 9)
   assert.deepEqual(
     BUILTIN_SCENARIOS.map((scenario) => scenario.id),
-    ['link', 'review-pr', 'rereview-pr', 'fix-pr', 'reply-thread', 'triage-issue', 'review-all', 'fix-mine', 'triage-new', 'reply-mentions'],
+    ['review-pr', 'rereview-pr', 'fix-pr', 'reply-thread', 'triage-issue', 'review-all', 'fix-mine', 'triage-new', 'reply-mentions'],
   )
   for (const scenario of BUILTIN_SCENARIOS) {
     assert.equal(scenario.agent, 'default', scenario.id)
@@ -392,7 +386,7 @@ check('default scenarios are fresh copies', () => {
   const second = defaultScenarios()
   first[0].sections.push('review')
   first[1].label = 'changed'
-  assert.deepEqual(second[0].sections, SCENARIO_SECTION_IDS)
+  assert.deepEqual(second[0].sections, ['review'])
   assert.equal(second[1].label, '')
   assert.notEqual(first[0].sections, BUILTIN_SCENARIOS[0].sections)
   assert.notEqual(first[0].sections, second[0].sections)
@@ -441,8 +435,8 @@ check('custom scenarios round-trip through normalization', () => {
       enabled: false,
     },
   ])
-  assert.equal(normalized.length, 2)
-  assert.deepEqual(normalized[1], {
+  assert.equal(normalized.length, 1)
+  assert.deepEqual(normalized[0], {
     id: 'my-run',
     label: 'My run',
     scope: 'section',
@@ -468,7 +462,7 @@ check('invalid scenarios are dropped and repairable fields default', () => {
   ])
   assert.deepEqual(
     normalized.map((scenario) => scenario.id),
-    ['link', 'dup', 'weird-agent'],
+    ['dup', 'weird-agent'],
   )
   const repaired = normalized.find((scenario) => scenario.id === 'weird-agent')
   assert.equal(repaired.scope, 'item')
@@ -479,44 +473,29 @@ check('invalid scenarios are dropped and repairable fields default', () => {
   assert.equal(normalizeScenarios([]).length, BUILTIN_SCENARIOS.length)
 })
 
-check('the link scenario is protected and stays first', () => {
-  const forced = normalizeScenarios([
-    { id: 'link', label: '', scope: 'item', sections: ['review'], prompt: 'no link token', agent: 'default', enabled: false },
-    { id: 'mine', label: 'Mine', scope: 'item', sections: ['review'], prompt: '{url}', agent: 'default', enabled: true },
-  ])
-  assert.equal(forced[0].id, 'link')
-  assert.equal(forced[0].enabled, true)
-  assert.equal(forced[0].prompt, '{url}')
-  const sectionLink = normalizeScenarios([
-    { id: 'link', label: '', scope: 'section', sections: ['review'], prompt: '{url}', agent: 'default', enabled: true },
-  ])
-  assert.equal(sectionLink[0].scope, 'item')
-  const moved = normalizeScenarios([
-    { id: 'mine', label: 'Mine', scope: 'item', sections: ['review'], prompt: '{url}', agent: 'default', enabled: true },
-    { id: 'link', label: '', scope: 'item', sections: SCENARIO_SECTION_IDS, prompt: '{url}', agent: 'default', enabled: true },
-  ])
-  assert.deepEqual(moved.map((scenario) => scenario.id), ['link', 'mine'])
-  const prepended = normalizeScenarios([
-    { id: 'mine', label: 'Mine', scope: 'item', sections: ['review'], prompt: '{url}', agent: 'default', enabled: true },
-  ])
-  assert.deepEqual(prepended.map((scenario) => scenario.id), ['link', 'mine'])
+check('stock legacy links migrate to task selection and edited prompts survive', () => {
+  const link = { id: 'link', scope: 'item', prompt: '{url}' }
+  const stock = normalizeLauncherConfig({ defaultScenario: 'link', scenarios: [link] })
+  assert.equal(stock.defaultScenario, '')
+  assert.deepEqual(stock.scenarios, defaultScenarios())
+  const custom = normalizeLauncherConfig({ defaultScenario: 'link', scenarios: [{ ...link, prompt: 'Explain {url}' }] })
+  assert.equal(custom.scenarios[0].prompt, 'Explain {url}')
+  assert.equal(custom.defaultScenario, 'link')
 })
 
-check('scenarios are capped keeping the link first', () => {
+check('scenarios are capped in configured order', () => {
   const entries = [{ id: 'link', scope: 'item', sections: SCENARIO_SECTION_IDS, prompt: '{url}', agent: 'default', enabled: true }]
   for (let index = 0; index < MAX_SCENARIOS + 10; index += 1) {
     entries.push({ id: 'scenario-' + index, label: 'Scenario ' + index, scope: 'item', sections: ['review'], prompt: '{url}', agent: 'default', enabled: true })
   }
   const capped = normalizeScenarios(entries)
   assert.equal(capped.length, MAX_SCENARIOS)
-  assert.equal(capped[0].id, 'link')
-  assert.equal(capped[1].id, 'scenario-0')
+  assert.equal(capped[0].id, 'scenario-0')
 })
 
 check('validateScenario accepts valid scenarios', () => {
   const agents = [{ id: 'claude' }, { id: 'codex' }]
   const valid = [
-    { id: 'link', label: '', scope: 'item', sections: ['review'], prompt: '{url}', agent: 'default', enabled: true },
     { id: 'review-pr', label: '', scope: 'item', sections: ['review'], prompt: 'Review {url}', agent: 'default', enabled: true },
     { id: 'custom', label: 'Custom', scope: 'section', sections: ['issues'], prompt: 'Do {links}', agent: 'codex', enabled: false },
   ]
@@ -647,9 +626,9 @@ check('item scenarios append the block only when the template has no link token'
 })
 
 check('item prompts truncate by code point without splitting an emoji', () => {
-  const prefix = 'x'.repeat(MAX_RENDERED_PROMPT - 1) + '😀'
+  const prefix = 'x'.repeat(MAX_RENDERED_PROMPT - 2) + '😀'
   const built = buildScenarioPrompt({ scope: 'item', prompt: prefix + 'y'.repeat(10) }, { item: prItem })
-  assert.equal(Array.from(built.prompt).length, MAX_RENDERED_PROMPT + 1)
+  assert.equal(Array.from(built.prompt).length, MAX_RENDERED_PROMPT)
   assert.ok(built.prompt.endsWith('😀…'))
   assert.ok(!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(built.prompt))
 })

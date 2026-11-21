@@ -130,13 +130,23 @@ visit_directory() {
   fi
 }
 
+# Resolve only a leading home marker on the remote machine. All other bytes are literal.
+enter_folder() {
+  case "$1" in
+    '~') cd -P "$HOME" ;;
+    '~/'*) cd -P "$HOME/${1#??}" ;;
+    /*) cd -P "$1" ;;
+    *) return 1 ;;
+  esac
+}
+
 scan_repositories() (
   # A login profile can export a Git directory. Read each checkout's own
   # metadata without changing the environment passed to the agent.
   unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR
   aliases=$(list_github_ssh_aliases 2>/dev/null) || aliases=
   for root do
-    canonical=$(cd -P "$root" 2>/dev/null && pwd -P) || continue
+    canonical=$(enter_folder "$root" 2>/dev/null && pwd -P) || continue
     visited=0
     visit_directory "$canonical" 0
   done

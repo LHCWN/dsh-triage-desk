@@ -10,6 +10,7 @@ import path from 'node:path'
 import {
   AGENT_COMMAND_RULE,
   SCENARIO_SECTION_IDS,
+  MAX_RENDERED_PROMPT,
   bareAgentCommand,
   buildSshScripts,
   SSH_AGENTS,
@@ -91,8 +92,20 @@ export function createLaunch({
       if (scenario === undefined) throw new LaunchError('bad-scenario', `the scenario "${requested}" is not configured`)
       return scenario
     }
-    const fallback = launcherSettings.scenarios.find((entry) => entry.id === (launcherSettings.defaultScenario || 'link'))
-    return fallback !== undefined ? fallback : launcherSettings.scenarios[0]
+    const item = body.url && itemLaunchContext(body, body.url)
+    const scope = Array.isArray(body.urls) ? 'section' : 'item'
+    const route = parseRepoUrl(body.url) && new URL(body.url).pathname.split('/').filter(Boolean)[2]
+    const kind = item?.kind || (route === 'issues' ? 'issue' : route === 'pull' ? 'pull' : '')
+    const section = body.section || item?.section || (kind === 'issue' ? 'issues' : kind === 'pull' ? 'review' : '')
+    const available = launcherSettings.scenarios.filter((entry) => entry.enabled && entry.scope === scope &&
+      entry.sections.includes(section) && (entry.id !== 'triage-issue' || kind === 'issue' || section === 'issues'))
+    // Templates are ordered in Settings. Reply and triage share the respond
+    // section; an issue gets triage unless an applicable default overrides it.
+    const triage = kind === 'issue' && available.find(({ id }) => id === 'triage-issue')
+    return available.find(({ id }) => id === launcherSettings.defaultScenario) ||
+      available.find(({ id }) => !triage || id !== 'reply-thread') ||
+      { id: '', label: 'Draft', scope, prompt: scope === 'item' ? 'Work on {url}' : 'Work on these items:\n{links}', agent: 'default' }
+
   }
 
   // `detected` decides what "default" means: see effectiveDefaultAgent. An
@@ -204,15 +217,16 @@ export function createLaunch({
     return { scenario, scope: 'item', repo: parsed.slug, item, prompt: built.prompt, trimmed: null, count: 1 }
   }
 
-  const launchSsh = async (alias, rendered, signal) => {
+  const launchSsh = async (alias, rendered, signal, requestedAgent) => {
     const server = launcherSettings.sshServers.find((entry) => entry.alias === alias)
     if (!server) throw new LaunchError('bad-destination', 'choose a saved SSH destination')
-    const agent = SSH_AGENTS.find((entry) => entry.id === server.agent)
+    const agent = SSH_AGENTS.find((entry) => entry.id === (requestedAgent || server.agent))
+    if (!agent) throw new LaunchError('unknown-agent', 'choose a supported SSH agent')
     const title = `SSH ${server.alias} · ${agent.label} · ${scenarioTitle(rendered.scenario)}`
     void cleanupStaleTempDirs()
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'triage-desk-ssh-'))
     try {
-      const { stage, local, mode } = buildSshScripts(server, rendered.prompt, platform, rendered.repo)
+      const { stage, local, mode } = buildSshScripts({ ...server, agent: agent.id }, rendered.prompt, platform, rendered.repo)
       const file = path.join(dir, platform === 'win32' ? 'launch.ps1' : 'launch.command')
       await fs.writeFile(path.join(dir, 'stage.sh'), stage, { mode: 0o600 })
       await writeLauncherScript(file, local)
@@ -233,7 +247,12 @@ export function createLaunch({
   const launchForItem = async (input, signal) => {
     const body = input !== null && typeof input === 'object' ? input : {}
     const rendered = renderScenarioPrompt(body)
-    if (body.sshAlias !== undefined) return launchSsh(body.sshAlias, rendered, signal)
+    if (body.draft !== undefined) {
+      if (typeof body.draft !== 'string' || !body.draft.trim() || body.draft.includes('\0') ||
+        Array.from(body.draft).length > MAX_RENDERED_PROMPT) throw new LaunchError('bad-prompt', 'Invalid draft length or content')
+      rendered.prompt = body.draft
+    }
+    if (body.sshAlias !== undefined) return launchSsh(body.sshAlias, rendered, signal, body.agent)
     const scenario = rendered.scenario
     const cached = await detectAgents()
     let agent = resolveLauncherAgent(body, scenario, cached)
@@ -374,8 +393,9 @@ export function createLaunch({
       }
       await writeLauncherScript(launcherFile, script)
       if (signal !== undefined && signal.aborted === true) throw new LaunchError('aborted', 'the launch was cancelled')
-      // Equal batch sizes can have different PRs. Every batch must deliver its own draft.
-      opened = await openTerminal(launcherFile, windowTitle, signal, launcherSettings.terminal, rendered.scope === 'item')
+      // Focusing a previous tab does not deliver the text from the editor.
+      const reuse = body.draft === undefined && rendered.scope === 'item'
+      opened = await openTerminal(launcherFile, windowTitle, signal, launcherSettings.terminal, reuse)
       // iTerm2 and Ghostty plans run `activate` in their own AppleScript, so
       // only nudge Terminal.app forward when the launcher actually used it;
       // `open -a Terminal` with no file would otherwise pop an empty window.

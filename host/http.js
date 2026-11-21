@@ -40,6 +40,19 @@ export const readJsonBody = (req, limit = REQUEST_BODY_LIMIT) =>
     req.on('error', (error) => reject(error))
   })
 
+/** An editor launch carries the original request plus JSON-escaped draft text. */
+export async function readLaunchBody(req, maxDraftLength) {
+  const body = await readJsonBody(req, REQUEST_BODY_LIMIT + 6 * maxDraftLength + 32)
+  if (body && typeof body === 'object') {
+    const { draft, ...context } = body
+    if (Buffer.byteLength(JSON.stringify(context)) > REQUEST_BODY_LIMIT) {
+      throw new BadRequest('request body is too large')
+    }
+    if (draft !== undefined && typeof draft !== 'string') throw new BadRequest('draft must be text')
+  }
+  return body
+}
+
 export const sendJson = (res, status, payload) => {
   res.statusCode = status
   res.setHeader('content-type', 'application/json; charset=utf-8')
