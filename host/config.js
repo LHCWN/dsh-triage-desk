@@ -134,6 +134,7 @@ export function publicConfig(settings, runtime, launcher, detected, environment 
     terminals: environment.terminals || null,
     promptPaste: environment.promptPaste || null,
     platform,
+    supportsSshRepositoryFolders: true,
     supportsPrompt: true,
     supportsTaskDefault: true,
     supportsAgentDiscovery: true,

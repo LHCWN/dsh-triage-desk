@@ -153,7 +153,12 @@ import the launcher layer only through `launcher.js` and the data layer through
     read as the current default), section/reason labels, and prompt rendering
     (item tokens, `{number}` from `parseRepoUrl` when absent, section `{links}`
     block, safe trimming);
-  - `ssh.js` — saved destination validation and OpenSSH staging and interactive launcher scripts. A launch with `sshAlias` resolves the saved folder and agent before any local clone or agent lookup.
+  - `ssh.js` — saved destination validation and OpenSSH staging and interactive launcher scripts. The remote shell uses `ssh-repositories.sh` for the same bounded Git remote scan as
+    Settings (`GET /triage-desk/clones?sshAlias=…`). `ssh-select-folder.sh` resolves
+    the working copy or fallback and stores remembered choices in the remote home.
+    `ssh-select-agent.sh` probes the preferred executable in that directory, offers
+    configured alternatives on a miss, and can leave the user in a remote shell.
+    The host knows the actual working directory only for local launches.
   - `settings.js` — `normalizeLauncherConfig` (also `terminal`, via
     `normalizeTerminalChoice`, and `promptDelivery`: `paste` | `clipboard`);
   - `terminals.js` — `TERMINAL_CATALOG` per platform (`id`, `label`, whether a

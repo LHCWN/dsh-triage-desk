@@ -150,11 +150,16 @@ export function createLaunch({
   /** Item context for a section launch; invalid and duplicate URLs are dropped. */
   const sectionLaunchItems = (section, urls) => {
     const items = []
+    let repo = ''
     const seen = new Set()
     for (const raw of urls) {
       if (typeof raw !== 'string') continue
       const url = raw.trim()
-      if (url === '' || seen.has(url) || parseRepoUrl(url) === null) continue
+      if (url === '' || seen.has(url)) continue
+      const parsed = parseRepoUrl(url)
+      if (parsed === null) continue
+      if (items.length === 0) repo = parsed.slug
+      else if (repo.toLowerCase() !== parsed.slug.toLowerCase()) repo = ''
       seen.add(url)
       const entry = findSnapshotEntry(url, section) ?? findSnapshotEntry(url)
       const item = { url, section }
@@ -166,7 +171,7 @@ export function createLaunch({
       }
       items.push(item)
     }
-    return items
+    return { items, repo }
   }
 
   const renderPrompt = (scenario, context) => {
@@ -186,17 +191,17 @@ export function createLaunch({
         throw new LaunchError('bad-scenario', 'a section scenario needs a valid section')
       }
       if (!Array.isArray(body.urls)) throw new LaunchError('bad-scenario', 'a section scenario needs a list of URLs')
-      const items = sectionLaunchItems(section, body.urls)
+      const { items, repo } = sectionLaunchItems(section, body.urls)
       if (items.length === 0) throw new LaunchError('bad-url', 'no GitHub URLs were provided')
       const built = renderPrompt(scenario, { items, section })
-      return { scenario, scope: 'section', items, prompt: built.prompt, trimmed: built.trimmed, count: items.length }
+      return { scenario, scope: 'section', items, repo, prompt: built.prompt, trimmed: built.trimmed, count: items.length }
     }
     const url = typeof body.url === 'string' ? body.url.trim() : ''
     const parsed = parseRepoUrl(url)
     if (parsed === null) throw new LaunchError('bad-url', 'the row has no GitHub URL')
     const item = itemLaunchContext(body, url)
     const built = renderPrompt(scenario, { item })
-    return { scenario, scope: 'item', parsed, item, prompt: built.prompt, trimmed: null, count: 1 }
+    return { scenario, scope: 'item', repo: parsed.slug, item, prompt: built.prompt, trimmed: null, count: 1 }
   }
 
   const launchSsh = async (alias, rendered, signal) => {
@@ -207,14 +212,14 @@ export function createLaunch({
     void cleanupStaleTempDirs()
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'triage-desk-ssh-'))
     try {
-      const { stage, local, mode } = buildSshScripts(server, rendered.prompt, platform)
+      const { stage, local, mode } = buildSshScripts(server, rendered.prompt, platform, rendered.repo)
       const file = path.join(dir, platform === 'win32' ? 'launch.ps1' : 'launch.command')
       await fs.writeFile(path.join(dir, 'stage.sh'), stage, { mode: 0o600 })
       await writeLauncherScript(file, local)
       if (signal?.aborted) throw new LaunchError('aborted', 'the launch was cancelled')
       const opened = await openTerminal(file, title, signal, launcherSettings.terminal, false)
       return {
-        ok: true, sshAlias: alias, cwd: server.cwd, cwdMode: 'ssh', agent,
+        ok: true, sshAlias: alias, cwd: null, cwdMode: 'ssh', agent,
         scenario: { id: rendered.scenario.id, label: scenarioTitle(rendered.scenario) },
         count: rendered.count, trimmed: rendered.trimmed, terminal: opened?.terminal || null,
         mode,
@@ -265,12 +270,11 @@ export function createLaunch({
     const bareCommand = () => bareAgentCommand(launchCommand, platform)
     const binDir = platform !== 'win32' && detectedPath !== '' ? path.dirname(detectedPath) : undefined
     const { count, trimmed, prompt } = rendered
-    let repo = ''
+    const repo = rendered.repo
     let clonePath = ''
     let cloneMissing = false
     let windowTitle = ''
     if (rendered.scope === 'item') {
-      repo = rendered.parsed.slug
       ;({ cwd: clonePath, cloneMissing } = await resolveClone(repo))
       const number = rendered.item.number
       const suffix = number === undefined || number === null || String(number).trim() === '' ? '' : ` #${number}`
@@ -279,13 +283,7 @@ export function createLaunch({
       // re-launching the same agent focuses its own tab instead of duplicating.
       windowTitle = `Triage Desk: ${scenarioTitle(scenario)} — ${repo}${suffix} [${agent.label}]`
     } else {
-      const repos = []
-      for (const entry of rendered.items) {
-        const itemRepo = parseRepoUrl(entry.url)
-        if (itemRepo !== null && !repos.includes(itemRepo.slug)) repos.push(itemRepo.slug)
-      }
-      if (repos.length === 1) {
-        repo = repos[0]
+      if (repo) {
         ;({ cwd: clonePath, cloneMissing } = await resolveClone(repo))
       } else {
         clonePath = await workspaceDirectory()

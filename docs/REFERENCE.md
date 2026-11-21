@@ -91,7 +91,7 @@ Other panel features:
 - **Settings in the panel**: organizations, personal repositories, auto-refresh
   interval, green-CI merge rule, bot-review handling, terminal, prompt delivery,
   agents, launch scenarios, and clone search. Terminal settings are grouped under
-  *Terminal and agents*; clone search under *Advanced: clone search*. The
+  *Terminal and agents*; clone search under *Advanced: repository folders*. The
   auto-refresh select accepts **Custom…** in minutes (1–60).
 - Light and dark themes both use the host theme tokens.
 
@@ -178,7 +178,14 @@ the batch size (for example, “Re-review 3 PRs”). Source filters, search and
 snoozes apply, and each item appears once. Optional reviews are skipped by
 default. In *Select* mode, check individual rows, including any optional PRs
 you want, then use the group's terminal button to act on that selection.
-The prompt asks the agent to delegate each item to a separate sub-agent where that makes sense. A local agent opens in the matching clone for one repository, or in the workspace for a group spanning repositories. SSH uses the saved remote folder.
+The prompt asks the agent to delegate each item to a separate sub-agent where
+that makes sense.
+
+For a single repository, a local agent opens in the matching clone and SSH
+looks for a working copy by its Git remotes. If a working copy is missing or
+the group spans repositories, a local agent opens in the workspace. SSH uses
+the first accessible repository folder configured for that server, falling back
+to the remote user's home directory.
 
 **Placeholders** use single braces. Row scenarios: `{url}`, `{repo}`, `{owner}`,
 `{name}`, `{number}`, `{title}`, `{branch}`, `{kind}`, `{ref}`, `{author}`,
@@ -501,11 +508,18 @@ and the warning lists the rejected ones.
 - Each nonempty manual mapping line needs `owner/repo = /absolute/path`; missing
   separators, repositories, or paths block saving with a line-specific error,
   keeping the text for correction.
-- **Check clones** in Settings shows what the search finds.
-- The search goes three levels deep, with an independent 400-directory budget per
+- Each saved SSH destination searches its own folders, including each folder itself
+  and three levels of visible subdirectories (up to 1,500 directories per root).
+  Nested directory symlinks are skipped. Discovery reads GitHub fetch URLs
+  from Git on the server. Selecting **Find repositories** for a saved server needs
+  non-interactive SSH authentication. Interactive launches can prompt for login.
+  When several paths match, the terminal can save your choice under
+  `~/.triage-desk/working-copies/` on the server and uses it only while it matches.
+- **Find repositories** in Settings shows what the search finds.
+- The local search goes three levels deep, with an independent 400-directory budget per
   root, and skips hidden and heavy directories. Symlinked directories are
   followed, each real directory once.
-- All git remotes that point to GitHub count, so a fork with `origin` and
+- For local discovery, all Git remotes that point to GitHub count, so a fork with `origin` and
   `upstream` serves either repository. HTTPS, `ssh://`, and scp-style remotes
   (with or without `git@`) are recognized, as are SSH host aliases from
   `~/.ssh/config` whose `HostName` is `github.com` or `ssh.github.com` (literal
@@ -548,11 +562,11 @@ Fields:
 | `defaultAgent` | `dsh` | What a launch opens unless another target is picked: `dsh` (a new DSH chat) or an agent id. An agent that cannot start opens a DSH chat instead, and Settings says so. Launches the host runs (the agent tool) cannot open DSH and use the first installed agent |
 | `terminal` | `auto` | Terminal for launches: `auto` or one of `terminal`, `iterm`, `ghostty`, `gnome-terminal`, `konsole`, `xfce4-terminal`, `kitty`, `alacritty`, `xterm`, `windows-terminal`, `console` (see [Choosing a terminal](#choosing-a-terminal)) |
 | `promptDelivery` | `paste` | How agents without a native draft get the prompt: `paste` (typed into the input box, unsent) or `clipboard` (see [Prompt delivery](#prompt-delivery)) |
-| `cloneDirs` | `[]` | Optional base directories for clone discovery, up to 8 (under *Advanced: clone search*); empty searches the typical dirs that exist (`~/Projects`, `~/Developer`, …) plus project roots detected in your home |
-| `repoPaths` | `{}` | Optional `owner/repo` → absolute clone path exceptions, up to 50, matched case-insensitively (under *Advanced: clone search*) |
+| `cloneDirs` | `[]` | Optional base directories for clone discovery, up to 8 (under *Advanced: repository folders*); empty searches the typical dirs that exist (`~/Projects`, `~/Developer`, …) plus project roots detected in your home |
+| `repoPaths` | `{}` | Optional `owner/repo` → absolute clone path exceptions, up to 50, matched case-insensitively (under *Advanced: repository folders*) |
 | `scenarios` | built-in set | Named launch scenarios: `{ id, label?, scope: 'item' \| 'section', sections, prompt, agent: 'default' \| <agent id>, enabled }`; array order is menu order; an empty `prompt` on a built-in scenario means its current default; the `link` scenario must exist, stay enabled, and contain `{url}` |
 | `defaultScenario` | empty string | Task-based preselection, or an enabled row scenario ID where applicable |
-| `sshServers` | `[]` | Remote destinations. Each entry has a literal OpenSSH `alias`, built-in `agent` ID and absolute POSIX `cwd` |
+| `sshServers` | `[]` | Remote destinations. Each entry has a literal OpenSSH `alias`, built-in `agent` ID, optional built-in `alternatives` and ordered absolute POSIX `folders` (up to eight). A legacy `cwd` supplies one folder |
 | `ghCommand` | `gh` | Path to the GitHub CLI |
 | `timeoutMs` | `30000` | Timeout of one `gh` invocation |
 | `meLogins` | `[]` | Extra self logins: decide ownership, direct review requests, your activity, and recent branch authors on the items the signed-in account's searches find. PRs that involve only an alias are not found; aliases add no sources or team memberships |
@@ -642,7 +656,7 @@ This section was checked against DSH 0.2.2-rc.5; the plugin supports
   `launcher.js` (pure helpers: tokens, the item list block, trimming).
   `POST /triage-desk/launch` validates the scenario and URLs, resolves the clone,
   agent, terminal, and prompt delivery on the host, and only then asks the OS to
-  open the terminal. `GET /triage-desk/clones` powers **Check clones** in
+  open the terminal. `GET /triage-desk/clones` powers **Find repositories** in
   Settings.
 - **Failures**: transient network failures are retried once. A failed query
   loses only its own results and makes the snapshot partial: a source whose PR

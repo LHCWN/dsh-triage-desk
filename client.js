@@ -264,10 +264,14 @@ window.__ModuleLoader__.load({
       'launch.promptCopied': 'Prompt copied',
       'launch.manualCopy': 'Copy the selected prompt manually',
       'settings.byTask': 'Choose by task',
-      'launch.sshConnecting': 'Connecting to {alias} · {agent} · {cwd}',
+      'launch.sshConnecting': 'Connecting to {alias} · {agent}. The terminal will show the working folder.',
       'settings.sshServers': 'SSH destinations',
       'settings.ssh.alias': 'SSH alias',
       'settings.ssh.cwd': 'Remote folder (absolute path)',
+      'settings.ssh.folders': 'Repository folders (one absolute path per line)',
+      'settings.ssh.alternatives': 'Alternative agents',
+      'settings.ssh.saveFolders': 'Save the destination and its folders to find repositories.',
+      'settings.ssh.scanFailed': 'Could not search this server. Check that SSH can connect without a password prompt.',
       'settings.sshAdd': 'Add destination',
       'settings.sshRemove': 'Remove destination',
       'launch.default': 'default',
@@ -283,7 +287,7 @@ window.__ModuleLoader__.load({
       'launch.configure': 'Configure',
       'launch.agentMissing': 'Agent "{agent}" was not found on PATH',
       'launch.noAgents': 'No agents are configured',
-      'launch.settingsHint': 'Agents, launch scenarios, and clone directories live in Settings.',
+      'launch.settingsHint': 'Agents, launch scenarios, and repository folders live in Settings.',
       'launch.retry': 'Retry',
       'settings.terminal': 'Terminal and agents',
       'settings.terminalHint': 'Choose where to open drafts from rows and sections.',
@@ -300,23 +304,23 @@ window.__ModuleLoader__.load({
       'settings.agentFindNone': 'No new agents found',
       'settings.agentFindFailed': 'Could not scan the machine: {message}',
       'settings.agentRemove': 'Remove agent',
-      'settings.advanced': 'Advanced: clone search',
+      'settings.advanced': 'Advanced: repository folders',
       'settings.advancedHint': 'Only needed when the terminal cannot find a clone automatically. The plugin searches for clones by itself by default.',
-      'settings.cloneDirs': 'Folders to search for clones',
-      'settings.cloneDirsHint': 'The plugin checks immediate subfolders for .git. One path per line; empty auto-detects project roots in your home, then falls back to: {list}.',
+      'settings.cloneDirs': 'Repository folders',
+      'settings.cloneDirsHint': 'The plugin searches for Git working copies. One path per line; empty auto-detects project roots in your home, then falls back to: {list}.',
       'settings.cloneDirsPlaceholder': '~/Projects',
       'settings.repoPaths': 'Exact paths for individual repositories',
       'settings.repoPathsHint': 'Exceptions only: use when a clone lives elsewhere or has a different name. One "owner/repo = /absolute/path" per line; wins over folder search.',
       'settings.repoPathsPlaceholder': 'owner/repo = ~/Projects/repo',
       'settings.invalidRepoPaths': 'Line {line}: enter a repository and path separated by "=" (owner/repo = /path).',
-      'settings.scan': 'Check clones',
+      'settings.scan': 'Find repositories',
       'settings.pickFolder': 'Choose folder…',
       'settings.pickClone': 'Choose clone…',
       'settings.picking': 'Choosing…',
       'settings.pickFailed': 'Could not open the system folder picker.',
       'settings.scanning': 'Scanning…',
-      'settings.scanResult': 'Clones found: {n}',
-      'settings.scanEmpty': 'No clones found',
+      'settings.scanResult': 'Repositories found: {n}',
+      'settings.scanEmpty': 'No repositories found',
       'settings.scanFailed': 'Could not scan the directories',
       'settings.terminalNote': 'Launches share one Triage Desk window and open as tabs. macOS: an iTerm2 tab when installed, otherwise a new Terminal.app window; Windows: Windows Terminal (new tab) or PowerShell; Linux: the terminal from $TERMINAL (a tab where supported). Re-launching the same agent on the same item focuses its tab where the terminal supports it. After the agent exits, the window stays open with a shell.',
       'launch.draft': '{agent} opened in {terminal} ({cwd}): the prompt is in its input box, not sent — review it and press Enter',
@@ -605,10 +609,14 @@ window.__ModuleLoader__.load({
       'launch.promptCopied': '已复制提示',
       'launch.manualCopy': '请手动复制已选中的提示',
       'settings.byTask': '按任务选择',
-      'launch.sshConnecting': '正在连接 {alias} · {agent} · {cwd}',
+      'launch.sshConnecting': '正在连接 {alias} · {agent}。实际工作目录将显示在终端中。',
       'settings.sshServers': 'SSH 目标',
       'settings.ssh.alias': 'SSH 别名',
       'settings.ssh.cwd': '远程目录（绝对路径）',
+      'settings.ssh.folders': '仓库文件夹（每行一个绝对路径）',
+      'settings.ssh.alternatives': '备选智能体',
+      'settings.ssh.saveFolders': '请先保存 SSH 目标及其文件夹，再查找仓库。',
+      'settings.ssh.scanFailed': '无法搜索此服务器。请检查 SSH 能否在无需输入密码的情况下连接。',
       'settings.sshAdd': '添加目标',
       'settings.sshRemove': '移除目标',
       'launch.default': '默认',
@@ -624,7 +632,7 @@ window.__ModuleLoader__.load({
       'launch.configure': '配置',
       'launch.agentMissing': 'PATH 中未找到智能体“{agent}”',
       'launch.noAgents': '尚未配置智能体',
-      'launch.settingsHint': '智能体、启动场景与克隆目录在「设置」中配置。',
+      'launch.settingsHint': '智能体、启动场景与仓库文件夹在「设置」中配置。',
       'launch.retry': '重试',
       'settings.terminal': '终端与智能体',
       'settings.terminalHint': '选择从行和分类中打开草稿的位置。',
@@ -641,23 +649,23 @@ window.__ModuleLoader__.load({
       'settings.agentFindNone': '未找到新的智能体',
       'settings.agentFindFailed': '无法扫描本机：{message}',
       'settings.agentRemove': '删除智能体',
-      'settings.advanced': '高级：克隆搜索',
+      'settings.advanced': '高级：仓库文件夹',
       'settings.advancedHint': '仅当终端无法自动找到克隆时需要。默认情况下插件会自行搜索克隆。',
-      'settings.cloneDirs': '搜索克隆的文件夹',
-      'settings.cloneDirsHint': '插件会检查直接子文件夹中的 .git。每行一个路径；留空会自动发现主目录中的项目根目录，然后使用默认目录：{list}。',
+      'settings.cloneDirs': '仓库文件夹',
+      'settings.cloneDirsHint': '插件会搜索 Git 工作副本。每行一个路径；留空会自动发现主目录中的项目根目录，然后使用默认目录：{list}。',
       'settings.cloneDirsPlaceholder': '~/Projects',
       'settings.repoPaths': '单个仓库的精确路径',
       'settings.repoPathsHint': '仅用于例外：当克隆在其他位置或目录名不同。每行 owner/repo = /绝对/路径；优先于文件夹搜索。',
       'settings.repoPathsPlaceholder': 'owner/repo = ~/Projects/repo',
       'settings.invalidRepoPaths': '第 {line} 行：请输入用“=”分隔的仓库和路径（owner/repo = /路径）。',
-      'settings.scan': '检查克隆',
+      'settings.scan': '查找仓库',
       'settings.pickFolder': '选择文件夹…',
       'settings.pickClone': '选择克隆…',
       'settings.picking': '选择中…',
       'settings.pickFailed': '无法打开系统文件夹选择器。',
       'settings.scanning': '正在扫描…',
-      'settings.scanResult': '找到克隆：{n}',
-      'settings.scanEmpty': '未找到克隆',
+      'settings.scanResult': '找到仓库：{n}',
+      'settings.scanEmpty': '未找到仓库',
       'settings.scanFailed': '无法扫描目录',
       'settings.terminalNote': '启动会共用一个 Triage Desk 窗口并以标签页打开。macOS：已安装 iTerm2 时使用其标签页，否则打开新的 Terminal.app 窗口；Windows：Windows Terminal（新标签页）或 PowerShell；Linux：$TERMINAL 指定的终端（支持时使用新标签页）。对同一条目重新启动同一智能体会在终端支持时聚焦其标签页。智能体退出后窗口保留，并停在 shell。',
       'launch.draft': '已在 {terminal} 中打开 {agent}（{cwd}）：提示已填入输入框，尚未发送——检查后按 Enter',
@@ -686,7 +694,7 @@ window.__ModuleLoader__.load({
       'settings.pasteUnavailable.python-missing': '需要本机安装 Python 3；在此之前提示会复制到剪贴板。',
       'settings.pasteUnavailable.python-clt': '需要命令行工具中的 Python 3：请运行 xcode-select --install。在此之前提示会复制到剪贴板。',
       'settings.pasteUnavailable.windows-old': '需要 Windows 10 1809 或更高版本；提示会复制到剪贴板。',
-      'launch.workspaceFallback': ' · 未找到克隆，已在工作区打开',
+      'launch.workspaceFallback': ' · 未找到仓库，已在工作区打开',
       'launch.scenarios': '场景',
       'launch.agent': '智能体',
       'launch.dshTarget': 'DSH — 本应用',
@@ -1308,7 +1316,8 @@ window.__ModuleLoader__.load({
       .adx-scan-result { font-size: 12px; line-height: 18px; color: var(--adx-ink-3); }
       .adx-scan-result[data-tone='error'] { color: var(--adx-err); }
       .adx-scan-clones {
-        display: flex; flex-direction: column; gap: 2px; margin-top: -8px; padding: 8px 10px;
+        max-height: 16rem; overflow-y: auto;
+        display: flex; flex-direction: column; gap: 2px; padding: 8px 10px;
         border-radius: 8px; background: var(--adx-module); font-size: 11.5px; line-height: 18px;
       }
       .adx-scan-clone { display: flex; gap: 8px; min-width: 0; }
@@ -2970,7 +2979,7 @@ window.__ModuleLoader__.load({
 
     function launchToastText(t, payload) {
       if (payload.sshAlias) {
-        return t('launch.sshConnecting', { alias: payload.sshAlias, agent: payload.agent.label, cwd: payload.cwd }) + trimmedSuffix(t, payload)
+        return t('launch.sshConnecting', { alias: payload.sshAlias, agent: payload.agent.label }) + trimmedSuffix(t, payload)
       }
       const delivery = payload.delivery || {}
       const mode = payload.mode === 'draft' || payload.mode === 'paste' ? payload.mode : 'clipboard'
@@ -3020,7 +3029,7 @@ window.__ModuleLoader__.load({
 
     /** One line under the agent picker: where the agent opens and how it gets the prompt. */
     function launchVia(t, config, targets) {
-      if (targets.remote) return h('p', { key: 'via', className: 'adx-launch-via' }, targets.remote.cwd)
+      if (targets.remote) return h('p', { key: 'via', className: 'adx-launch-via' }, sshFolders(targets.remote).join(' · '))
       if (targets.selected === DSH_TARGET) return null
       const agent = targets.agents.find((entry) => entry.id === targets.selected)
       const terminal = launchTerminalLabel(config)
@@ -4095,7 +4104,8 @@ window.__ModuleLoader__.load({
         requireGreenChecks: config.requireGreenChecks !== false,
         includeBotReviews: config.includeBotReviews === true,
         agents: settingsFormAgents(config),
-        sshServers: configList(config, 'sshServers').map((entry) => ({ ...entry, _key: newAgentRowKey() })),
+        sshServers: configList(config, 'sshServers').map((entry) => ({ ...entry, _key: newAgentRowKey(),
+          folders: sshFolders(entry).join('\n'), alternatives: entry.alternatives || [] })),
         defaultAgent: typeof config.defaultAgent === 'string' ? config.defaultAgent : '',
         terminal: typeof config.terminal === 'string' ? config.terminal : 'auto',
         promptDelivery: config.promptDelivery === 'clipboard' ? 'clipboard' : 'paste',
@@ -4126,6 +4136,39 @@ window.__ModuleLoader__.load({
       }
     }
 
+    function sshFolders(server) {
+      return server.folders || (server.cwd ? [server.cwd] : [])
+    }
+
+    function folderLines(text) {
+      return [...new Set(text.split('\n').map((line) => line.trim()).filter(Boolean))]
+    }
+
+    function RepositoryScan({ t, alias, disabled }) {
+      const [result, setResult] = useState(null)
+      const scan = () => {
+        setResult({ status: 'loading' })
+        getJson(CLONES_URL + '?refresh=1' + (alias ? '&sshAlias=' + encodeURIComponent(alias) : ''))
+          .then(({ clones }) => setResult({ status: 'ready', clones }))
+          .catch(() => setResult({ status: 'error' }))
+      }
+      const loading = result?.status === 'loading'
+      const clones = result?.clones || []
+      return h('div', null,
+        h('div', { className: 'adx-scan' },
+          h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: scan, disabled: disabled || loading },
+            t(loading ? 'settings.scanning' : 'settings.scan')),
+          result?.status === 'ready' && h('span', { className: 'adx-scan-result' },
+            clones.length ? t('settings.scanResult', { n: clones.length }) : t('settings.scanEmpty')),
+          result?.status === 'error' && h('span', { className: 'adx-scan-result', 'data-tone': 'error' },
+            t(alias ? 'settings.ssh.scanFailed' : 'settings.scanFailed'))),
+        clones.length > 0 && h('div', { className: 'adx-scan-clones' }, clones.map((clone) =>
+          h('div', { className: 'adx-scan-clone', key: clone.repo + '\n' + clone.path },
+            h('span', { className: 'adx-scan-clone-repo' }, clone.repo),
+            h('span', { className: 'adx-scan-clone-path', title: clone.path }, clone.path)))),
+        disabled && h('p', { className: 'adx-form-note' }, t('settings.ssh.saveFolders')))
+    }
+
     function SettingsView({ t, store, state, onBack, onSaved, dirtyRef, onClean }) {
       const config = state.config
       // Render the form on the first pass when the config is already loaded, so
@@ -4136,7 +4179,6 @@ window.__ModuleLoader__.load({
       const [notice, setNotice] = useState(null)
       const [saved, setSaved] = useState(false)
       const [refreshCustom, setRefreshCustom] = useState(initial === null ? false : initial.refreshCustom)
-      const [scanState, setScanState] = useState(null)
       const [picking, setPicking] = useState(null)
       const [openScenario, setOpenScenario] = useState(null)
       const [findingAgents, setFindingAgents] = useState(false)
@@ -4425,15 +4467,6 @@ window.__ModuleLoader__.load({
           .finally(() => setFindingAgents(false))
       }
 
-      const scanClones = () => {
-        setScanState({ status: 'loading' })
-        getJson(CLONES_URL + '?refresh=1')
-          .then((payload) => setScanState({ status: 'ready', payload }))
-          .catch((error) =>
-            setScanState({ status: 'error', error: String((error && error.message) || error) }),
-          )
-      }
-
       const dirty =
         form !== null && baseline.current !== null && JSON.stringify(form) !== JSON.stringify(baseline.current)
 
@@ -4556,7 +4589,11 @@ window.__ModuleLoader__.load({
                 }
               : {}),
             ...(Array.isArray(config.sshServers) ? {
-              sshServers: form.sshServers.map(({ alias, agent, cwd }) => ({ alias: alias.trim(), agent, cwd: cwd.trim() })),
+              sshServers: form.sshServers.map(({ alias, agent, cwd, folders, alternatives }) => ({
+                alias: alias.trim(), agent, ...(config.supportsSshRepositoryFolders
+                  ? { folders: folderLines(folders), alternatives: alternatives.filter((id) => id !== agent) }
+                  : { cwd: cwd.trim() }),
+              })),
             } : {}),
             defaultAgent: String(form.defaultAgent || '').trim(),
             terminal: form.terminal || 'auto',
@@ -5016,18 +5053,31 @@ window.__ModuleLoader__.load({
         const rows = form.sshServers
         const agents = configList(config, 'sshAgents')
         const edit = (index, change) => update({ sshServers: rows.map((row, i) => i === index ? { ...row, ...change } : row) })
+        const foldersEnabled = config.supportsSshRepositoryFolders
+        const savedFolders = (row) => config.sshServers.some((server) => server.alias === row.alias.trim() &&
+          sshFolders(server).join('\n') === folderLines(row.folders).join('\n'))
         return h('div', { className: 'adx-agents' },
           h('p', { className: 'adx-form-section-title' }, t('settings.sshServers')),
           rows.map((row, index) => h('div', { key: row._key, className: 'adx-scenario' },
-            ...['alias', 'cwd'].map((key) => h('label', { key, className: 'adx-launch-agent' },
+            ...(foldersEnabled ? ['alias'] : ['alias', 'cwd']).map((key) => h('label', { key, className: 'adx-launch-agent' },
               t('settings.ssh.' + key),
               h('input', { className: 'adx-input', value: row[key], onChange: (event) => edit(index, { [key]: event.target.value }) }))),
+            foldersEnabled && h('label', { className: 'adx-launch-agent' }, t('settings.ssh.folders'),
+              h('textarea', { className: 'adx-textarea', value: row.folders, rows: 2,
+                onChange: (event) => edit(index, { folders: event.target.value }) })),
+            foldersEnabled && h(RepositoryScan, { t, alias: row.alias.trim(), key: JSON.stringify([row.alias, row.folders]),
+              disabled: !savedFolders(row) }),
             h('label', { className: 'adx-launch-agent' }, t('launch.agent'),
               h('select', { className: 'adx-select', value: row.agent, onChange: (event) => edit(index, { agent: event.target.value }) },
                 agents.map((agent) => h('option', { key: agent.id, value: agent.id }, agent.label)))),
+            foldersEnabled && h('fieldset', null, h('legend', null, t('settings.ssh.alternatives')),
+              agents.filter((agent) => agent.id !== row.agent).map(({ id, label }) =>
+                h('label', { key: id }, h('input', { type: 'checkbox', checked: row.alternatives.includes(id),
+                  onChange: (event) => edit(index, { alternatives: event.target.checked
+                    ? [...row.alternatives, id] : row.alternatives.filter((entry) => entry !== id) }) }), label))),
             outlineButton(t('settings.sshRemove'), () => update({ sshServers: rows.filter((_, i) => i !== index) })))),
           outlineButton(t('settings.sshAdd'), () => update({
-            sshServers: [...rows, { _key: newAgentRowKey(), alias: '', cwd: '', agent: agents[0].id }],
+            sshServers: [...rows, { _key: newAgentRowKey(), alias: '', cwd: '', folders: '', alternatives: [], agent: agents[0].id }],
           })))
       }
 
@@ -5409,46 +5459,7 @@ window.__ModuleLoader__.load({
             ),
           ),
         ),
-        h(
-          'div',
-          { className: 'adx-scan' },
-          h(
-            'button',
-            {
-              type: 'button',
-              className: 'adx-btn adx-btn--outline',
-              onClick: scanClones,
-              disabled: scanState !== null && scanState.status === 'loading',
-            },
-            scanState !== null && scanState.status === 'loading' ? t('settings.scanning') : t('settings.scan'),
-          ),
-          scanState !== null && scanState.status === 'ready'
-            ? h(
-                'span',
-                { className: 'adx-scan-result' },
-                (scanState.payload.clones || []).length > 0
-                  ? t('settings.scanResult', { n: (scanState.payload.clones || []).length })
-                  : t('settings.scanEmpty'),
-              )
-            : null,
-          scanState !== null && scanState.status === 'error'
-            ? h('span', { className: 'adx-scan-result', 'data-tone': 'error' }, t('settings.scanFailed'))
-            : null,
-        ),
-        scanState !== null && scanState.status === 'ready' && (scanState.payload.clones || []).length > 0
-          ? h(
-              'div',
-              { className: 'adx-scan-clones' },
-              (scanState.payload.clones || []).slice(0, 8).map((clone) =>
-                h(
-                  'div',
-                  { className: 'adx-scan-clone', key: clone.path },
-                  h('span', { className: 'adx-scan-clone-repo' }, clone.repo),
-                  h('span', { className: 'adx-scan-clone-path', title: clone.path }, clone.path),
-                ),
-              ),
-            )
-          : null,
+        h(RepositoryScan, { t }),
         h(
           Field,
           { label: t('settings.repoPaths'), htmlFor: 'adx-repo-paths', hint: t('settings.repoPathsHint') },

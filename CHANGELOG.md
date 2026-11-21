@@ -5,7 +5,8 @@
 ### Added
 
 - Row and group launchers can copy the exact scenario draft. The row launcher preselects review, re-review or issue triage when applicable and respects saved scenario defaults.
-- Save SSH aliases with a remote working directory and preferred agent, and open an unsent draft on that server. Connection failures offer a retry in the terminal.
+- Save SSH aliases with repository folders and a preferred agent. Remote reviews match working copies by Git remotes, can remember a choice between copies, and show the fallback directory when none matches.
+- Open an unsent draft in the preferred remote agent or choose a configured alternative if it is missing. Declining opens a remote shell. Connection failures offer a retry in the terminal.
 
 ### Changed
 

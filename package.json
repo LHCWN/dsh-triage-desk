@@ -16,6 +16,7 @@
     "github.js",
     "launcher.js",
     "launcher/*.js",
+    "launcher/*.sh",
     "client.js",
     "cordis.patch.yml",
     "locale/*.json",

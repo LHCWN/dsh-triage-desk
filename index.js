@@ -30,6 +30,8 @@ import {
   expandHome,
   normalizeLauncherConfig,
   readSshHostAliases,
+  sshRepositoryScan,
+  REPO_PATTERN,
   scenarioTitle,
 } from './launcher.js'
 import { createAgents } from './host/agents.js'
@@ -443,14 +445,26 @@ export function apply(ctx, config = {}) {
     }
   })
 
-  route(CLONES_PATH, ['GET'], 'triage-desk: GET /triage-desk/clones', async (req, res, { launcherSettings, scanLocalClones }) => {
-    let force = false
+  route(CLONES_PATH, ['GET'], 'triage-desk: GET /triage-desk/clones', async (req, res, { launcherSettings, scanLocalClones, runProcess }) => {
+    const query = new URL(req.url, 'http://127.0.0.1').searchParams
+    const force = query.get('refresh') === '1'
     try {
-      force = new URL(req.url, 'http://127.0.0.1').searchParams.get('refresh') === '1'
-    } catch {
-      force = false
-    }
-    try {
+      if (query.has('sshAlias')) {
+        const server = launcherSettings.sshServers.find((entry) => entry.alias === query.get('sshAlias'))
+        if (!server) {
+          sendJson(res, 400, { ok: false, error: { code: 'bad-destination', message: 'choose a saved SSH destination' } })
+          return
+        }
+        const result = await runProcess(sshRepositoryScan(server), { timeoutMs: 30_000 })
+        if (result.code !== 0 || result.timedOut) throw new Error('remote repository scan failed')
+        const clones = []
+        for (const line of new Set(result.stdout.split('\n'))) {
+          const [repo, path] = line.split('\t')
+          if (REPO_PATTERN.test(repo) && path?.startsWith('/')) clones.push({ repo, path })
+        }
+        sendJson(res, 200, { ok: true, clones })
+        return
+      }
       const scan = await scanLocalClones(force)
       const roots = Array.isArray(scan.roots) ? scan.roots : []
       const dirs = roots.map((dir) => {

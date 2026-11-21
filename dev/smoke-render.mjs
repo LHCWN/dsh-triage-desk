@@ -609,6 +609,9 @@ function settingsHarness({
       if (url === '/triage-desk/pick-directory' || url === '/triage-desk/pick-clone') {
         return new Promise((resolve, reject) => pendingPickers.push({ resolve, reject, url }))
       }
+      if (url === '/triage-desk/clones?refresh=1&sshAlias=old') {
+        return Promise.resolve(response(200, { ok: true, clones: [{ repo: 'acme/widgets', path: '/original/fork' }] }))
+      }
       if (url === '/triage-desk/agents/find') {
         return new Promise((resolve, reject) => pendingDiscoveries.push({ resolve, reject, body: JSON.parse(options.body) }))
       }
@@ -1333,7 +1336,7 @@ function menuAction(harness, label) {
 
 {
   const harness = settingsHarness({ agents: [], configExtra: { defaultAgent: 'dsh', defaultScenario: '',
-    supportsTaskDefault: true, sshServers: [{ alias: 'old', cwd: '/original', agent: 'claude' }],
+    supportsSshRepositoryFolders: true, supportsTaskDefault: true, sshServers: [{ alias: 'old', cwd: '/original', agent: 'claude' }],
     sshAgents: [{ id: 'claude', label: 'Claude' }, { id: 'codex', label: 'Codex' }] } })
   await harness.flush()
   harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
@@ -1342,18 +1345,26 @@ function menuAction(harness, label) {
     .map((node) => flattenTree(node.props.children).find((child) => child.type === type))
   assert.ok(harness.text().includes('settings.byTask'))
   assert.equal(harness.nodes().find((node) => node.props?.id === 'adx-default-scenario').props.value, '')
+  assert.equal(fields('settings.ssh.folders', 'textarea')[0].props.value, '/original')
+  harness.click(action('settings.scan'))
+  await harness.flush()
+  assert.ok(harness.text().includes('acme/widgets'))
+  assert.ok(harness.text().includes('/original/fork'))
   harness.click(action('settings.sshAdd'))
   harness.click(action('settings.sshRemove'))
   harness.change(fields('settings.ssh.alias', 'input')[0], 'build')
-  harness.change(fields('settings.ssh.cwd', 'input')[0], '/work one')
+  harness.change(fields('settings.ssh.folders', 'textarea')[0], '/work one\n/another')
   harness.change(fields('launch.agent', 'select')[0], 'codex')
+  fields('Claude', 'input')[0].props.onChange({ target: { checked: true } })
+  await harness.flush()
   harness.click(action('settings.sshAdd'))
   harness.change(fields('settings.ssh.alias', 'input')[1], 'test')
-  harness.change(fields('settings.ssh.cwd', 'input')[1], '/work two')
+  harness.change(fields('settings.ssh.folders', 'textarea')[1], '/work two')
   harness.click(action('settings.save'))
   assert.equal(harness.pending[0].body.defaultScenario, '')
   assert.deepEqual(harness.pending[0].body.sshServers, [
-    { alias: 'build', cwd: '/work one', agent: 'codex' }, { alias: 'test', cwd: '/work two', agent: 'claude' },
+    { alias: 'build', folders: ['/work one', '/another'], alternatives: ['claude'], agent: 'codex' },
+    { alias: 'test', folders: ['/work two'], alternatives: [], agent: 'claude' },
   ])
   harness.dispose()
 }
