@@ -718,8 +718,11 @@ await recordAsync('section launch payload errors are classified', async () => {
 })
 
 await recordAsync('unknown URL, unknown agent, and a missing binary are rejected', async () => {
-  const badUrl = await json(await callHandler('/triage-desk/launch', 'POST', { url: 'https://example.com/x', agent: 'claude' }))
-  assert.equal(badUrl.error.code, 'bad-url')
+  for (const url of ['not a URL', 'https://example.com/x', { invalid: true }]) {
+    const response = await callHandler('/triage-desk/launch', 'POST', { url, agent: 'claude' })
+    assert.equal(response.statusCode, 400)
+    assert.equal((await json(response)).error.code, 'bad-url')
+  }
   const unknown = await json(await callHandler('/triage-desk/launch', 'POST', { url: PR_URL, agent: 'nope' }))
   assert.equal(unknown.error.code, 'unknown-agent')
   const missing = await json(await callHandler('/triage-desk/launch', 'POST', { url: PR_URL, agent: 'missing' }))

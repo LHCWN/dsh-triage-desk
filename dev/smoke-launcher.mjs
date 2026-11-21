@@ -481,6 +481,14 @@ check('stock legacy links migrate to task selection and edited prompts survive',
   const custom = normalizeLauncherConfig({ defaultScenario: 'link', scenarios: [{ ...link, prompt: 'Explain {url}' }] })
   assert.equal(custom.scenarios[0].prompt, 'Explain {url}')
   assert.equal(custom.defaultScenario, 'link')
+  for (const change of [{ agent: 'codex' }, { sections: ['review'] }, { enabled: false }, { scope: 'section' }]) {
+    const saved = normalizeLauncherConfig({ defaultScenario: 'link', scenarios: [{ ...link, prompt: '', ...change }] })
+    const retained = saved.scenarios.find(({ id }) => id === 'link')
+    assert.ok(retained, JSON.stringify(change))
+    assert.equal(retained.prompt, '{url}')
+    for (const [key, value] of Object.entries(change)) assert.deepEqual(retained[key], value)
+    assert.equal(saved.defaultScenario, change.enabled === false || change.scope === 'section' ? '' : 'link')
+  }
 })
 
 check('scenarios are capped in configured order', () => {

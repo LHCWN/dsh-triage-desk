@@ -85,16 +85,15 @@ export function createLaunch({
     }
   }
 
-  const resolveScenario = (body) => {
+  const resolveScenario = (body, item) => {
     const requested = typeof body.scenario === 'string' ? body.scenario.trim() : ''
     if (requested !== '') {
       const scenario = launcherSettings.scenarios.find((entry) => entry.id === requested)
       if (scenario === undefined) throw new LaunchError('bad-scenario', `the scenario "${requested}" is not configured`)
       return scenario
     }
-    const item = body.url && itemLaunchContext(body, body.url)
     const scope = Array.isArray(body.urls) ? 'section' : 'item'
-    const route = parseRepoUrl(body.url) && new URL(body.url).pathname.split('/').filter(Boolean)[2]
+    const route = item && new URL(item.url).pathname.split('/').filter(Boolean)[2]
     const kind = item?.kind || (route === 'issues' ? 'issue' : route === 'pull' ? 'pull' : '')
     const section = body.section || item?.section || (kind === 'issue' ? 'issues' : kind === 'pull' ? 'review' : '')
     const available = launcherSettings.scenarios.filter((entry) => entry.enabled && entry.scope === scope &&
@@ -194,7 +193,10 @@ export function createLaunch({
 
   /** Resolves the scenario and renders its prompt without launching anything. */
   const renderScenarioPrompt = (body) => {
-    const scenario = resolveScenario(body)
+    const url = typeof body.url === 'string' ? body.url.trim() : ''
+    const parsed = parseRepoUrl(url)
+    const item = parsed ? itemLaunchContext(body, url) : null
+    const scenario = resolveScenario(body, item)
     if (scenario.scope === 'section') {
       const section = typeof body.section === 'string' ? body.section.trim() : ''
       if (!SCENARIO_SECTION_IDS.includes(section)) {
@@ -209,10 +211,7 @@ export function createLaunch({
       const repo = included.every((item) => item.repo.toLowerCase() === slug) ? items[0].repo : ''
       return { scenario, scope: 'section', items, repo, prompt: built.prompt, trimmed: built.trimmed, count: items.length }
     }
-    const url = typeof body.url === 'string' ? body.url.trim() : ''
-    const parsed = parseRepoUrl(url)
-    if (parsed === null) throw new LaunchError('bad-url', 'the row has no GitHub URL')
-    const item = itemLaunchContext(body, url)
+    if (!parsed) throw new LaunchError('bad-url', 'the row has no GitHub URL')
     const built = renderPrompt(scenario, { item })
     return { scenario, scope: 'item', repo: parsed.slug, item, prompt: built.prompt, trimmed: null, count: 1 }
   }
