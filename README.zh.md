@@ -9,7 +9,7 @@
 
 一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）插件，每天早上只回答一个问题：**现在有什么需要我处理？** 它把 GitHub 动态汇总成一个收件箱面板：等待你审核的 PR、可以合并的自己的 PR、需要答复的讨论、失败的 CI，以及新的或分配给你的议题。可复制场景提示，或在 DSH、本地智能体或已保存的 SSH 目标中将其作为草稿打开。收件箱通过已登录的本地 GitHub CLI 读取数据。
 
-<img src="docs/screenshots/inbox.png" width="900" alt="审核标签页中的首次审核、复审和我的 PR 收到的反馈">
+<img src="docs/screenshots/inbox.png" width="900" alt="分诊收件箱中显示待复审的 PR、我的 PR 收到的反馈、可以合并的 PR 和分配给我的议题">
 
 [English](README.md) · [参考文档（英文）](docs/REFERENCE.md) · [架构](docs/ARCHITECTURE.md) · [更新日志](CHANGELOG.md)
 
@@ -26,9 +26,9 @@
 - **来源与语言**：个人仓库加最多 10 个组织；面板跟随 DSH 的界面语言（英文或中文）。
 - **大型组织**：像 `llvm` 这样大的组织会以精简模式加载，而不是直接失败（[详情](docs/REFERENCE.md#large-sources)）。
 
-*分诊* 旁的计数表示需要你处理的事项；将鼠标悬停或聚焦在计数上，可查看它未计入的内容。
+<img src="docs/screenshots/reviews.png" width="900" alt="审核标签页显示上次审核后有新提交的 PR，以及我的 PR 上的回复反馈链接">
 
-<img src="docs/screenshots/count-hint.png" width="697" alt="关注计数的提示：7 项需要你处理，未计入 13 个新议题和 2 个可选审核">
+*分诊* 旁的计数表示需要你处理的事项；将鼠标悬停或聚焦在计数上，可查看它未计入的内容。
 
 每项功能的完整说明见[参考文档](docs/REFERENCE.md#inbox)。
 
@@ -81,6 +81,8 @@ dsh plugin --profile <profile> add dsh-triage-desk@latest
 发送后，审核类场景会在 GitHub 上提交一次审核，以行内评论给出发现的问题并标注 `[P1]`–`[P3]`，从不批准。修复和回复类场景在推送或发布前会等待你确认；分诊只汇报结果。所有场景都不会添加 AI 署名。
 
 **SSH 目标。** 在**设置 → 终端与智能体 → SSH 目标**中添加 OpenSSH 别名、首选智能体及该服务器可用的备选智能体。在**仓库文件夹**中每行填写一个远程绝对路径。保存后可点击**查找仓库**，通过非交互式 SSH 查看 GitHub 仓库名称及路径。本地仓库文件夹单独搜索，已有设置继续生效。
+
+<img src="docs/screenshots/settings-launch.png" width="691" alt="终端与智能体设置中已选择 Ghostty，并显示提示传递方式和添加 SSH 目标的按钮">
 
 启动时，终端将草稿中实际包含的 PR 的 `owner/repo` 与这些文件夹内的 Git 远程地址进行匹配，包括派生仓库的 `upstream` 和服务器 SSH 配置中直接指向 GitHub 的主机别名。如果找到多个工作副本，可选择路径，并为当前仓库和 SSH 别名记住选择。每次启动都会重新验证路径。如果没有匹配项，或本次审核涉及多个仓库，终端会说明原因并显示实际目录。依次使用第一个可进入的已配置文件夹或远程用户的主目录。启动器不会自动克隆仓库。
 
