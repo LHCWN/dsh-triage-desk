@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Changed
+
+- The Reviews tab groups first reviews, repeat reviews and feedback on your PRs.
+  A direct re-request offers the re-review scenario on both unchanged and updated heads.
+  Feedback rows link to the conversation or the files with requested changes.
+  Saved scenarios for *Needs your action* also apply to the new feedback group.
+
 ### Fixed
 
 - *Ready to merge* honors the green-check requirement for approved PRs even

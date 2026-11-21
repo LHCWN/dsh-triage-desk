@@ -14,20 +14,19 @@ issues. One click opens a coding agent on any item with a prepared prompt that
 you review before sending. Everything runs locally through the GitHub CLI; the
 plugin never stores or forwards a token.
 
-<img src="docs/screenshots/inbox.png" width="900" alt="The Triage panel in DSH: the attention count, section tabs, source filters, and pull requests waiting for review with their CI status">
+<img src="docs/screenshots/inbox.png" width="900" alt="The Reviews tab with first reviews, repeat reviews, and feedback on my PRs">
 
 [简体中文](README.zh.md) · [Reference](docs/REFERENCE.md) · [Architecture](docs/ARCHITECTURE.md) · [Changelog](CHANGELOG.md)
 
 ## What it shows
 
-- **Waiting for your review**: PRs that request your review (directly or through a team) at a head you have not reviewed.
-- **Re-review needed**: PRs with new commits since your review, a re-request, or an author reply to you.
+- **Reviews** shows whose turn it is on a PR. **Awaiting my review** lists direct or team requests. **Awaiting my re-review** offers a pass over changes and replies since your review when the author re-requests you (even on the same commit), pushes new commits, or replies to you. **Feedback on my PRs** lets you reply to comments or open the changed files to address requested changes.
 - **Ready to merge** lists your mergeable PRs that have approval or need none. By default, checks must pass or be absent. A PR with failing checks appears under *CI is failing*. Once its checks pass, it enters *Ready to merge* on the next refresh if otherwise eligible.
-- **Needs your action**: requested changes, conflicts, reviewer comments, assigned issues, and unanswered mentions.
+- **Needs your action**: merge conflicts, assigned issues, and unanswered mentions.
 - **CI is failing**: red checks on your PRs, on default branches you maintain, and on branches whose latest commit you authored in the last week.
 - **New in your repositories**: unassigned issues from the last 30 days, kept out of the attention counter.
 - **Snooze**: per row, per section, or a selection, until new activity, tomorrow, or next week.
-- **Launch scenarios**: named, editable prompts that open a coding agent in the local clone or a new DSH chat.
+- **Launch scenarios**: named, editable prompts that open a coding agent in the local clone or a new DSH chat. On upgrade, saved scenarios for **Needs your action** also apply to **Feedback on my PRs**. You can edit either binding in Settings.
 - **Agent tool**: `triage_desk` gives a DSH agent the same snapshot and can open a terminal on request.
 - **Sources and languages**: personal repositories plus up to 10 organizations; the panel follows the DSH language (English or Chinese).
 - **Large organizations**: organizations as big as `llvm` load in a lighter mode instead of failing ([details](docs/REFERENCE.md#large-sources)).

@@ -52,7 +52,7 @@ const NEW_ISSUE_WINDOW_DAYS = 30
 // list to be triage material (org:llvm: about 1,300), so it lists none and
 // gets the narrow branch scan for that build.
 const LARGE_NEW_ISSUES = 500
-const SECTION_IDS = ['review', 'rereview', 'merge', 'respond', 'ci', 'issues']
+const SECTION_IDS = ['review', 'rereview', 'feedback', 'merge', 'respond', 'ci', 'issues']
 
 /*
  * GraphQL cost (GitHub's documented formula): add up the requests needed to
@@ -739,14 +739,7 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
     throw new GhError('no-sources', 'no sources are enabled; add an organization or enable personal repositories')
   }
 
-  const sections = {
-    review: [],
-    rereview: [],
-    merge: [],
-    respond: [],
-    ci: [],
-    issues: [],
-  }
+  const sections = Object.fromEntries(SECTION_IDS.map((id) => [id, []]))
   const reviewIds = new Set()
   const respondIds = new Set()
   const issueIds = new Set()
@@ -1242,7 +1235,7 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
           reviewAuthor.login &&
           (meLogins.has(reviewAuthor.login) || (settings.includeBotReviews && isBotAuthor(reviewAuthor))),
       )
-    const myReviews = reviews.filter((review) => review && review.author && isMineAuthor(review.author))
+    const myReviews = reviews.filter((review) => review && review.submittedAt && isMineAuthor(review.author))
     const myComments = comments.filter((comment) => comment && comment.author && meLogins.has(comment.author.login))
     const windowedReview = latestReview(myReviews)
     const viewerLatestReview =
@@ -1293,9 +1286,8 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
         )
         .map((comment) => comment.createdAt),
     )
-    const otherLastReview = latestReview(otherReviews)
     // Inline follow-ups can arrive after the review was submitted. Count
-    // them like top-level comments, including when comparing an approval.
+    // them like top-level comments when checking whether an answer is due.
     const otherLastCommentAt = maxIso([
       ...otherComments.map((comment) => comment && comment.createdAt),
       ...threadComments
@@ -1306,12 +1298,6 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
       ...otherReviews.map((review) => review.submittedAt),
       otherLastCommentAt,
     ])
-    // A newer approval is not a request for changes; it moves the PR toward
-    // the merge section instead of the "needs your action" one.
-    const lastOtherIsApproval =
-      otherLastReview !== null &&
-      otherLastReview.state === 'APPROVED' &&
-      time(otherLastReview.submittedAt) >= time(otherLastCommentAt)
     const lastReviewNode = latestReview(reviews)
     const lastActivityAt = maxIso([otherLastAt, myLastActionAt])
     const commitNode = pr.commits && pr.commits.nodes && pr.commits.nodes[0]
@@ -1393,40 +1379,30 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
       (headOid !== null && myReviewOid !== null ? myReviewOid === headOid : time(myLastReview.submittedAt) >= time(headAt))
     const shortHead = headOid !== null ? headOid.slice(0, 7) : null
 
-    if (!base.draft && !isMine && requestedFromMe) {
-      if (!reviewedHead) {
-        const reviewedByOthers = reviews.some(
-          (review) => review && review.author && !isMineAuthor(review.author) && review.state === 'APPROVED',
-        )
-        const details = []
-        details.push(directRequest ? 'direct review request' : `team ${teamRequest} request (you are a member)`)
-        if (firstPassDetail !== null) details.push(firstPassDetail)
-        // Optional only while someone else's approval stands and GitHub does
-        // not report missing or blocking reviews: then this request no longer
-        // gates the merge, and the panel leaves it out of the attention badge.
-        const optional =
-          reviewedByOthers && base.reviewDecision !== 'REVIEW_REQUIRED' && base.reviewDecision !== 'CHANGES_REQUESTED'
-        if (optional) details.push('already approved by someone else; your review is optional')
-        const item = {
-          ...base,
-          section: 'review',
-          reason: directRequest ? 'review-requested' : 'team-review-requested',
-          reasonDetail: details.join('; '),
-          optional,
-          waitingOn: [directRequest ? 'you' : `team:${teamRequest}`],
-        }
-        sections.review.push(item)
-        reviewIds.add(item.id)
+    // Another reviewer's approval can satisfy either a first or repeat request.
+    const optional = requestedFromMe && base.reviewDecision !== 'REVIEW_REQUIRED' &&
+      base.reviewDecision !== 'CHANGES_REQUESTED' && otherReviews.some((review) => review.state === 'APPROVED')
+    const optionalDetail = 'already approved by someone else; your review is optional'
+    // Direct requests clear on submission. Team requests can outlive a member's review.
+    const reRequested = directRequest && myLastReview !== null
+    if (!base.draft && !isMine && requestedFromMe && !reviewedHead && !reRequested) {
+      const details = [directRequest ? 'direct review request' : `team ${teamRequest} request (you are a member)`]
+      if (firstPassDetail !== null) details.push(firstPassDetail)
+      if (optional) details.push(optionalDetail)
+      const item = {
+        ...base,
+        section: 'review',
+        reason: directRequest ? 'review-requested' : 'team-review-requested',
+        reasonDetail: details.join('; '),
+        optional,
+        waitingOn: [directRequest ? 'you' : `team:${teamRequest}`],
       }
+      sections.review.push(item)
+      reviewIds.add(item.id)
     }
 
     if (!base.draft && !isMine && myLastReview !== null && !reviewIds.has(base.id)) {
       const newHead = !reviewedHead && ((headOid !== null && myReviewOid !== null) || headAt !== null)
-      // GitHub drops a reviewer from the pending requests once they
-      // review, so a direct request listed again after my review is the
-      // author's explicit "Re-request review". Team requests are not used:
-      // they can outlive one member's review.
-      const reRequested = directRequest
       // A re-review is justified by new commits, an explicit re-request, or
       // the author replying to me: a threaded reply to my comment or an
       // @-mention in a comment. Other activity alone does not ask me for
@@ -1438,15 +1414,17 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
         const details = []
         if (newHead) details.push(shortHead !== null ? `new head ${shortHead} committed ${headAt}` : `new head committed ${headAt}`)
         if (reRequested) details.push('the author re-requested your review')
+        if (reRequested && optional) details.push(optionalDetail)
         if (authorReplied) details.push(`author replied to you at ${authorLastReplyToMeAt}`)
         if (myLastActionAt !== null) details.push(`your last action was ${myLastActionAt}`)
         sections.rereview.push({
           ...base,
           section: 'rereview',
+          optional: reRequested && optional,
           // New commits and explicit re-requests are the main triggers; an
           // author reply alone is secondary and rendered quieter.
-          rereviewCause: newHead ? 'new-head' : reRequested ? 're-requested' : 'author-reply',
-          reason: newHead || !reRequested ? 'changes-after-my-review' : 're-review-requested',
+          rereviewCause: reRequested ? 're-requested' : newHead ? 'new-head' : 'author-reply',
+          reason: reRequested ? 're-review-requested' : 'changes-after-my-review',
           reasonDetail: details.join('; '),
         })
       }
@@ -1470,17 +1448,20 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
     if (isMine && !base.draft) {
       const reasons = []
       if (base.reviewDecision === 'CHANGES_REQUESTED') reasons.push('changes-requested')
+      const feedbackAt = maxIso([otherLastCommentAt, ...otherReviews
+        .filter((review) => review.state === 'COMMENTED' || review.state === 'CHANGES_REQUESTED')
+        .map((review) => review.submittedAt)])
+      if (feedbackAt !== null && time(feedbackAt) > time(myLastActionAt)) reasons.push('review-feedback')
+      const section = reasons.length > 0 ? 'feedback' : 'respond'
       if (base.mergeable === 'CONFLICTING') reasons.push('conflict')
-      const newerActivity = otherLastAt !== null && (myLastActionAt === null || time(otherLastAt) > time(myLastActionAt))
-      if (newerActivity && !lastOtherIsApproval) reasons.push('review-feedback')
       if (reasons.length > 0) {
-        sections.respond.push({
+        sections[section].push({
           ...base,
-          section: 'respond',
+          section,
           reason: reasons[0],
           reasonDetail: reasons.join('; '),
         })
-        respondIds.add(base.id)
+        if (section === 'respond') respondIds.add(base.id)
       }
     }
 
@@ -1812,12 +1793,14 @@ function sortSections(sections) {
     if (leftSecondary !== rightSecondary) return leftSecondary - rightSecondary
     return time(right.lastActivity && right.lastActivity.at) - time(left.lastActivity && left.lastActivity.at)
   })
-  sections.merge.sort((left, right) => time(right.updatedAt) - time(left.updatedAt))
+  const newestUpdated = (left, right) => time(right.updatedAt) - time(left.updatedAt)
+  sections.feedback.sort(newestUpdated)
+  sections.merge.sort(newestUpdated)
   sections.respond.sort((left, right) => {
     const leftPull = left.kind === 'pull' ? 0 : 1
     const rightPull = right.kind === 'pull' ? 0 : 1
     if (leftPull !== rightPull) return leftPull - rightPull
-    return time(right.updatedAt) - time(left.updatedAt)
+    return newestUpdated(left, right)
   })
   sections.ci.sort((left, right) => {
     const leftPull = left.kind === 'pull' ? 0 : 1
