@@ -5,7 +5,7 @@ import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { buildSshScripts, sshRepositoryScan, sshAgentProbe, configuredSshHosts } from '../launcher.js'
+import { buildSshShellScripts, buildSshScripts, sshRepositoryScan, sshAgentProbe, configuredSshHosts } from '../launcher.js'
 import { pythonWithPty, removeOnExit } from './fixtures/platform.mjs'
 import { assertUnsentPaste } from './fixtures/paste.mjs'
 
@@ -115,6 +115,12 @@ async function checkRemoteChoices() {
     return run('sh .triage-desk-*.sh', input)
   }
   const actual = await Promise.all(copies.map((folder) => fs.realpath(folder)))
+  const shell = buildSshShellScripts(server, 'linux', 'acme/widgets')
+  run(shell.stage)
+  run('sh .triage-desk-*.sh', '1\nn\n')
+  assert.equal((await fs.readFile(record + '.shell', 'utf8')).trimEnd(), actual[0])
+  await fs.unlink(record + '.shell')
+  await assert.rejects(fs.access(record), { code: 'ENOENT' })
   const scan = () => run(sshRepositoryScan({ ...server, folders: ['~/projects'] }).at(-1)).trimEnd().split('\n')
   assert.deepEqual(scan(), actual.map((dir) => 'acme/widgets\t' + dir))
   await fs.writeFile(sshConfig, 'HostName gitlab.example\n' + aliases)

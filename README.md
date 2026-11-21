@@ -99,6 +99,11 @@ your edits. **Open** delivers the draft without sending it. **Copy prompt** copi
 your edited text and the row's **Copy link** copies the URL. An inbox refresh keeps
 your open draft and its original items. Reopen the editor to use the updated list.
 
+Choose **Terminal** in the **Agent** list to open a shell on **This computer** or
+the selected SSH host. A single-repository task opens in its working copy when
+available. The shell opens with an empty command line and preserves your
+clipboard. Switching back to an agent before opening restores your edited draft.
+
 <img src="docs/screenshots/group-prompt.png" width="400" alt="Codex on This computer with an editable prompt to draft replies to feedback on two PRs">
 
 Opening the first-review group includes its visible first reviews, even in **All**.

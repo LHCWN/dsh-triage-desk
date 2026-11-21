@@ -627,7 +627,7 @@ function settingsHarness({
         return Promise.resolve(response(200, url === '/triage-desk/launch'
           ? {
               ok: true,
-              mode: 'draft',
+              mode: body.target === 'terminal' ? 'shell' : 'draft',
               cwd: '/work',
               count: trimmed?.shown ?? (body.urls ? body.urls.length : 1),
               trimmed,
@@ -1447,6 +1447,37 @@ const runOnConfig = { supportsRunOn: true, supportsTaskDefault: true, defaultSce
   assert.deepEqual(harness.host.probed, ['builder', 'staging', 'staging'])
   assert.equal(harness.launches.at(-1).body.sshAlias, 'staging')
   assert.equal(harness.launches.at(-1).body.draft, 'Preserve this edit')
+  harness.dispose()
+}
+
+for (const machine of ['', 'staging']) {
+  const harness = settingsHarness({ snapshotPayload: snapshot, configExtra: { ...runOnConfig, supportsTerminalTarget: true } })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'launch.title'))
+  await harness.flush()
+  harness.host.sshAgents = []
+  if (machine) {
+    harness.change(labeledControl(harness, 'launch.machine'), machine)
+    await harness.flush()
+  }
+  const picker = () => labeledControl(harness, 'launch.agent')
+  const terminal = flattenTree(picker().props.children).find((node) => node.type === 'option' && node.props.children.includes('launch.terminalTarget'))
+  assert.ok(terminal, 'offer a terminal regardless of installed agents')
+  if (!machine) {
+    harness.change(labeledControl(harness, 'launch.prompt', 'textarea'), 'Keep this draft')
+    harness.change(picker(), terminal.props.value)
+    harness.change(picker(), 'claude')
+    assert.equal(labeledControl(harness, 'launch.prompt', 'textarea').props.value, 'Keep this draft')
+  }
+  harness.change(picker(), terminal.props.value)
+  assert.equal(labeledControl(harness, 'launch.prompt', 'textarea'), undefined)
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('launch.open')))
+  await harness.flush()
+  const body = harness.launches.at(-1).body
+  assert.equal(body.target, 'terminal')
+  assert.equal(body.sshAlias, machine || undefined)
+  assert.equal(body.agent, undefined)
+  assert.equal(body.draft, undefined)
   harness.dispose()
 }
 

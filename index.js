@@ -603,11 +603,9 @@ export function apply(ctx, config = {}) {
       + 'issues in their repositories. Call this before answering '
       + 'questions like "what needs my attention", "what should I review", "can I merge", or '
       + '"what is waiting on me". '
-      + 'Use action "launch" only when the user explicitly asks to open a coding agent in a terminal for a '
-      + 'specific GitHub pull request or issue: it opens a terminal at the local clone of the repository, '
-      + 'starts the configured agent with the prompt pre-filled in its input (Claude Code) or copies the prompt '
-      + 'to the clipboard for other agents; nothing is sent automatically, the user reviews and presses Enter. '
-      + 'If no local clone is found, it opens the agent in the current workspace instead.',
+      + 'Use action "launch" when explicitly asked to open a terminal or coding agent for a GitHub pull request or issue. '
+      + 'Use target "terminal" for a plain interactive shell. For a coding agent, omit target and optionally provide its agent id. '
+      + 'Both open in the local working copy when available, otherwise in the workspace.',
     parameters: {
       type: 'object',
       properties: {
@@ -617,6 +615,7 @@ export function apply(ctx, config = {}) {
           description: 'What to do: build the triage report (default) or open a terminal for one URL.',
         },
         url: { type: 'string', description: 'Required with action "launch": the GitHub pull request or issue URL.' },
+        target: { type: 'string', enum: ['terminal'], description: 'Set for a plain terminal without a coding agent.' },
         agent: {
           type: 'string',
           description: 'Optional with action "launch": the configured agent id; the default agent is used otherwise.',
@@ -663,7 +662,10 @@ export function apply(ctx, config = {}) {
         }
         try {
           // launchForItem reads the row context from the cached snapshot itself.
-          const result = await launchForItem({ url: input.url, agent: input.agent }, signal)
+          const result = await launchForItem({ url: input.url, agent: input.agent, target: input.target }, signal)
+          if (result.mode === 'shell') {
+            return { text: `Opened ${result.terminal?.label || 'terminal'} at ${result.cwd} for ${result.repo}.`, launched: result }
+          }
           const where = `Opened ${result.agent.label}${result.terminal ? ' in ' + result.terminal.label : ''} at ${result.cwd} for ${result.repo}`
           const prefix =
             result.mode === 'draft'
@@ -709,7 +711,7 @@ export function apply(ctx, config = {}) {
       + 'what needs their attention on GitHub, what to review or re-review, or what they can merge, call '
       + 'triage_desk before answering and summarize the result in their language. '
       + 'When they explicitly ask to open a terminal or an agent on a pull request or issue, call triage_desk with '
-      + 'action "launch" and that URL; never launch an agent on your own initiative.',
+      + 'action "launch" and that URL. Set target "terminal" for a plain shell. Never launch on your own initiative.',
   })
 
   // Clean launcher scratch directories left by previous launches.
