@@ -148,8 +148,7 @@ export function createLaunch({
   }
 
   /** Item context for a section launch; invalid and duplicate URLs are dropped. */
-  const sectionLaunchItems = (section, urls, boundSections) => {
-    const preferredSections = [section, ...boundSections.filter((id) => id !== section)]
+  const sectionLaunchItems = (section, urls) => {
     const items = []
     const seen = new Set()
     for (const raw of urls) {
@@ -157,9 +156,15 @@ export function createLaunch({
       const url = raw.trim()
       if (url === '' || seen.has(url) || parseRepoUrl(url) === null) continue
       seen.add(url)
-      const snapshotEntry = findSnapshotEntry(url, preferredSections)
-      if (snapshotEntry !== null) items.push({ ...snapshotEntry.item, url, section: snapshotEntry.section })
-      else items.push({ url, section })
+      const entry = findSnapshotEntry(url, section) ?? findSnapshotEntry(url)
+      const item = { url, section }
+      if (entry !== null) {
+        // A moved PR keeps its descriptive fields. Its reason belongs to its new group.
+        for (const key of ITEM_FIELDS) {
+          if (key !== 'reason' || entry.section === section) item[key] = entry.item[key]
+        }
+      }
+      items.push(item)
     }
     return items
   }
@@ -181,7 +186,7 @@ export function createLaunch({
         throw new LaunchError('bad-scenario', 'a section scenario needs a valid section')
       }
       if (!Array.isArray(body.urls)) throw new LaunchError('bad-scenario', 'a section scenario needs a list of URLs')
-      const items = sectionLaunchItems(section, body.urls, scenario.sections)
+      const items = sectionLaunchItems(section, body.urls)
       if (items.length === 0) throw new LaunchError('bad-url', 'no GitHub URLs were provided')
       const built = renderPrompt(scenario, { items, section })
       return { scenario, scope: 'section', items, prompt: built.prompt, trimmed: built.trimmed, count: items.length }
@@ -370,7 +375,8 @@ export function createLaunch({
       }
       await writeLauncherScript(launcherFile, script)
       if (signal !== undefined && signal.aborted === true) throw new LaunchError('aborted', 'the launch was cancelled')
-      opened = await openTerminal(launcherFile, windowTitle, signal, launcherSettings.terminal)
+      // Equal batch sizes can have different PRs. Every batch must deliver its own draft.
+      opened = await openTerminal(launcherFile, windowTitle, signal, launcherSettings.terminal, rendered.scope === 'item')
       // iTerm2 and Ghostty plans run `activate` in their own AppleScript, so
       // only nudge Terminal.app forward when the launcher actually used it;
       // `open -a Terminal` with no file would otherwise pop an empty window.

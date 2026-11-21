@@ -82,14 +82,12 @@ export function createSnapshotStore({ ctx, settings, resolveGh, log: safeLog, pr
     return own
   }
 
-  /** Snapshot row for a URL, preferring the section the user launched from. */
-  const findSnapshotEntry = (url, preferredSections) => {
+  /** Snapshot row for a URL, restricted to the originating group for a batch. */
+  const findSnapshotEntry = (url, sectionId) => {
     const snapshot = fallbackSnapshot()
     if (snapshot === null || !Array.isArray(snapshot.sections)) return null
-    const sections = preferredSections
-      ? preferredSections.map((id) => snapshot.sections.find((section) => section.id === id))
-      : snapshot.sections
-    for (const section of sections) {
+    for (const section of snapshot.sections) {
+      if (sectionId && section?.id !== sectionId) continue
       for (const item of (section && section.items) || []) {
         if (item && item.url === url) return { section: section.id, item }
       }

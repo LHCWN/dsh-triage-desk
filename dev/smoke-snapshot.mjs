@@ -1375,14 +1375,26 @@ await check('bulk scenarios use the selected queue for a PR with feedback and fa
   const { ctx, captured } = hostCtx(fakeCtx({ prs: () => [pr] }))
   apply(ctx, { cwd: process.cwd() })
   assert.equal((await captured.tool.execute({})).status, 'ok')
-  const req = Readable.from([Buffer.from(JSON.stringify({ scenario: 'fix-mine', section: 'ci', urls: [pr.url] }))])
-  req.method = 'POST'
-  let body
-  await captured.routes.get('/triage-desk/prompt').handler(req, {
-    setHeader() {}, end(text) { body = JSON.parse(text) },
-  })
-  assert.match(body.prompt, /sections: failing CI/)
-  assert.match(body.prompt, /reason: checks are failing/)
+  const promptFor = async (section) => {
+    const req = Readable.from([Buffer.from(JSON.stringify({ scenario: 'fix-mine', section, urls: [pr.url] }))])
+    req.method = 'POST'
+    let body
+    await captured.routes.get('/triage-desk/prompt').handler(req, {
+      setHeader() {}, end(text) { body = JSON.parse(text) },
+    })
+    assert.equal(body.count, 1)
+    assert.ok(body.prompt.includes(pr.url))
+    return body.prompt
+  }
+  const ci = await promptFor('ci')
+  assert.match(ci, /sections: failing CI/)
+  assert.match(ci, /reason: checks are failing/)
+  // A stale panel still shows this PR in merge. Its draft must keep that
+  // group even though the cached snapshot now has it in CI and feedback.
+  const merge = await promptFor('merge')
+  assert.match(merge, /sections: ready to merge/)
+  assert.ok(merge.includes(`- [PR 176](${pr.url}) — acme/app#176, author ${ME}`))
+  assert.doesNotMatch(merge, /, reason:/)
 })
 
 await check('a refresh that loses every source keeps the previous snapshot as stale', async () => {

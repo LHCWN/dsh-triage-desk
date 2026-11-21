@@ -458,7 +458,7 @@ export function createProcesses({ ctx, settings, platform }) {
   const openTerminal = async (scriptPath, title, signal, choice = TERMINAL_AUTO, reuse = true) => {
     const resolved = await resolveTerminal(choice)
     const capabilities = { scriptPath, title, ...resolved.capabilities }
-    if (platform === 'linux') {
+    if (reuse && platform === 'linux') {
       const raiser = await detectLinuxRaiser()
       capabilities.wmctrl = raiser.wmctrl
       capabilities.xdotool = raiser.xdotool

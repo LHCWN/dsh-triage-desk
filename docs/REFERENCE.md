@@ -116,8 +116,8 @@ Other panel features:
   step aside. A bottom bar offers *Snooze* (or *Unsnooze* in the Snoozed view),
   *Select all* / *Deselect all*, and *Done*. A PR listed in two sections is one
   selected item. A filter, source, or search change clears the selection but
-  keeps the mode; Done, Escape, or a finished bulk action leave it. One toast
-  with one *Undo* covers the whole bulk action.
+  keeps the mode. Use *Done* or Escape to leave it. Bulk snooze and unsnooze
+  also end selection and show one toast with *Undo* for the whole action.
 - Snoozes are kept in this browser's local storage (`triage-desk:snoozed:v2`)
   and are not synced between devices; entries for items that left the inbox are
   pruned after a complete refresh.
@@ -173,11 +173,19 @@ opened, and nothing is submitted until you press Enter. The session opens in the
 current workspace, not in the repository clone; the prompt contains the links
 and the scenario text.
 
-**Section scenarios** take the visible rows of every section they are bound to
-(respecting the active section/source filter and search, and leaving out snoozed
-items), build one prompt with the list, and launch **one** agent; the menu shows
-the count, for example "Review everything awaiting me (12)". The prompt asks the
-agent to delegate each item to a separate sub-agent where that makes sense. A local agent opens in the matching clone for one repository, or in the workspace for a group spanning repositories. SSH matches a single repository by its Git remotes. For a missing working copy or a group spanning repositories, it uses the first accessible configured folder or the remote home directory.
+**Section scenarios** run on the group whose menu you open. The menu shows
+the batch size (for example, “Re-review 3 PRs”). Source filters, search and
+snoozes apply, and each item appears once. Optional reviews are skipped by
+default. In *Select* mode, check individual rows, including any optional PRs
+you want, then use the group's terminal button to act on that selection.
+The prompt asks the agent to delegate each item to a separate sub-agent where
+that makes sense.
+
+For a single repository, a local agent opens in the matching clone and SSH
+looks for a working copy by its Git remotes. If a working copy is missing or
+the group spans repositories, a local agent opens in the workspace. SSH uses
+the first accessible repository folder configured for that server, falling back
+to the remote user's home directory.
 
 **Placeholders** use single braces. Row scenarios: `{url}`, `{repo}`, `{owner}`,
 `{name}`, `{number}`, `{title}`, `{branch}`, `{kind}`, `{ref}`, `{author}`,
@@ -190,8 +198,10 @@ built-in English prompts.
 
 **Limits.** Prompts are rendered on the host from the snapshot. Templates are
 capped at 4 000 characters and the rendered prompt at 16 000. When a section
-list does not fit, the tail is dropped, the prompt says `Items: first N of M`,
-and the panel warns in a toast.
+list does not fit, `{count}` gives the number of items included. The draft
+and the panel notification both report how many fit. If the first item cannot
+fit, the panel reports an error before opening a draft or terminal. Shorten
+the template or remove repeated `{links}` placeholders.
 
 ## Terminal launcher
 
@@ -235,6 +245,7 @@ launch toast says so.
 Re-launching the *same* agent on the *same* item switches to its existing tab
 instead of opening a duplicate where the terminal allows it. This
 focus-or-reuse is best-effort and falls back to a fresh tab or window.
+A section launch always opens a fresh tab or window for its batch.
 
 - **macOS**: iTerm2 opens each launch as a new tab in the current window
   (`create tab with default profile command …`) and re-launching selects the
