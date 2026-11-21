@@ -125,9 +125,9 @@ Other panel features:
 ## Launch scenarios
 
 Every row with a GitHub link has a terminal button. It opens a compact menu: a
-**target picker** first (**DSH — this app** plus the installed terminal agents),
+**target picker** first (DSH, local agents and saved SSH destinations),
 a line saying where the selected agent opens and how it gets the prompt, then the
-scenarios that apply to the row, the default scenario on top.
+applicable scenarios with a task-based or saved selection. Choose **Copy prompt** or **Prepare draft**.
 
 A scenario is a named prompt template. The built-in row scenarios are *Just the
 link*, *Review this PR* (only on rows waiting for your review), *Re-review after
@@ -135,7 +135,7 @@ changes* (only on re-review rows), *Fix this PR*, *Reply in the thread*, and
 *Triage this issue*. Section headers have their own terminal button with
 section-wide scenarios (*Review everything awaiting me*, *Fix my PRs*, *Triage
 new issues*, *Answer mentions*) and the same target picker. A scenario can pin
-its own agent: it then shows that agent as a badge and ignores the picker.
+its own agent: the badge identifies the pinned local agent. An explicit DSH or SSH destination takes precedence.
 
 All scenarios are editable in Settings: name, scope (row or section), bound
 sections, prompt, preferred agent, order, and an enabled toggle. *Just the link*
@@ -177,9 +177,7 @@ and the scenario text.
 (respecting the active section/source filter and search, and leaving out snoozed
 items), build one prompt with the list, and launch **one** agent; the menu shows
 the count, for example "Review everything awaiting me (12)". The prompt asks the
-agent to delegate each item to a separate sub-agent where that makes sense. When
-every item is from one repository the agent opens in that clone; otherwise it
-opens in the workspace.
+agent to delegate each item to a separate sub-agent where that makes sense. A local agent opens in the matching clone for one repository, or in the workspace for a group spanning repositories. SSH uses the saved remote folder.
 
 **Placeholders** use single braces. Row scenarios: `{url}`, `{repo}`, `{owner}`,
 `{name}`, `{number}`, `{title}`, `{branch}`, `{kind}`, `{ref}`, `{author}`,
@@ -197,7 +195,7 @@ and the panel warns in a toast.
 
 ## Terminal launcher
 
-A terminal launch opens the agent in the repository's local clone (see [Clone
+A local terminal launch opens the agent in the repository's local clone (see [Clone
 discovery](#clone-discovery)) with the prompt prepared but **not sent**. The
 terminal stays open with a shell after the agent exits, survives a plugin
 reload, and is closed when DSH quits. The **Sign in to GitHub** button uses the
@@ -356,10 +354,10 @@ opened in Ghostty (/path): the prompt will appear in its input box, not sent —
 review it and press Enter*.
 
 **Security note.** Native `--prefill` passes the prompt as an agent argument, so
-it is visible in the process list. The default scenario's prompt is just the
+it is visible in the process list. The Just the link scenario contains the
 GitHub URL; longer scenario prompts and section lists are visible there as well.
 The paste wrapper reads the prompt from a temporary file that it deletes once
-read; the clipboard receives it in every mode. Each launch writes its script into
+read; local terminal launches also copy to the clipboard. Each launch writes its script into
 its own `triage-desk-*` temporary directory; the script removes itself and the
 then-empty directory, and directories older than a day are swept at startup and
 before each launch.
@@ -549,7 +547,8 @@ Fields:
 | `cloneDirs` | `[]` | Optional base directories for clone discovery, up to 8 (under *Advanced: clone search*); empty searches the typical dirs that exist (`~/Projects`, `~/Developer`, …) plus project roots detected in your home |
 | `repoPaths` | `{}` | Optional `owner/repo` → absolute clone path exceptions, up to 50, matched case-insensitively (under *Advanced: clone search*) |
 | `scenarios` | built-in set | Named launch scenarios: `{ id, label?, scope: 'item' \| 'section', sections, prompt, agent: 'default' \| <agent id>, enabled }`; array order is menu order; an empty `prompt` on a built-in scenario means its current default; the `link` scenario must exist, stay enabled, and contain `{url}` |
-| `defaultScenario` | `link` | Row scenario placed first in the menu |
+| `defaultScenario` | empty string | Task-based preselection, or an enabled row scenario ID where applicable |
+| `sshServers` | `[]` | Remote destinations. Each entry has a literal OpenSSH `alias`, built-in `agent` ID and absolute POSIX `cwd` |
 | `ghCommand` | `gh` | Path to the GitHub CLI |
 | `timeoutMs` | `30000` | Timeout of one `gh` invocation |
 | `meLogins` | `[]` | Extra self logins: decide ownership, direct review requests, your activity, and recent branch authors on the items the signed-in account's searches find. PRs that involve only an alias are not found; aliases add no sources or team memberships |

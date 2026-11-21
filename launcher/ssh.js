@@ -1,0 +1,125 @@
+import { randomUUID } from 'node:crypto'
+import { AGENT_PRESETS } from './agents.js'
+import { agentExecutable, shellQuote } from './agent-command.js'
+import { PASTE_WRAPPER_PY, sanitizePastePrompt } from './paste-wrapper.js'
+
+// Remote presets run the installed program by name, independent of any local
+// executable path, platform-specific command or agent discovery result.
+export const SSH_AGENTS = AGENT_PRESETS.map(({ id, label }) => ({ id, label }))
+
+function sshServerError(server, previous) {
+  if (!server || typeof server.alias !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(server.alias)) {
+    return 'SSH destinations need a literal host alias'
+  }
+  if (previous.some((entry) => entry.alias.toLowerCase() === server.alias.toLowerCase())) return 'duplicate SSH alias'
+  if (!SSH_AGENTS.some((agent) => agent.id === server.agent)) return 'unknown remote agent'
+  if (typeof server.cwd !== 'string' || !server.cwd.startsWith('/') || /[\x00-\x1f\x7f]/.test(server.cwd)
+    || server.cwd.length > 1024) return 'SSH destinations need an absolute remote working folder'
+  return ''
+}
+
+export function normalizeSshServers(input, strict = false) {
+  const servers = []
+  if (!Array.isArray(input)) {
+    if (strict) throw new Error('sshServers must be a list')
+    return servers
+  }
+  for (const server of input) {
+    const error = sshServerError(server, servers)
+    if (error && strict) throw new Error(error)
+    if (!error) servers.push({ alias: server.alias, cwd: server.cwd, agent: server.agent })
+  }
+  return servers
+}
+
+/**
+ * ssh(1): -T disables the remote tty (byte-preserving upload); -tt forces
+ * a tty for the interactive agent. ssh returns the remote status or 255 on
+ * connection errors. Keep the interactive channel's stdin attached to the
+ * terminal, and the (possibly 16k Unicode characters) draft off the local
+ * command line, including PowerShell 5.1's native argument conversion.
+ */
+export function buildSshScripts(server, prompt, platform) {
+  const preset = AGENT_PRESETS.find((entry) => entry.id === server.agent)
+  if (!preset) throw new Error('unknown remote agent')
+  const executable = shellQuote(agentExecutable(preset.command, 'linux'))
+  const file = '.triage-desk-' + randomUUID() + '.sh'
+  const remote = [
+    'set -eu',
+    'rm -f "$0"',
+    'cd ' + shellQuote(server.cwd),
+    'printf "SSH %s · %s · %s\\n" ' + shellQuote(server.alias) + ' ' + shellQuote(server.agent) + ' "$(pwd -P)"',
+  ]
+  const mode = preset.draftFlag ? 'draft' : 'paste'
+  if (mode === 'draft') {
+    // ssh reports the status of this script. After starting the native
+    // draft, an agent exit (including Ctrl+C) must not offer to replay it.
+    remote.push(
+      'command -v ' + executable + ' >/dev/null || { echo "Remote agent not found: ' + preset.id + '" >&2; exit 127; }',
+      "trap ':' INT",
+      [executable, shellQuote(preset.draftFlag), shellQuote(prompt)].join(' ')
+        + ' || printf "Agent exited with status %s\\n" "$?" >&2',
+    )
+  } else {
+    if (prompt !== sanitizePastePrompt(prompt)) throw new Error('remote paste cannot represent control characters in this prompt')
+    remote.push('umask 077', 'prompt_file=$(mktemp)', 'trap \'rm -f "$prompt_file"\' EXIT',
+      'printf %s ' + shellQuote(prompt) + ' > "$prompt_file"',
+      'python3 -I -c ' + shellQuote(PASTE_WRAPPER_PY) + ' --remote "$prompt_file" ' + executable)
+  }
+  // The staging shell reads the prompt as quoted data. An interrupted
+  // transfer cannot execute the incomplete payload. The random name belongs
+  // to this launch and the interactive shell unlinks it as soon as it starts.
+  const stage = 'set -eu\numask 077\nprintf %s ' + shellQuote(remote.join('\n') + '\n') + ' > ' + file + '\nexit 0\n'
+  const upload = 'ssh -T -- ' + server.alias + ' sh -s'
+  const connect = 'ssh -tt -- ' + server.alias + ' sh ' + file
+  // Cleanup runs without stdin or authentication prompts, including on exit
+  // from the retry dialog. Restrict deletion to this launch's random name.
+  const cleanup = 'ssh -nT -o BatchMode=yes -o ConnectTimeout=5 -- ' + server.alias + ' rm -f ' + file
+  const retained = 'Cleanup could not be confirmed. Check ' + server.alias + ':~/' + file
+  const retry = 'SSH launch failed. Retry the same draft? [y/N]'
+  const local = platform === 'win32'
+    ? [
+        "$ErrorActionPreference = 'Stop'",
+        "$stage = Join-Path $PSScriptRoot 'stage.sh'",
+        'Push-Location -LiteralPath $PSScriptRoot',
+        '$remotePending = $true',
+        'try {', '  do {',
+        // cmd's file redirection passes the UTF-8 file directly to ssh.
+        // Both the alias and the relative filename are plain command words.
+        "    cmd.exe /d /c '" + upload + " < stage.sh'",
+        '    if ($LASTEXITCODE -eq 0) { ' + connect + ' }',
+        '    if ($LASTEXITCODE -eq 0) { $remotePending = $false; break }',
+        "  } while ((Read-Host '" + retry + "') -eq 'y')",
+        '} finally {',
+        '  try {',
+        '    if ($remotePending) {',
+        '      ' + cleanup,
+        "      if ($LASTEXITCODE -ne 0) { Write-Warning '" + retained + "' }",
+        '    }',
+        '  } finally {',
+        '    Pop-Location',
+        '    Remove-Item -LiteralPath $stage, $PSCommandPath -Force',
+        '    [System.IO.Directory]::Delete($PSScriptRoot)',
+        '  }',
+        '}',
+      ].join('\r\n')
+    : [
+        '#!/bin/sh',
+        'stage="$(dirname "$0")/stage.sh"',
+        'remote_pending=yes',
+        'cleanup() {',
+        '  if [ "$remote_pending" = yes ]; then',
+        '    ' + cleanup + ' || printf "%s\\n" ' + shellQuote(retained) + ' >&2',
+        '  fi',
+        '  rm -f "$stage" "$0"',
+        '  rmdir "$(dirname "$0")" 2>/dev/null || :',
+        '}',
+        'trap cleanup EXIT',
+        "trap 'exit 1' HUP INT TERM",
+        'while :; do',
+        '  if ' + upload + ' < "$stage" && ' + connect + '; then remote_pending=no; break; fi',
+        "  printf '%s ' '" + retry + "'", '  IFS= read -r answer || break',
+        '  case "$answer" in y|Y) ;; *) break ;; esac', 'done',
+      ].join('\n')
+  return { stage, local, mode }
+}

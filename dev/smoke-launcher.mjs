@@ -275,7 +275,7 @@ check('default config is neutral', () => {
   const config = normalizeLauncherConfig({})
   assert.equal(config.defaultAgent, DSH_TARGET, 'a new profile launches into DSH')
   assert.equal(config.agentsAuto, true, 'no saved list: agents come from discovery')
-  assert.equal(config.defaultScenario, 'link')
+  assert.equal(config.defaultScenario, '', 'fresh profiles select a scenario by task')
   assert.equal(config.scenarios.length, BUILTIN_SCENARIOS.length)
   const link = config.scenarios[0]
   assert.equal(link.id, 'link')
@@ -413,10 +413,10 @@ check('custom agents are normalized and validated', () => {
   assert.deepEqual(normalizeLauncherConfig({}).invalidAgents, [])
 })
 
-check('the default scenario falls back to link for non-item ids', () => {
+check('the default scenario falls back to task selection for non-item ids', () => {
   assert.equal(normalizeLauncherConfig({ defaultScenario: 'review-pr', scenarios: defaultScenarios() }).defaultScenario, 'review-pr')
-  assert.equal(normalizeLauncherConfig({ defaultScenario: 'review-all', scenarios: defaultScenarios() }).defaultScenario, 'link')
-  assert.equal(normalizeLauncherConfig({ defaultScenario: 'unknown', scenarios: defaultScenarios() }).defaultScenario, 'link')
+  assert.equal(normalizeLauncherConfig({ defaultScenario: 'review-all', scenarios: defaultScenarios() }).defaultScenario, '')
+  assert.equal(normalizeLauncherConfig({ defaultScenario: 'unknown', scenarios: defaultScenarios() }).defaultScenario, '')
 })
 
 check('saved reply scenarios follow feedback into Reviews until their bindings are edited', () => {
@@ -553,7 +553,7 @@ check('validateDefaultScenario only accepts item scenarios', () => {
   assert.deepEqual(validateDefaultScenario('review-pr', scenarios), { ok: true })
   assert.equal(validateDefaultScenario('review-all', scenarios).ok, false)
   assert.equal(validateDefaultScenario('unknown', scenarios).ok, false)
-  assert.equal(validateDefaultScenario('', scenarios).ok, false)
+  assert.equal(validateDefaultScenario('', scenarios).ok, true)
   const disabled = defaultScenarios()
   disabled.find((scenario) => scenario.id === 'review-pr').enabled = false
   assert.equal(validateDefaultScenario('review-pr', disabled).ok, false)

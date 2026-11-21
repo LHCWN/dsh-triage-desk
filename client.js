@@ -259,6 +259,17 @@ window.__ModuleLoader__.load({
       'settings.loading': 'Reading settings…',
       'launch.title': 'Open in terminal',
       'launch.openWith': 'Open with agent',
+      'launch.prepare': 'Prepare draft',
+      'launch.copyPrompt': 'Copy prompt',
+      'launch.promptCopied': 'Prompt copied',
+      'launch.manualCopy': 'Copy the selected prompt manually',
+      'settings.byTask': 'Choose by task',
+      'launch.sshConnecting': 'Connecting to {alias} · {agent} · {cwd}',
+      'settings.sshServers': 'SSH destinations',
+      'settings.ssh.alias': 'SSH alias',
+      'settings.ssh.cwd': 'Remote folder (absolute path)',
+      'settings.sshAdd': 'Add destination',
+      'settings.sshRemove': 'Remove destination',
       'launch.default': 'default',
       'launch.notInstalled': 'not installed',
       'launch.agentShellAlias': 'shell alias or function — use a path',
@@ -275,7 +286,7 @@ window.__ModuleLoader__.load({
       'launch.settingsHint': 'Agents, launch scenarios, and clone directories live in Settings.',
       'launch.retry': 'Retry',
       'settings.terminal': 'Terminal and agents',
-      'settings.terminalHint': 'The terminal button on each row starts an agent in the local clone of the repository with a prepared initial prompt.',
+      'settings.terminalHint': 'Choose where to open drafts from rows and sections.',
       'settings.defaultAgent': 'Default agent',
       'settings.defaultAgentFallback': '{missing} can’t be started ({reason}), so launches use {used}.',
       'settings.defaultDshUnavailable': 'This DSH version can’t open a chat from here, so launches use {used}.',
@@ -581,6 +592,17 @@ window.__ModuleLoader__.load({
       'settings.loading': '正在读取设置…',
       'launch.title': '在终端中打开',
       'launch.openWith': '用智能体打开',
+      'launch.prepare': '准备草稿',
+      'launch.copyPrompt': '复制提示',
+      'launch.promptCopied': '已复制提示',
+      'launch.manualCopy': '请手动复制已选中的提示',
+      'settings.byTask': '按任务选择',
+      'launch.sshConnecting': '正在连接 {alias} · {agent} · {cwd}',
+      'settings.sshServers': 'SSH 目标',
+      'settings.ssh.alias': 'SSH 别名',
+      'settings.ssh.cwd': '远程目录（绝对路径）',
+      'settings.sshAdd': '添加目标',
+      'settings.sshRemove': '移除目标',
       'launch.default': '默认',
       'launch.notInstalled': '未安装',
       'launch.agentShellAlias': 'shell 别名或函数——请使用路径',
@@ -597,7 +619,7 @@ window.__ModuleLoader__.load({
       'launch.settingsHint': '智能体、启动场景与克隆目录在「设置」中配置。',
       'launch.retry': '重试',
       'settings.terminal': '终端与智能体',
-      'settings.terminalHint': '每行的终端按钮会在仓库的本地克隆中启动智能体，并带好初始提示。',
+      'settings.terminalHint': '选择从行和分类中打开草稿的位置。',
       'settings.defaultAgent': '默认智能体',
       'settings.defaultAgentFallback': '{missing} 无法启动（{reason}），启动时改用 {used}。',
       'settings.defaultDshUnavailable': '当前 DSH 版本无法从这里打开对话，启动时改用 {used}。',
@@ -1995,12 +2017,11 @@ window.__ModuleLoader__.load({
       )
     }
 
-    /** Row menu scenarios: the default scenario first. */
-    function scenarioItemScenarios(config, sectionId) {
-      const defaultId = configValue(config, 'defaultScenario')
-      return sectionScenarios(config, 'item', sectionId).sort(
-        (left, right) => (left.id === defaultId ? 0 : 1) - (right.id === defaultId ? 0 : 1),
-      )
+    function taskScenario(section, item) {
+      if (section === 'review') return 'review-pr'
+      if (section === 'rereview') return 'rereview-pr'
+      if (item.kind === 'issue') return 'triage-issue'
+      return 'link'
     }
 
     function scenarioPreviewItems(scenario) {
@@ -2768,18 +2789,20 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState(false)
       const [lastLaunch, setLastLaunch] = useState(null)
       const [launchError, setLaunchError] = useState(null)
+      const [manualPrompt, setManualPrompt] = useState(null)
 
-      const launch = (scenarioId, agentId) => {
+      const launch = (scenarioId, agentId, sshAlias) => {
         if (busy) return
-        setLastLaunch({ scenarioId: scenarioId, agentId: agentId || null })
+        setLastLaunch({ scenarioId: scenarioId, agentId: agentId || null, sshAlias })
         setBusy(true)
         setLaunchError(null)
         const body = buildRequest(scenarioId)
-        if (agentId) body.agent = agentId
+        if (sshAlias) body.sshAlias = sshAlias
+        else if (agentId) body.agent = agentId
         postJson(LAUNCH_URL, body)
           .then((payload) => {
             store.showToast(launchToastText(t, payload), 'ok')
-            close()
+            if (!sshAlias) close()
           })
           .catch((error) => setLaunchError(launchErrorDetail(error)))
           .finally(() => setBusy(false))
@@ -2802,7 +2825,30 @@ window.__ModuleLoader__.load({
           .finally(() => setBusy(false))
       }
 
+      const copyPrompt = async (scenarioId) => {
+        if (busy) return
+        setBusy(true)
+        setLaunchError(null)
+        setManualPrompt(null)
+        setLastLaunch({ scenarioId, target: 'copy' })
+        try {
+          const payload = await postJson(PROMPT_URL, buildRequest(scenarioId))
+          try {
+            await copyText(payload.prompt)
+          } catch {
+            setManualPrompt(payload.prompt)
+            return
+          }
+          store.showToast(t('launch.promptCopied') + trimmedSuffix(t, payload), 'ok')
+        } catch (error) {
+          setLaunchError(launchErrorDetail(error))
+        } finally {
+          setBusy(false)
+        }
+      }
+
       const retry = () => {
+        if (lastLaunch && lastLaunch.target === 'copy') return copyPrompt(lastLaunch.scenarioId)
         if (lastLaunch !== null && lastLaunch.target === DSH_TARGET && lastLaunch.scenarioId) {
           launchDsh(lastLaunch.scenarioId)
           return
@@ -2810,10 +2856,11 @@ window.__ModuleLoader__.load({
         launch(
           lastLaunch !== null && lastLaunch.scenarioId ? lastLaunch.scenarioId : fallbackScenario,
           lastLaunch !== null && lastLaunch.agentId ? lastLaunch.agentId : null,
+          lastLaunch?.sshAlias,
         )
       }
 
-      return { busy, launchError, setLaunchError, launch, launchDsh, retry }
+      return { busy, launchError, setLaunchError, launch, launchDsh, copyPrompt, manualPrompt, setManualPrompt, retry }
     }
 
     /**
@@ -2906,6 +2953,9 @@ window.__ModuleLoader__.load({
     }
 
     function launchToastText(t, payload) {
+      if (payload.sshAlias) {
+        return t('launch.sshConnecting', { alias: payload.sshAlias, agent: payload.agent.label, cwd: payload.cwd }) + trimmedSuffix(t, payload)
+      }
       const delivery = payload.delivery || {}
       const mode = payload.mode === 'draft' || payload.mode === 'paste' ? payload.mode : 'clipboard'
       let text = t('launch.' + mode, {
@@ -2943,15 +2993,17 @@ window.__ModuleLoader__.load({
       const rank = (agent) =>
         (agent.id === fallback ? 0 : 2) + (detected[agent.id] && detected[agent.id].available === false ? 1 : 0)
       const ordered = agents.slice().sort((left, right) => rank(left) - rank(right))
-      const selected = dsh && picked === DSH_TARGET
-        ? DSH_TARGET
-        : ordered.some((agent) => agent.id === picked) ? picked : fallback
+      const servers = configList(config, 'sshServers')
+      const available = [...(dsh ? [DSH_TARGET] : []), ...ordered.map((agent) => agent.id), ...servers.map((server) => 'ssh:' + server.alias)]
+      const selected = available.includes(picked) ? picked : fallback || available[0] || ''
+      const remote = servers.find((server) => 'ssh:' + server.alias === selected)
       // `explicit`: the user picked `selected`; else it is the implicit default.
-      return { agents, detected, dsh, ordered, selected, explicit: selected === picked }
+      return { agents, detected, dsh, servers, remote, ordered, selected, explicit: selected === picked }
     }
 
     /** One line under the agent picker: where the agent opens and how it gets the prompt. */
     function launchVia(t, config, targets) {
+      if (targets.remote) return h('p', { key: 'via', className: 'adx-launch-via' }, targets.remote.cwd)
       if (targets.selected === DSH_TARGET) return null
       const agent = targets.agents.find((entry) => entry.id === targets.selected)
       const terminal = launchTerminalLabel(config)
@@ -2965,7 +3017,9 @@ window.__ModuleLoader__.load({
 
     function launchTargetPicker(t, targets, busy, onPick) {
       const options = (targets.dsh ? [h('option', { key: DSH_TARGET, value: DSH_TARGET }, t('launch.dshTarget'))] : [])
-        .concat(agentOptions(t, targets.ordered, targets.detected))
+        .concat(agentOptions(t, targets.ordered, targets.detected),
+          targets.servers.map((server) => h('option', { key: 'ssh:' + server.alias, value: 'ssh:' + server.alias },
+            'SSH · ' + server.alias + ' · ' + server.agent)))
       return h(
         'label',
         { key: 'agent-picker', className: 'adx-launch-agent' },
@@ -2983,30 +3037,44 @@ window.__ModuleLoader__.load({
       )
     }
 
-    /** One scenario of a launch menu; a pinned agent wins over the picked one, except for DSH. */
-    function launchScenarioItem(t, scenario, targets, { label, disabled, isDefault, launch, launchDsh }) {
-      const pinned = scenarioPinnedAgent(scenario, targets.agents)
-      // A pinned agent wins over the implicit default (DSH included); only a
-      // DSH target the user picked overrides it.
-      const toDsh = targets.selected === DSH_TARGET && (pinned === null || targets.explicit)
-      // An untouched picker sends no agent: the host resolves "default" with
-      // fresh detection, so a default that vanished since the menu opened
-      // still falls back (and Retry resolves it again).
-      const agent = pinned !== null ? pinned.id : targets.explicit ? targets.selected : null
-      return h(
-        'button',
-        {
-          key: 'scenario-' + scenario.id,
-          type: 'button',
-          role: 'menuitem',
-          className: 'adx-launch-item',
-          disabled,
-          onClick: () => (toDsh ? launchDsh(scenario.id) : launch(scenario.id, agent)),
-        },
-        h('span', { className: 'adx-launch-item-main' }, h('span', { className: 'adx-launch-item-label' }, label)),
-        pinned !== null && !toDsh ? h('span', { className: 'adx-launch-badge' }, pinned.label) : null,
-        isDefault ? h('span', { className: 'adx-launch-badge' }, t('launch.default')) : null,
-      )
+    function ScenarioActions({ t, config, scenarios, preferred, targets, actions, count }) {
+      const [picked, setPicked] = useState('')
+      const area = useRef(null)
+      useEffect(() => {
+        if (actions.manualPrompt !== null && area.current) {
+          area.current.focus()
+          area.current.select()
+        }
+      }, [actions.manualPrompt])
+      const selected = [picked, configValue(config, 'defaultScenario'), preferred, 'link']
+        .map((id) => scenarios.find((entry) => entry.id === id))
+        .find(Boolean) || scenarios[0]
+      if (!selected) return null
+      const pinned = targets.remote ? null : scenarioPinnedAgent(selected, targets.agents)
+      const toDsh = targets.selected === DSH_TARGET && (!pinned || targets.explicit)
+      const agent = pinned ? pinned.id : targets.explicit ? targets.selected : null
+      const disabled = actions.busy || (count && count(selected) === 0)
+      const button = (key, handler, unavailable) => h('button', {
+        type: 'button', role: 'menuitem', className: 'adx-launch-item', disabled: Boolean(disabled || unavailable),
+        onClick: handler,
+      }, t(key))
+      return h('div', null,
+        h('label', { className: 'adx-launch-agent' }, h('span', null, t('launch.scenarios')),
+          h('select', { className: 'adx-select', value: selected.id, disabled: actions.busy,
+            onChange: (event) => {
+              setPicked(event.target.value)
+              actions.setManualPrompt(null)
+              actions.setLaunchError(null)
+            } },
+            scenarios.map((entry) => h('option', { key: entry.id, value: entry.id },
+              scenarioTextLabel(entry, t) + (count ? ' (' + count(entry) + ')' : ''))))),
+        pinned && !toDsh ? h('span', { className: 'adx-launch-badge' }, pinned.label) : null,
+        button('launch.prepare', () => toDsh ? actions.launchDsh(selected.id) : actions.launch(selected.id, agent, targets.remote?.alias),
+          !targets.selected && !agent),
+        configValue(config, 'supportsPrompt') === true
+          ? button('launch.copyPrompt', () => actions.copyPrompt(selected.id)) : null,
+        actions.manualPrompt === null ? null : h('label', null, t('launch.manualCopy'),
+          h('textarea', { ref: area, readOnly: true, value: actions.manualPrompt, className: 'adx-input' })))
     }
 
     function outlineButton(label, onClick) {
@@ -3155,10 +3223,10 @@ window.__ModuleLoader__.load({
           () => store.showToast(t('page.copyFailed'), 'warning'),
         )
       }
-      const configuredDefault = configValue(config, 'defaultScenario')
-      const defaultScenarioId = typeof configuredDefault === 'string' && configuredDefault !== '' ? configuredDefault : 'link'
       const addressChanges = item.reason === 'changes-requested'
-      const itemScenarios = scenarioItemScenarios(config, section)
+      const itemScenarios = sectionScenarios(config, 'item', section).filter(
+        (entry) => entry.id !== 'triage-issue' || item.kind === 'issue',
+      )
       const hasUrl = isGithubUrl(item.url)
       const triggerRef = useRef(null)
       const menuRef = useRef(null)
@@ -3181,7 +3249,7 @@ window.__ModuleLoader__.load({
         }
       }, [])
 
-      const { busy, launchError, setLaunchError, launch, launchDsh, retry } = useScenarioLaunch({
+      const actions = useScenarioLaunch({
         store,
         t,
         buildRequest: (scenarioId) => ({
@@ -3205,9 +3273,13 @@ window.__ModuleLoader__.load({
         },
       })
 
+      const { busy, launchError, setLaunchError, retry } = actions
       const setMenuOpen = (open) => {
         store.set({ openMenu: open ? stateKey : null })
-        if (!open) setLaunchError(null)
+        if (!open) {
+          setLaunchError(null)
+          actions.setManualPrompt(null)
+        }
       }
       const closeMenu = () => setMenuOpen(false)
       const openSettings = () => {
@@ -3294,7 +3366,7 @@ window.__ModuleLoader__.load({
                   ),
                 )
               : null,
-            targets.agents.length === 0 && !targets.dsh
+            targets.agents.length === 0 && !targets.dsh && !targets.servers.length
               ? h(
                   'div',
                   { className: 'adx-launch-empty' },
@@ -3305,17 +3377,8 @@ window.__ModuleLoader__.load({
               : [
                   launchTargetPicker(t, targets, busy, setMenuAgent),
                   launchVia(t, config, targets),
-                  h('div', { key: 'scenarios-head', className: 'adx-launch-group' }, t('launch.scenarios')),
-                  ...itemScenarios.map((entry) =>
-                    launchScenarioItem(t, entry, targets, {
-                      label: scenarioTextLabel(entry, t),
-                      disabled: busy,
-                      isDefault: entry.id === defaultScenarioId,
-                      launch,
-                      launchDsh,
-                    }),
-                  ),
                 ],
+            h(ScenarioActions, { t, config, targets, actions, scenarios: itemScenarios, preferred: taskScenario(section, item) }),
           )
 
       return h(
@@ -3500,7 +3563,7 @@ window.__ModuleLoader__.load({
         return out
       }
 
-      const { busy, launchError, setLaunchError, launch, launchDsh, retry } = useScenarioLaunch({
+      const actions = useScenarioLaunch({
         store,
         t,
         buildRequest: (scenarioId) => {
@@ -3512,9 +3575,13 @@ window.__ModuleLoader__.load({
         fallbackScenario: '',
       })
 
+      const { busy, launchError, setLaunchError, retry } = actions
       const setOpen = (open) => {
         store.set({ openMenu: open ? menuId : null })
-        if (!open) setLaunchError(null)
+        if (!open) {
+          setLaunchError(null)
+          actions.setManualPrompt(null)
+        }
       }
       const closeMenu = () => setOpen(false)
       const openSettings = () => {
@@ -3609,7 +3676,7 @@ window.__ModuleLoader__.load({
                   ),
                 )
               : null,
-            targets.agents.length === 0 && !targets.dsh
+            targets.agents.length === 0 && !targets.dsh && !targets.servers.length
               ? h(
                   'div',
                   { className: 'adx-launch-empty' },
@@ -3619,17 +3686,8 @@ window.__ModuleLoader__.load({
               : [
                   launchTargetPicker(t, targets, busy, setMenuAgent),
                   launchVia(t, config, targets),
-                  ...menuScenarios.map((entry) => {
-                    const union = unionItems(entry)
-                    return launchScenarioItem(t, entry, targets, {
-                      label: scenarioTextLabel(entry, t) + ' (' + union.length + ')',
-                      disabled: busy || union.length === 0,
-                      isDefault: false,
-                      launch,
-                      launchDsh,
-                    })
-                  }),
                 ],
+            h(ScenarioActions, { t, config, targets, actions, scenarios: menuScenarios, count: (entry) => unionItems(entry).length }),
           )
       return h(
         'section',
@@ -4025,6 +4083,7 @@ window.__ModuleLoader__.load({
         requireGreenChecks: config.requireGreenChecks !== false,
         includeBotReviews: config.includeBotReviews === true,
         agents: settingsFormAgents(config),
+        sshServers: configList(config, 'sshServers').map((entry) => ({ ...entry, _key: newAgentRowKey() })),
         defaultAgent: typeof config.defaultAgent === 'string' ? config.defaultAgent : '',
         terminal: typeof config.terminal === 'string' ? config.terminal : 'auto',
         promptDelivery: config.promptDelivery === 'clipboard' ? 'clipboard' : 'paste',
@@ -4282,7 +4341,7 @@ window.__ModuleLoader__.load({
         }))
         const keepDefault = scenarios.some((entry) => entry.id === form.defaultScenario && entry.scope === 'item')
         setOpenScenario(null)
-        update({ scenarios, defaultScenario: keepDefault ? form.defaultScenario : 'link' })
+        update({ scenarios, defaultScenario: keepDefault ? form.defaultScenario : config.supportsTaskDefault ? '' : 'link' })
       }
 
       const findAgents = () => {
@@ -4452,9 +4511,7 @@ window.__ModuleLoader__.load({
         )
         if (
           scenariosValid === false ||
-          defaultEntry === undefined ||
-          defaultEntry.scope !== 'item' ||
-          defaultEntry.enabled === false
+          (form.defaultScenario !== '' && (!defaultEntry || defaultEntry.scope !== 'item' || defaultEntry.enabled === false))
         ) {
           setNotice({ tone: 'error', text: t('settings.invalidScenarios') })
           return
@@ -4486,6 +4543,9 @@ window.__ModuleLoader__.load({
                   })),
                 }
               : {}),
+            ...(Array.isArray(config.sshServers) ? {
+              sshServers: form.sshServers.map(({ alias, agent, cwd }) => ({ alias: alias.trim(), agent, cwd: cwd.trim() })),
+            } : {}),
             defaultAgent: String(form.defaultAgent || '').trim(),
             terminal: form.terminal || 'auto',
             promptDelivery: form.promptDelivery === 'clipboard' ? 'clipboard' : 'paste',
@@ -4930,12 +4990,33 @@ window.__ModuleLoader__.load({
                 value: form.defaultScenario,
                 onChange: (event) => update({ defaultScenario: event.target.value }),
               },
+              config.supportsTaskDefault ? h('option', { value: '' }, t('settings.byTask')) : null,
               itemScenarios.map((scenario) =>
                 h('option', { key: scenario.id, value: scenario.id }, scenarioTextLabel(scenario, t)),
               ),
             ),
           ),
         )
+      }
+
+      function renderSshServers() {
+        if (!Array.isArray(config.sshServers)) return null
+        const rows = form.sshServers
+        const agents = configList(config, 'sshAgents')
+        const edit = (index, change) => update({ sshServers: rows.map((row, i) => i === index ? { ...row, ...change } : row) })
+        return h('div', { className: 'adx-agents' },
+          h('p', { className: 'adx-form-section-title' }, t('settings.sshServers')),
+          rows.map((row, index) => h('div', { key: row._key, className: 'adx-scenario' },
+            ...['alias', 'cwd'].map((key) => h('label', { key, className: 'adx-launch-agent' },
+              t('settings.ssh.' + key),
+              h('input', { className: 'adx-input', value: row[key], onChange: (event) => edit(index, { [key]: event.target.value }) }))),
+            h('label', { className: 'adx-launch-agent' }, t('launch.agent'),
+              h('select', { className: 'adx-select', value: row.agent, onChange: (event) => edit(index, { agent: event.target.value }) },
+                agents.map((agent) => h('option', { key: agent.id, value: agent.id }, agent.label)))),
+            outlineButton(t('settings.sshRemove'), () => update({ sshServers: rows.filter((_, i) => i !== index) })))),
+          outlineButton(t('settings.sshAdd'), () => update({
+            sshServers: [...rows, { _key: newAgentRowKey(), alias: '', cwd: '', agent: agents[0].id }],
+          })))
       }
 
       /** Terminal app picker: Automatic plus this platform's apps, uninstalled ones disabled. */
@@ -5196,6 +5277,7 @@ window.__ModuleLoader__.load({
           h('p', { className: 'adx-form-note' }, t('settings.terminalHint')),
           renderTerminalChoice(),
           renderPromptDelivery(),
+          renderSshServers(),
         renderDefaultAgent(),
         h(
           'div',

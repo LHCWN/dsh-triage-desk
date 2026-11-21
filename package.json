@@ -67,7 +67,7 @@
     "prepare": "git config core.hooksPath .githooks || true",
     "prepublishOnly": "npm run check",
     "check:docs": "node dev/check-docs.mjs",
-    "check": "npm run lint && npm run check:docs && npm run smoke:client && npm run smoke:render && npm run smoke:launcher && npm run smoke:routes && npm run smoke:cache && npm run smoke:snapshot && npm run smoke:paste && npm run smoke:windows",
+    "check": "npm run lint && npm run check:docs && npm run smoke:client && npm run smoke:render && npm run smoke:launcher && npm run smoke:routes && npm run smoke:cache && npm run smoke:snapshot && npm run smoke:ssh && npm run smoke:paste && npm run smoke:windows",
     "test": "npm run check",
     "smoke:client": "node dev/smoke-client.mjs",
     "smoke:render": "node dev/smoke-render.mjs",
@@ -75,6 +75,7 @@
     "smoke:routes": "node dev/smoke-routes.mjs",
     "smoke:cache": "node dev/smoke-cache.mjs",
     "smoke:snapshot": "node dev/smoke-snapshot.mjs",
+    "smoke:ssh": "node dev/smoke-ssh.mjs",
     "smoke:paste": "node dev/smoke-paste.mjs",
     "smoke:windows": "node dev/smoke-windows.mjs",
     "smoke:host": "node dev/smoke-host.mjs"

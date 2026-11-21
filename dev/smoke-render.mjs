@@ -215,6 +215,7 @@ state.copied = null
 state.openMenu = null
 state.view = 'settings'
 const settingsHtml = renderToStaticMarkup(React.createElement(pageRegistration.component, { t, store }))
+assert.ok(!settingsHtml.includes('settings.sshServers') && !settingsHtml.includes('settings.byTask'), 'older hosts only offer supported launcher settings')
 assert.ok(settingsHtml.includes('adx-scenarios'), 'settings should render the scenario editor')
 assert.ok(settingsHtml.includes('settings.scenarios'), 'settings should group scenarios')
 assert.ok(settingsHtml.includes('settings.agentAdd'), 'settings should render the agent editor')
@@ -414,7 +415,7 @@ function shallowEqualProps(previous, next) {
 // simulated; the real-React SSR checks above cover rendering compatibility.
 function settingsHarness({
   agents = state.config.agents, invalidAgents, scenarios, snapshotPayload = null, clock = null, layout = {}, configExtra = {},
-  storage, withPanel = false,
+  storage, withPanel = false, clipboard, workspace = fakeCtx.get('uiWorkspace'), prompt = 'rendered',
 } = {}) {
   const instances = new Map()
   let current
@@ -473,6 +474,7 @@ function settingsHarness({
         node: null,
         contains: (target) => Boolean(target) && (target.key === key || String(target.key).startsWith(key + '/')),
         focus() { focused = key },
+        select() { host.selectedText = this.node.props.value },
         getBoundingClientRect() {
           const className = String(this.node?.props?.className || '')
           if (className.includes('adx-launch-menu')) return { top: 0, bottom: layout.menuHeight ?? 120, height: layout.menuHeight ?? 120 }
@@ -597,6 +599,7 @@ function settingsHarness({
   const sandbox = {
     console,
     document,
+    navigator: { clipboard },
     innerHeight: layout.innerHeight ?? 800,
     ...(storage === undefined ? {} : { localStorage: storage }),
     ...(clock === null ? {} : { Date: class extends Date { static now() { return clock.now } } }),
@@ -622,7 +625,7 @@ function settingsHarness({
               terminal: { id: 'iterm', label: 'iTerm2', fallback: false },
               delivery: { mode: 'draft', pasteBlocked: null, platform: 'darwin' },
             }
-          : { ok: true, prompt: 'rendered', trimmed: null }))
+          : { ok: true, prompt, trimmed: null }))
       }
       if (url === '/triage-desk/config' && options.method === 'POST') {
         return new Promise((resolve, reject) => pending.push({ resolve, reject, body: JSON.parse(options.body) }))
@@ -654,6 +657,7 @@ function settingsHarness({
           return hooks
         }).apply({
           ...fakeCtx,
+          get: (name) => name === 'uiWorkspace' ? workspace : undefined,
           effect(callback) { disposers.push(callback()) },
           slots: {
             inject: (_key, callback) => callback(),
@@ -1318,6 +1322,121 @@ for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-
   harness.dispose()
 }
 
+function scenarioPicker(harness) {
+  return harness.nodes().find((node) => node.type === 'select' && node.props.className === 'adx-select'
+    && flattenTree(node.props.children).some((child) => child.type === 'option'))
+}
+function menuAction(harness, label) {
+  return harness.nodes().find((node) => node.props?.role === 'menuitem' && node.props.children.includes(label))
+}
+
+{
+  const harness = settingsHarness({ agents: [], configExtra: { defaultAgent: 'dsh', defaultScenario: '',
+    supportsTaskDefault: true, sshServers: [{ alias: 'old', cwd: '/original', agent: 'claude' }],
+    sshAgents: [{ id: 'claude', label: 'Claude' }, { id: 'codex', label: 'Codex' }] } })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+  const action = (label) => harness.nodes().find((node) => node.type === 'button' && node.props.children.includes(label))
+  const fields = (label, type) => harness.nodes().filter((node) => node.type === 'label' && node.props.children.includes(label))
+    .map((node) => flattenTree(node.props.children).find((child) => child.type === type))
+  assert.ok(harness.text().includes('settings.byTask'))
+  assert.equal(harness.nodes().find((node) => node.props?.id === 'adx-default-scenario').props.value, '')
+  harness.click(action('settings.sshAdd'))
+  harness.click(action('settings.sshRemove'))
+  harness.change(fields('settings.ssh.alias', 'input')[0], 'build')
+  harness.change(fields('settings.ssh.cwd', 'input')[0], '/work one')
+  harness.change(fields('launch.agent', 'select')[0], 'codex')
+  harness.click(action('settings.sshAdd'))
+  harness.change(fields('settings.ssh.alias', 'input')[1], 'test')
+  harness.change(fields('settings.ssh.cwd', 'input')[1], '/work two')
+  harness.click(action('settings.save'))
+  assert.equal(harness.pending[0].body.defaultScenario, '')
+  assert.deepEqual(harness.pending[0].body.sshServers, [
+    { alias: 'build', cwd: '/work one', agent: 'codex' }, { alias: 'test', cwd: '/work two', agent: 'claude' },
+  ])
+  harness.dispose()
+}
+
+{
+  // An assigned issue can appear as a mention in Needs your action. A PR in
+  // that same section cannot use the saved issue-triage default.
+  const mentioned = { ...snapshot.sections.at(-1).items[0], section: 'respond', reason: 'mentioned', assignees: ['tester'] }
+  const sections = snapshot.sections.map((entry) => entry.id === 'respond' ? { ...entry, items: [...entry.items, mentioned] } : entry)
+  for (const saved of ['', 'triage-issue']) {
+    const harness = settingsHarness({ snapshotPayload: { ...snapshot, sections }, scenarios: defaultScenarios(), configExtra: { defaultScenario: saved } })
+    await harness.flush()
+    const triggers = () => flattenTree(harness.nodes().find((node) => node.props?.['data-section'] === 'respond').props.children)
+      .filter((node) => node.props?.['aria-label'] === 'launch.title')
+    harness.click(triggers()[0])
+    assert.equal(scenarioPicker(harness).props.value, 'link')
+    assert.ok(!scenarioPicker(harness).props.children.flat().some((node) => node.props.value === 'triage-issue'))
+    harness.click(triggers()[1])
+    assert.equal(scenarioPicker(harness).props.value, 'triage-issue')
+    harness.dispose()
+  }
+}
+
+{
+  const assigned = { ...snapshot.sections.at(-1).items[0], section: 'respond', reason: 'assigned-to-you' }
+  const sections = snapshot.sections.map((entry) => entry.id === 'respond' ? { ...entry, items: [assigned] } : entry)
+  const url = snapshot.sections[0].items[0].url
+  const prompt = 'Custom instructions\n\n' + url
+  const writes = []
+  const harness = settingsHarness({
+    snapshotPayload: { ...snapshot, sections }, scenarios: defaultScenarios(),
+    configExtra: { defaultScenario: '' }, agents: [], workspace: null, prompt,
+    clipboard: { writeText: async (value) => { writes.push(value) } },
+  })
+  await harness.flush()
+  for (const [section, expected] of [['review', 'review-pr'], ['rereview', 'rereview-pr'],
+    ['respond', 'triage-issue'], ['issues', 'triage-issue']]) {
+    const panel = harness.nodes().find((node) => node.props?.['data-section'] === section)
+    harness.click(flattenTree(panel.props.children).find((node) => node.props?.['aria-label'] === 'launch.title'))
+    assert.equal(scenarioPicker(harness).props.value, expected)
+    assert.equal(menuAction(harness, 'launch.prepare').props.disabled, true)
+    harness.click(menuAction(harness, 'launch.copyPrompt'))
+    await harness.flush()
+    assert.equal(harness.launches.at(-1).url, '/triage-desk/prompt')
+    assert.equal(harness.launches.at(-1).body.scenario, expected)
+    assert.equal(harness.store.get().toast.text, 'launch.promptCopied')
+    assert.equal(writes.at(-1), prompt)
+    harness.dispatch('keydown', null, { key: 'Escape' })
+  }
+  harness.dispose()
+
+  const fallback = settingsHarness({ snapshotPayload: snapshot, prompt,
+    clipboard: { writeText: async () => { throw new Error('denied') } } })
+  await fallback.flush()
+  fallback.click(fallback.nodes().find((node) => node.props?.['aria-label'] === 'launch.sectionTitle'))
+  fallback.click(menuAction(fallback, 'launch.copyPrompt'))
+  await fallback.flush()
+  assert.equal(fallback.host.selectedText, prompt)
+  assert.equal(fallback.focused(), fallback.keyOf(fallback.nodes().find((node) => node.type === 'textarea')))
+  fallback.click(menuAction(fallback, 'launch.prepare'))
+  await fallback.flush()
+  assert.deepEqual(fallback.launches.map((call) => call.url), ['/triage-desk/prompt', '/triage-desk/launch'])
+  assert.deepEqual(fallback.launches[0].body, fallback.launches[1].body)
+  fallback.dispose()
+}
+
+{
+  const servers = [{ alias: 'first', cwd: '/work/one', agent: 'claude' }, { alias: 'second', cwd: '/work/two', agent: 'codex' }]
+  const harness = settingsHarness({ snapshotPayload: snapshot, agents: [], workspace: null,
+    configExtra: { sshServers: servers, sshAgents: [{ id: 'codex', label: 'Codex' }], defaultAgent: 'dsh' } })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'launch.title'))
+  const picker = harness.nodes().find((node) => node.props?.className?.includes('adx-launch-agent-select'))
+  harness.change(picker, 'ssh:second')
+  harness.change(scenarioPicker(harness), 'review-pr')
+  assert.ok(harness.text().includes('/work/two'))
+  harness.click(menuAction(harness, 'launch.prepare'))
+  await harness.flush()
+  assert.equal(harness.launches[0].body.sshAlias, 'second')
+  assert.equal(harness.launches[0].body.scenario, 'review-pr')
+  assert.equal(scenarioPicker(harness).props.value, 'review-pr')
+  harness.dispose()
+}
+
 {
   // Row and section launches through the menus: request bodies and toasts.
   {
@@ -1331,16 +1450,15 @@ for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-
       configExtra: { defaultAgent: 'dsh', defaultTarget: 'dsh', effectiveDefaultAgent: 'claude' },
     })
     await harness.flush()
-    const item = (label) => harness.nodes().find((node) => node.props?.role === 'menuitem'
-      && flattenTree(node.props.children).some((child) => typeof child === 'string' && child.startsWith(label)))
     const rowTrigger = () => harness.nodes().filter((node) => node.type === 'button' && node.props['aria-label'] === 'launch.title')[1]
     harness.click(rowTrigger())
-    harness.click(item('Codex review'))
+    harness.change(scenarioPicker(harness), 'codex-review')
+    harness.click(menuAction(harness, 'launch.prepare'))
     await harness.flush()
     assert.equal(harness.launches[0].url, '/triage-desk/launch', 'a pinned scenario is not overridden by the implicit DSH default')
     assert.equal(harness.launches[0].body.agent, 'codex')
     harness.click(rowTrigger())
-    harness.click(item('link'))
+    harness.click(menuAction(harness, 'launch.prepare'))
     await harness.flush()
     assert.equal(harness.launches[1].url, '/triage-desk/prompt', 'an unpinned scenario opens the DSH default')
     harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
@@ -1356,14 +1474,12 @@ for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-
     : { ...section, items: [{ ...section.items[0], rereviewCause: 'author-reply' }] })
   const harness = settingsHarness({ snapshotPayload: { ...snapshot, sections } })
   await harness.flush()
-  const item = (label) => harness.nodes().find((node) => node.props?.role === 'menuitem'
-    && flattenTree(node.props.children).some((child) => typeof child === 'string' && child.startsWith(label)))
   const picker = () => harness.nodes().find((node) => node.type === 'select' && node.props.className?.includes('adx-launch-agent-select'))
   const rowTrigger = () => harness.nodes().filter((node) => node.type === 'button' && node.props['aria-label'] === 'launch.title')[1]
   harness.click(rowTrigger())
   assert.equal(harness.store.get().openMenu, 'rereview:pull:2')
   assert.equal(picker().props.value, 'claude', 'the default agent is preselected')
-  harness.click(item('link'))
+  harness.click(menuAction(harness, 'launch.prepare'))
   await harness.flush()
   assert.equal(harness.launches.length, 1)
   assert.equal(harness.launches[0].url, '/triage-desk/launch')
@@ -1374,13 +1490,13 @@ for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-
   assert.equal(harness.store.get().toast.text, 'launch.draft:Claude Code,iTerm2,/work,⌘V')
   harness.click(rowTrigger())
   harness.change(picker(), 'dsh')
-  harness.click(item('link'))
+  harness.click(menuAction(harness, 'launch.prepare'))
   await harness.flush()
   assert.equal(harness.launches[1].url, '/triage-desk/prompt')
   assert.equal(harness.launches[1].body.reason, 'author-replied', 'a DSH draft sends the author-replied reason')
   assert.equal(harness.store.get().toast.text, 'launch.dshDraft')
   harness.click(harness.nodes().find((node) => node.type === 'button' && node.props['aria-label'] === 'launch.sectionTitle'))
-  harness.click(item('review-all (2)'))
+  harness.click(menuAction(harness, 'launch.prepare'))
   await harness.flush()
   assert.deepEqual(harness.launches[2].body, {
     scenario: 'review-all', section: 'review',
@@ -1549,7 +1665,7 @@ const rowButton = (harness, title, label, nth = 0) => {
     rereview: [pull('rereview', 8, { reason: 're-review-requested' }), pull('rereview', 9, { optional: true })],
     feedback: [pull('feedback', 4, { reason: 'changes-requested' }), pull('feedback', 6, { reason: 'review-feedback' })],
     respond: [pull('respond', 7, { reason: 'conflict' })],
-  }), scenarios: defaultScenarios(), withPanel: true })
+  }), scenarios: defaultScenarios(), configExtra: { defaultScenario: '' }, withPanel: true })
   await harness.flush()
   const chip = (id) => harness.nodes().find((node) => node.props?.className === 'adx-chip'
     && flattenTree(node.props.children).includes('section.' + id))
@@ -1558,9 +1674,8 @@ const rowButton = (harness, title, label, nth = 0) => {
   assert.deepEqual(inboxView(harness).rows, ['PR 1', 'PR 2', 'PR 3', 'PR 8', 'PR 9', 'PR 4', 'PR 6'])
   assert.equal(inboxView(harness).total, '8', 'feedback and CI on PR 4 count once')
   harness.click(rowButton(harness, 'PR 8', 'launch.title'))
-  const repeatScenario = harness.nodes().find((node) => node.props?.role === 'menuitem'
-    && flattenTree(node.props.children).includes('rereview-pr'))
-  harness.click(repeatScenario)
+  assert.equal(scenarioPicker(harness).props.value, 'rereview-pr')
+  harness.click(menuAction(harness, 'launch.prepare'))
   await harness.flush()
   assert.equal(harness.launches[0].body.scenario, 'rereview-pr')
   assert.equal(harness.launches[0].body.reason, 're-review-requested')
@@ -1625,10 +1740,10 @@ const snoozeChoice = (harness, title, choice, nth = 0) => {
 const sectionMenuItem = (harness, sectionId, label) => {
   const section = harness.nodes().find((node) => node.props?.['data-section'] === sectionId)
   harness.click(flattenTree(section.props.children).find((node) => node.type === 'button' && node.props['aria-label'] === 'launch.sectionTitle'))
-  return harness.nodes().find((node) => node.props?.role === 'menuitem'
-    && flattenTree(node.props.children).some((child) => typeof child === 'string' && child.startsWith(label)))
+  assert.ok(flattenTree(scenarioPicker(harness).props.children).some((child) => typeof child === 'string' && child.startsWith(label)))
+  return menuAction(harness, 'launch.prepare')
 }
-const itemLabel = (node) => flattenTree(node.props.children).find((child) => typeof child === 'string' && child.startsWith('Fix all'))
+const itemLabel = (harness) => flattenTree(scenarioPicker(harness).props.children).find((child) => typeof child === 'string' && child.startsWith('Fix all'))
 
 {
   // The snooze popover behaves like the launch menu.
@@ -1705,7 +1820,7 @@ const itemLabel = (node) => flattenTree(node.props.children).find((child) => typ
 
   snoozeChoice(harness, 'PR 4', 'activity')
   const fixAllItem = sectionMenuItem(harness, 'ci', 'Fix all')
-  assert.equal(itemLabel(fixAllItem), 'Fix all (1)', 'the section union leaves out snoozed items')
+  assert.equal(itemLabel(harness), 'Fix all (1)', 'the section union leaves out snoozed items')
   harness.click(fixAllItem)
   await harness.flush()
   assert.deepEqual(harness.launches.at(-1).body.urls, ['https://github.com/acme/app/commits/main'], 'a section launch never includes snoozed items')
@@ -1731,7 +1846,8 @@ const itemLabel = (node) => flattenTree(node.props.children).find((child) => typ
   assert.equal(view.all, '6', 'other counts still exclude snoozed items')
   assert.ok(harness.text().includes('snooze.returnsAt:snooze.tomorrow:' + localTime(tomorrowAt)), 'rows say when they return')
   assert.equal(rowButton(harness, 'PR 4', 'snooze.button'), undefined, 'Unsnooze replaces the clock')
-  assert.equal(itemLabel(sectionMenuItem(harness, 'ci', 'Fix all')), 'Fix all (0)', 'section launches never take snoozed rows')
+  sectionMenuItem(harness, 'ci', 'Fix all')
+  assert.equal(itemLabel(harness), 'Fix all (0)', 'section launches never take snoozed rows')
   harness.dispatch('keydown', null, { key: 'Escape' })
   harness.click(rowButton(harness, 'PR 4', 'snooze.unsnooze'))
   assert.equal(harness.store.get().filter, 'ci', 'unsnoozing the last item returns to the previous filter')

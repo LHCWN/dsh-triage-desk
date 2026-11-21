@@ -11,6 +11,8 @@ import {
   DEFAULT_CLONE_DIRS,
   DEFAULT_SCENARIO_ID,
   MAX_AGENTS,
+  normalizeSshServers,
+  SSH_AGENTS,
   MAX_AGENT_COMMAND,
   MAX_AGENT_LABEL,
   MAX_CLONE_DIRS,
@@ -48,6 +50,7 @@ export const EDITABLE_FIELDS = [
   'requireGreenChecks',
   'includeBotReviews',
   'agents',
+  'sshServers',
   'defaultAgent',
   'cloneDirs',
   'repoPaths',
@@ -112,6 +115,8 @@ export function publicConfig(settings, runtime, launcher, detected, environment 
     // [{ id, label, command, reason: 'placeholder' }], [] when none.
     invalidAgents: launcher.invalidAgents,
     defaultAgent: launcher.defaultAgent,
+    sshServers: launcher.sshServers,
+    sshAgents: SSH_AGENTS,
     // `defaultAgent` (the saved choice, shown in Settings) may be DSH_TARGET.
     // `defaultTarget`: what the panel opens for "default" (the saved agent
     // while it can start, else DSH); `effectiveDefaultAgent`: what a launch
@@ -130,6 +135,7 @@ export function publicConfig(settings, runtime, launcher, detected, environment 
     promptPaste: environment.promptPaste || null,
     platform,
     supportsPrompt: true,
+    supportsTaskDefault: true,
     supportsAgentDiscovery: true,
     detectedAgents: detectedAgentsView(detected || {}, launcher.agents, platform),
     editable: runtime.editable,
@@ -299,6 +305,13 @@ export function sanitizePatch(input, currentLauncher) {
     const agents = patch.agents !== undefined ? patch.agents : currentLauncher.agents
     if (id !== DSH_TARGET && !agents.some((agent) => agent.id === id)) throw new BadRequest(`unknown agent "${id}"`)
     patch.defaultAgent = id
+  }
+  if (input.sshServers !== undefined) {
+    try {
+      patch.sshServers = normalizeSshServers(input.sshServers, true)
+    } catch (error) {
+      throw new BadRequest(error.message)
+    }
   }
   if (input.cloneDirs !== undefined) patch.cloneDirs = sanitizeCloneDirs(input.cloneDirs)
   if (input.repoPaths !== undefined) patch.repoPaths = sanitizeRepoPaths(input.repoPaths)

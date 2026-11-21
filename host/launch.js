@@ -11,6 +11,8 @@ import {
   AGENT_COMMAND_RULE,
   SCENARIO_SECTION_IDS,
   bareAgentCommand,
+  buildSshScripts,
+  SSH_AGENTS,
   buildClipboardLauncherScript,
   buildDraftCommand,
   buildDraftLauncherScript,
@@ -89,7 +91,7 @@ export function createLaunch({
       if (scenario === undefined) throw new LaunchError('bad-scenario', `the scenario "${requested}" is not configured`)
       return scenario
     }
-    const fallback = launcherSettings.scenarios.find((entry) => entry.id === launcherSettings.defaultScenario)
+    const fallback = launcherSettings.scenarios.find((entry) => entry.id === (launcherSettings.defaultScenario || 'link'))
     return fallback !== undefined ? fallback : launcherSettings.scenarios[0]
   }
 
@@ -192,9 +194,36 @@ export function createLaunch({
     return { scenario, scope: 'item', parsed, item, prompt: built.prompt, trimmed: null, count: 1 }
   }
 
+  const launchSsh = async (alias, rendered, signal) => {
+    const server = launcherSettings.sshServers.find((entry) => entry.alias === alias)
+    if (!server) throw new LaunchError('bad-destination', 'choose a saved SSH destination')
+    const agent = SSH_AGENTS.find((entry) => entry.id === server.agent)
+    const title = `SSH ${server.alias} · ${agent.label} · ${scenarioTitle(rendered.scenario)}`
+    void cleanupStaleTempDirs()
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'triage-desk-ssh-'))
+    try {
+      const { stage, local, mode } = buildSshScripts(server, rendered.prompt, platform)
+      const file = path.join(dir, platform === 'win32' ? 'launch.ps1' : 'launch.command')
+      await fs.writeFile(path.join(dir, 'stage.sh'), stage, { mode: 0o600 })
+      await writeLauncherScript(file, local)
+      if (signal?.aborted) throw new LaunchError('aborted', 'the launch was cancelled')
+      const opened = await openTerminal(file, title, signal, launcherSettings.terminal, false)
+      return {
+        ok: true, sshAlias: alias, cwd: server.cwd, cwdMode: 'ssh', agent,
+        scenario: { id: rendered.scenario.id, label: scenarioTitle(rendered.scenario) },
+        count: rendered.count, trimmed: rendered.trimmed, terminal: opened?.terminal || null,
+        mode,
+      }
+    } catch (error) {
+      await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined)
+      throw error instanceof LaunchError ? error : new LaunchError('open-failed', error.message)
+    }
+  }
+
   const launchForItem = async (input, signal) => {
     const body = input !== null && typeof input === 'object' ? input : {}
     const rendered = renderScenarioPrompt(body)
+    if (body.sshAlias !== undefined) return launchSsh(body.sshAlias, rendered, signal)
     const scenario = rendered.scenario
     const cached = await detectAgents()
     let agent = resolveLauncherAgent(body, scenario, cached)
