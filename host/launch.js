@@ -150,7 +150,6 @@ export function createLaunch({
   /** Item context for a section launch; invalid and duplicate URLs are dropped. */
   const sectionLaunchItems = (section, urls) => {
     const items = []
-    let repo = ''
     const seen = new Set()
     for (const raw of urls) {
       if (typeof raw !== 'string') continue
@@ -158,11 +157,9 @@ export function createLaunch({
       if (url === '' || seen.has(url)) continue
       const parsed = parseRepoUrl(url)
       if (parsed === null) continue
-      if (items.length === 0) repo = parsed.slug
-      else if (repo.toLowerCase() !== parsed.slug.toLowerCase()) repo = ''
       seen.add(url)
       const entry = findSnapshotEntry(url, section) ?? findSnapshotEntry(url)
-      const item = { url, section }
+      const item = { url, section, repo: parsed.slug }
       if (entry !== null) {
         // A moved PR keeps its descriptive fields. Its reason belongs to its new group.
         for (const key of ITEM_FIELDS) {
@@ -171,7 +168,7 @@ export function createLaunch({
       }
       items.push(item)
     }
-    return { items, repo }
+    return items
   }
 
   const renderPrompt = (scenario, context) => {
@@ -191,9 +188,12 @@ export function createLaunch({
         throw new LaunchError('bad-scenario', 'a section scenario needs a valid section')
       }
       if (!Array.isArray(body.urls)) throw new LaunchError('bad-scenario', 'a section scenario needs a list of URLs')
-      const { items, repo } = sectionLaunchItems(section, body.urls)
+      const items = sectionLaunchItems(section, body.urls)
       if (items.length === 0) throw new LaunchError('bad-url', 'no GitHub URLs were provided')
       const built = renderPrompt(scenario, { items, section })
+      const included = items.slice(0, built.trimmed?.shown ?? items.length)
+      const slug = items[0].repo.toLowerCase()
+      const repo = included.every((item) => item.repo.toLowerCase() === slug) ? items[0].repo : ''
       return { scenario, scope: 'section', items, repo, prompt: built.prompt, trimmed: built.trimmed, count: items.length }
     }
     const url = typeof body.url === 'string' ? body.url.trim() : ''

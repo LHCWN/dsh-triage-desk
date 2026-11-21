@@ -7,6 +7,7 @@
  * Run with `npm run smoke:routes`. Not shipped in the npm package.
  */
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -15,6 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { withHome } from './fixtures/platform.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
+const posix = process.platform !== 'win32'
 // The fake subprocess layer answers macOS commands (Terminal, osascript, open),
 // so the host must see darwin on every runner, including Linux CI. Set before
 // the host modules are imported: `apply` captures the platform once.
@@ -37,6 +39,7 @@ const {
 const fixture = await fs.mkdtemp(path.join(os.tmpdir(), 'triage-desk-routes-'))
 const cloneDir = path.join(fixture, 'Playground', 'widgets')
 const workspaceDir = path.join(fixture, 'workspace')
+const remoteRoot = path.join(fixture, 'remote')
 await fs.mkdir(path.join(cloneDir, '.git'), { recursive: true })
 await fs.mkdir(workspaceDir, { recursive: true })
 await fs.writeFile(
@@ -244,7 +247,10 @@ const ctx = {
 }
 
 apply(ctx, {
-  sshServers: [{ alias: 'builder', agent: 'claude', cwd: '/work/remote' }],
+  sshServers: [
+    { alias: 'builder', agent: 'claude', cwd: '/work/remote' },
+    ...(posix ? [{ alias: 'draft-fixture', agent: 'claude', cwd: remoteRoot }] : []),
+  ],
   agents: [
     claude,
     codex,
@@ -515,6 +521,60 @@ await recordAsync('copy and launch render the same ordered and size-limited grou
   assert.equal(copy.prompt, captured.clipboard)
   assert.ok(copy.prompt.indexOf(urls[0]) >= 0 && copy.prompt.indexOf(urls[0]) < copy.prompt.indexOf(urls[1]))
   await cleanupLaunches()
+})
+
+await recordAsync('a trimmed group chooses a working directory from the repositories in its draft', async () => {
+  const remoteClone = path.join(remoteRoot, 'widgets')
+  const remoteBin = path.join(remoteRoot, 'bin')
+  const env = {
+    HOME: remoteRoot,
+    PATH: remoteBin + path.delimiter + process.env.PATH,
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: '/dev/null',
+  }
+  if (posix) {
+    await fs.mkdir(remoteClone, { recursive: true })
+    await fs.mkdir(remoteBin)
+    await fs.writeFile(path.join(remoteBin, 'claude'), '#!/bin/sh\nprintf "%s" "$2"\n', { mode: 0o700 })
+    for (const args of [['init', '--quiet'], ['remote', 'add', 'origin', 'git@github.com:acme/widgets.git']]) {
+      const result = spawnSync('git', args, { cwd: remoteClone, env, encoding: 'utf8' })
+      assert.equal(result.status, 0, result.stderr)
+    }
+  }
+  const widgets = Array.from({ length: 340 }, (_, i) => 'https://github.com/acme/widgets/pull/' + (340 - i))
+  for (const { urls, cwd, mode, remoteCwd } of [
+    { urls: [...widgets, OTHER_REPO_URL], cwd: cloneDir, mode: 'clone', remoteCwd: remoteClone },
+    { urls: [OTHER_REPO_URL, ...widgets], cwd: workspaceDir, mode: 'workspace', remoteCwd: remoteRoot },
+  ]) {
+    const request = { scenario: 'review-all', section: 'review', urls }
+    const copy = await json(await callHandler('/triage-desk/prompt', 'POST', request))
+    const { shown, total } = copy.trimmed
+    assert.equal(total, urls.length)
+    assert.ok(shown < total)
+    const included = [...copy.prompt.matchAll(/\]\((https:\/\/github\.com\/[^)]+)\)/g)].map((match) => match[1])
+    assert.deepEqual(included, urls.slice(0, shown), 'the draft keeps only the first PRs that fit')
+    const local = await json(await callHandler('/triage-desk/launch', 'POST', { ...request, agent: 'codex' }))
+    assert.deepEqual(local.trimmed, copy.trimmed)
+    assert.equal(local.cwd, cwd)
+    assert.equal(local.cwdMode, mode)
+    if (posix) {
+      const remote = await json(await callHandler('/triage-desk/launch', 'POST', { ...request, sshAlias: 'draft-fixture' }))
+      assert.deepEqual(remote.trimmed, copy.trimmed)
+      assert.equal(remote.cwdMode, 'ssh')
+      const stage = path.join(path.dirname(captured.launchFiles.at(-1)), 'stage.sh')
+      const uploaded = spawnSync('/bin/sh', [stage], { cwd: remoteRoot, env, encoding: 'utf8' })
+      assert.equal(uploaded.status, 0, uploaded.stderr)
+      const script = (await fs.readdir(remoteRoot)).find((file) => file.startsWith('.triage-desk-'))
+      assert.ok(script, 'staging writes the remote launcher')
+      const launched = spawnSync('/bin/sh', [script], { cwd: remoteRoot, env, encoding: 'utf8', timeout: 5000 })
+      assert.equal(launched.status, 0, launched.stderr)
+      const banner = 'SSH draft-fixture · claude · ' + await fs.realpath(remoteCwd) + '\n'
+      const handoff = launched.stdout.indexOf(banner)
+      assert.ok(handoff >= 0, launched.stdout.slice(0, 300))
+      assert.equal(launched.stdout.slice(handoff + banner.length), copy.prompt)
+    }
+    await cleanupLaunches()
+  }
 })
 
 await recordAsync('an unknown scenario is rejected with bad-scenario', async () => {

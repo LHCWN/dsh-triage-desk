@@ -21,6 +21,16 @@
 
 ### Fixed
 
+- Pending team requests move to re-review after you review and the head changes.
+  Group re-review prompts distinguish new commits, re-requests and author replies.
+- Unanswered reviewer feedback appears on draft PRs.
+- Settings offers only the scenario bindings the running host accepts.
+- Local and SSH group launches choose the working directory using the items
+  that fit in the draft.
+- SSH repository search and launch recognize literal GitHub host aliases on
+  the server. The launch confirmation reports terminal fallback.
+- The SSH paste timeout instructions direct you to copy the prompt in the panel
+  before pasting into the remote agent.
 - *Ready to merge* honors the green-check requirement for approved PRs even
   when GitHub reports their merge state as `UNSTABLE`.
 

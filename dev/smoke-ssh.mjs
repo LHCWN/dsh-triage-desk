@@ -64,10 +64,42 @@ async function checkRemoteChoices() {
   const first = path.join(folders[1], 'first')
   const copies = [first, path.join(first, 'worktrees', 'second'), path.join(folders[1], 'third')]
   const record = path.join(remote, 'record')
-  for (const folder of [...copies, path.join(remote, 'outside')]) {
+  await fs.mkdir(path.join(remote, '.ssh'))
+  const sshConfig = path.join(remote, '.ssh', 'config')
+  const aliases = [
+    'Host unused github-work # aliases on this server',
+    '  HostName = "github.com"',
+    'Host _github-443',
+    '  HostName ssh.github.com',
+    'Host other-work',
+    '  HostName gitlab.example',
+    'Host other-work',
+    '  HostName github.com',
+    'Host ?hadow-*',
+    '  HostName gitlab.example',
+    'Host shadow-work',
+    '  HostName github.com',
+    'Host excluded-work !excluded-*',
+    '  HostName github.com',
+    'Host wildcard-*',
+    '  HostName github.com',
+  ].join('\n') + '\n'
+  await fs.writeFile(sshConfig, aliases)
+  for (const [folder, url] of [
+    [copies[0], 'git@github-work:Acme/Widgets.git'],
+    [copies[1], 'ssh://git@_github-443:443/Acme/Widgets.git'],
+    [copies[2], 'git@github.com:Acme/Widgets.git'],
+    [path.join(folders[1], 'other-host'), 'git@other-work:Acme/Widgets.git'],
+    [path.join(folders[1], 'other-protocol'), 'https://github-work/Acme/Widgets.git'],
+    [path.join(folders[1], 'shadowed'), 'git@shadow-work:Acme/Widgets.git'],
+    [path.join(folders[1], 'excluded'), 'git@excluded-work:Acme/Widgets.git'],
+    [path.join(folders[1], 'wildcard-only'), 'git@wildcard-work:Acme/Widgets.git'],
+    [path.join(folders[1], 'different-case'), 'git@GitHub-Work:Acme/Widgets.git'],
+    [path.join(remote, 'outside'), 'git@github.com:Acme/Widgets.git'],
+  ]) {
     await fs.mkdir(folder, { recursive: true })
     git(['init', '-q', folder])
-    git(['-C', folder, 'remote', 'add', 'origin', 'git@github.com:Acme/Widgets.git'])
+    git(['-C', folder, 'remote', 'add', 'origin', url])
   }
   const env = { ...fixtureEnv, HOME: remote, PATH: bin, RECORD: record, SHELL: path.join(bin, 'fixture-shell') }
   await writeTool('fixture-shell', '#!/bin/sh\ntest "$1" = -i || exit 1\npwd -P > "$RECORD.shell"\nexit 12\n')
@@ -83,8 +115,11 @@ async function checkRemoteChoices() {
     return run('sh .triage-desk-*.sh', input)
   }
   const actual = await Promise.all(copies.map((folder) => fs.realpath(folder)))
-  const listing = run(sshRepositoryScan(server).at(-1)).trimEnd().split('\n')
-  assert.deepEqual(listing, actual.map((dir) => 'acme/widgets\t' + dir))
+  const scan = () => run(sshRepositoryScan(server).at(-1)).trimEnd().split('\n')
+  assert.deepEqual(scan(), actual.map((dir) => 'acme/widgets\t' + dir))
+  await fs.writeFile(sshConfig, 'HostName gitlab.example\n' + aliases)
+  assert.deepEqual(scan(), ['acme/widgets\t' + actual[2]], 'global HostName shadows aliases')
+  await fs.writeFile(sshConfig, aliases)
   const menu = launch({}, '2\ny\n')
   for (const dir of actual) assert.ok(menu.includes(dir))
   const opened = async () => (await fs.readFile(record + '.cwd', 'utf8')).trimEnd()

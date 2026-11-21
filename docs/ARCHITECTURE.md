@@ -149,12 +149,13 @@ import the launcher layer only through `launcher.js` and the data layer through
     managers;
   - `scenarios.js` and `prompt.js` — built-in scenarios, normalization and
     validation (an empty built-in prompt, which `host/config.js` saves for an
-    unedited one, and pre-0.1.4 copies matching `LEGACY_BUILTIN_PROMPTS` both
+    unedited one, and saved copies matching `LEGACY_BUILTIN_PROMPTS` both
     read as the current default), section/reason labels, and prompt rendering
     (item tokens, `{number}` from `parseRepoUrl` when absent, section `{links}`
     block, safe trimming);
   - `ssh.js` — saved destination validation and OpenSSH staging and interactive launcher scripts. The remote shell uses `ssh-repositories.sh` for the same bounded Git remote scan as
-    Settings (`GET /triage-desk/clones?sshAlias=…`). `ssh-select-folder.sh` resolves
+    Settings (`GET /triage-desk/clones?sshAlias=…`), including literal GitHub
+    aliases from the server's SSH config. `ssh-select-folder.sh` resolves
     the working copy or fallback and stores remembered choices in the remote home.
     `ssh-select-agent.sh` probes the preferred executable in that directory, offers
     configured alternatives on a miss, and can leave the user in a remote shell.
@@ -311,7 +312,9 @@ host renders the prompt from the snapshot and returns `scenario`, `count`,
 `supportsAgentDiscovery`); every new client-to-host route should be gated the same
 way so an older running host never receives a request it cannot answer. Additive
 fields the client reads with a fallback for an older host: `invalidAgents`,
-`labels: { sections, reasons }` (prompt preview labels, otherwise raw codes),
+`labels: { sections, reasons }` (prompt preview labels, otherwise raw codes.
+Settings uses the section table for supported scenario bindings and falls back
+to the original bindings when the table is absent),
 `terminal`, `promptDelivery`, `terminals` (detectTerminals; null hides the
 terminal picker), `promptPaste` (detectPasteSupport; null means unknown and the
 launch menu assumes the clipboard), `platform` (paste keys in hints and toasts),

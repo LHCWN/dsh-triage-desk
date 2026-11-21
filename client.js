@@ -2978,8 +2978,10 @@ window.__ModuleLoader__.load({
     }
 
     function launchToastText(t, payload) {
+      const terminalFallback = payload.terminal?.fallback ? t('launch.terminalFallback') : ''
       if (payload.sshAlias) {
-        return t('launch.sshConnecting', { alias: payload.sshAlias, agent: payload.agent.label }) + trimmedSuffix(t, payload)
+        return t('launch.sshConnecting', { alias: payload.sshAlias, agent: payload.agent.label }) +
+          terminalFallback + trimmedSuffix(t, payload)
       }
       const delivery = payload.delivery || {}
       const mode = payload.mode === 'draft' || payload.mode === 'paste' ? payload.mode : 'clipboard'
@@ -2990,7 +2992,7 @@ window.__ModuleLoader__.load({
         keys: pasteKeys(delivery.platform),
       })
       if (mode === 'clipboard' && delivery.pasteBlocked) text += t('launch.pasteBlocked.' + delivery.pasteBlocked)
-      if (payload.terminal && payload.terminal.fallback) text += t('launch.terminalFallback')
+      text += terminalFallback
       if (payload.cloneMissing) text += t('launch.workspaceFallback')
       if (payload.trimmed) return text + trimmedSuffix(t, payload)
       if (typeof payload.count === 'number' && payload.count > 1) text += t('launch.countSuffix', { n: payload.count })
@@ -4171,6 +4173,10 @@ window.__ModuleLoader__.load({
 
     function SettingsView({ t, store, state, onBack, onSaved, dirtyRef, onClean }) {
       const config = state.config
+      const sectionLabels = config?.labels?.sections
+      // Hosts that predate the label table only support the original bindings.
+      const scenarioSections = SECTION_ORDER.filter((id) =>
+        sectionLabels ? Object.hasOwn(sectionLabels, id) : id !== 'feedback')
       // Render the form on the first pass when the config is already loaded, so
       // the server-side render smoke sees the real settings screen; a config that
       // arrives later is seeded by the effect below.
@@ -4541,7 +4547,7 @@ window.__ModuleLoader__.load({
             label.length > MAX_SCENARIO_LABEL ||
             (scenario.scope !== 'item' && scenario.scope !== 'section') ||
             sections.length === 0 ||
-            sections.some((sectionId) => SECTION_ORDER.indexOf(sectionId) === -1) ||
+            sections.some((sectionId) => !scenarioSections.includes(sectionId)) ||
             prompt === '' ||
             prompt.length > scenarioTemplateLimit() ||
             (id === 'link' && (scenario.enabled === false || prompt.indexOf('{url}') === -1))
@@ -4863,7 +4869,7 @@ window.__ModuleLoader__.load({
                   h(
                     'div',
                     { className: 'adx-scenario-sections' },
-                    SECTION_ORDER.map((sectionId) =>
+                    scenarioSections.map((sectionId) =>
                       h(
                         'button',
                         {
