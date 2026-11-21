@@ -265,18 +265,20 @@ await check('an explicit re-request after my review lands in re-review', async (
     pull({ number: 4, headOid: 'e4', headAt: '2026-01-01T09:00:00Z', review: { at: '2026-01-01T10:30:00Z', oid: 'e4' }, requested: true }),
     // Requested and never reviewed: an ordinary review request.
     pull({ number: 5, headOid: 'f5', headAt: '2026-01-01T09:00:00Z', requested: true }),
-    // Requested again and new commits: the review section, as a fresh pass.
+    // Requested again after new commits: still a repeat review.
     pull({ number: 6, headOid: 'g6', headAt: '2026-01-01T09:00:00Z', review: { at: '2026-01-01T10:30:00Z', oid: 'old' }, requested: true }),
   ]
   const { ctx } = fakeCtx({ prs: () => prs })
   const snapshot = await buildSnapshot(ctx, settings())
-  assert.deepEqual(ids(snapshot, 'rereview'), [4])
+  assert.deepEqual(ids(snapshot, 'rereview').sort(), [4, 6])
   const item = find(snapshot, 'rereview', 4)
   assert.equal(item.rereviewCause, 're-requested')
   assert.equal(item.reason, 're-review-requested')
-  assert.deepEqual(ids(snapshot, 'review').sort(), [5, 6])
+  assert.match(find(snapshot, 'rereview', 6).reasonDetail, /new head g6/)
+  assert.equal(find(snapshot, 'rereview', 6).reason, 're-review-requested')
+  assert.deepEqual(ids(snapshot, 'review'), [5])
   // PRs 4 and 6 are in both the review-requested and reviewed-by results.
-  assert.equal(snapshot.sections.find((entry) => entry.id === 'review').items.length, 2, 'search duplicates are merged')
+  assert.equal(snapshot.sections.find((entry) => entry.id === 'review').items.length, 1, 'search duplicates are merged')
 })
 
 /* -------------------------------------------- merge readiness and replies */
@@ -311,12 +313,19 @@ await check('new inline reviewer replies need action until the author answers', 
     pr.reviewThreads.nodes = [{ comments: { nodes: comments } }]
     return pr
   }
-  const prs = [ownPull(94, false), ownPull(95, true)]
+  const approval = ownPull(96, false)
+  approval.reviewThreads.nodes = []
+  const conflict = ownPull(97, false)
+  conflict.mergeable = 'CONFLICTING'
+  const conflictOnly = { ...approval, number: 98, mergeable: 'CONFLICTING' }
+  const prs = [ownPull(94, false), ownPull(95, true), approval, conflict, conflictOnly]
   const { ctx } = fakeCtx({ prs: () => prs })
   const snapshot = await buildSnapshot(ctx, settings())
-  assert.deepEqual(ids(snapshot, 'respond'), [94])
-  assert.equal(find(snapshot, 'respond', 94).reason, 'review-feedback')
-  assert.equal(find(snapshot, 'respond', 94).lastActivity.at, '2026-01-01T11:00:00Z')
+  assert.deepEqual(ids(snapshot, 'respond'), [98])
+  assert.deepEqual(ids(snapshot, 'feedback'), [94, 97])
+  assert.equal(find(snapshot, 'feedback', 97).reason, 'review-feedback')
+  assert.equal(find(snapshot, 'feedback', 94).reason, 'review-feedback')
+  assert.equal(find(snapshot, 'feedback', 94).lastActivity.at, '2026-01-01T11:00:00Z')
 })
 
 await check('an author mention in the comment markdown asks for re-review, but not inside code or a quote', async () => {
@@ -485,7 +494,7 @@ await check('extra self logins own discovered PRs, review requests and recently 
   })
   const snapshot = await buildSnapshot(ctx, settings({ includePersonal: false, orgs: ['acme'], meLogins: [alias] }))
   assert.deepEqual(ids(snapshot, 'merge'), [141], 'alias-owned PRs are mine')
-  assert.deepEqual(ids(snapshot, 'respond'), [142], 'alias-owned PRs can require my fixes')
+  assert.deepEqual(ids(snapshot, 'feedback'), [142], 'alias-owned PRs can require my fixes')
   assert.deepEqual(ids(snapshot, 'review'), [144], 'direct requests to extra self logins need review')
   assert.deepEqual(ids(snapshot, 'rereview'), [], 'do not ask me to re-review my own alias-owned PR')
   const failing = snapshot.sections.find((section) => section.id === 'ci').items

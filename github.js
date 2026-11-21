@@ -52,7 +52,7 @@ const NEW_ISSUE_WINDOW_DAYS = 30
 // list to be triage material (org:llvm: about 1,300), so it lists none and
 // gets the narrow branch scan for that build.
 const LARGE_NEW_ISSUES = 500
-const SECTION_IDS = ['review', 'rereview', 'merge', 'respond', 'ci', 'issues']
+const SECTION_IDS = ['review', 'rereview', 'feedback', 'merge', 'respond', 'ci', 'issues']
 
 /*
  * GraphQL cost (GitHub's documented formula): add up the requests needed to
@@ -742,6 +742,7 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
   const sections = {
     review: [],
     rereview: [],
+    feedback: [],
     merge: [],
     respond: [],
     ci: [],
@@ -1394,7 +1395,7 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
     const shortHead = headOid !== null ? headOid.slice(0, 7) : null
 
     if (!base.draft && !isMine && requestedFromMe) {
-      if (!reviewedHead) {
+      if (!reviewedHead && !(directRequest && myLastReview !== null)) {
         const reviewedByOthers = reviews.some(
           (review) => review && review.author && !isMineAuthor(review.author) && review.state === 'APPROVED',
         )
@@ -1445,8 +1446,8 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
           section: 'rereview',
           // New commits and explicit re-requests are the main triggers; an
           // author reply alone is secondary and rendered quieter.
-          rereviewCause: newHead ? 'new-head' : reRequested ? 're-requested' : 'author-reply',
-          reason: newHead || !reRequested ? 'changes-after-my-review' : 're-review-requested',
+          rereviewCause: reRequested ? 're-requested' : newHead ? 'new-head' : 'author-reply',
+          reason: reRequested ? 're-review-requested' : 'changes-after-my-review',
           reasonDetail: details.join('; '),
         })
       }
@@ -1477,13 +1478,14 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
     if (isMine && !base.draft) {
       const reasons = []
       if (base.reviewDecision === 'CHANGES_REQUESTED') reasons.push('changes-requested')
-      if (base.mergeable === 'CONFLICTING') reasons.push('conflict')
       const newerActivity = otherLastAt !== null && (myLastActionAt === null || time(otherLastAt) > time(myLastActionAt))
       if (newerActivity && !lastOtherIsApproval) reasons.push('review-feedback')
+      const section = reasons.length > 0 ? 'feedback' : 'respond'
+      if (base.mergeable === 'CONFLICTING') reasons.push('conflict')
       if (reasons.length > 0) {
-        sections.respond.push({
+        sections[section].push({
           ...base,
-          section: 'respond',
+          section,
           reason: reasons[0],
           reasonDetail: reasons.join('; '),
         })
@@ -1819,6 +1821,7 @@ function sortSections(sections) {
     if (leftSecondary !== rightSecondary) return leftSecondary - rightSecondary
     return time(right.lastActivity && right.lastActivity.at) - time(left.lastActivity && left.lastActivity.at)
   })
+  sections.feedback.sort((left, right) => time(right.updatedAt) - time(left.updatedAt))
   sections.merge.sort((left, right) => time(right.updatedAt) - time(left.updatedAt))
   sections.respond.sort((left, right) => {
     const leftPull = left.kind === 'pull' ? 0 : 1

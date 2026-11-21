@@ -27,7 +27,9 @@ window.__ModuleLoader__.load({
     const PROMPT_URL = '/triage-desk/prompt'
     const CLONES_URL = '/triage-desk/clones'
     const AGENTS_FIND_URL = '/triage-desk/agents/find'
-    const SECTION_ORDER = ['review', 'rereview', 'merge', 'respond', 'ci', 'issues']
+    const REVIEW_SECTIONS = ['review', 'rereview', 'feedback']
+    const OTHER_SECTIONS = ['merge', 'respond', 'ci', 'issues']
+    const SECTION_ORDER = [...REVIEW_SECTIONS, ...OTHER_SECTIONS]
     const REFRESH_PRESETS = [60, 300, 600, 1200, 1800, 3600]
     const MAX_SCENARIO_LABEL = 60
     const MAX_SCENARIO_TEMPLATE = 4000
@@ -151,8 +153,12 @@ window.__ModuleLoader__.load({
       'limit.history': 'Long pull requests: very old reviews and comments are not read; your latest review always is',
       'page.unauthHint': 'gh does not look signed in. Run `gh auth login` in a terminal and refresh.',
       'page.unavailableHint': 'gh was not found. Install the GitHub CLI and sign in with `gh auth login`.',
-      'section.review': 'Waiting for your review',
-      'section.rereview': 'Re-review needed',
+      'section.reviews': 'Reviews',
+      'section.review': 'Awaiting my review',
+      'section.rereview': 'Awaiting my re-review',
+      'section.feedback': 'Feedback on my PRs',
+      'action.addressChanges': 'Address requested changes',
+      'action.reply': 'Reply to feedback',
       'section.merge': 'Ready to merge',
       'section.respond': 'Needs your action',
       'section.ci': 'CI is failing',
@@ -167,7 +173,7 @@ window.__ModuleLoader__.load({
       'reason.approved-checks-failing': 'approved, but CI is red',
       'reason.changes-requested': 'changes requested',
       'reason.conflict': 'merge conflict with the base branch',
-      'reason.review-feedback': 'reviewer comments — fixes expected',
+      'reason.review-feedback': 'new review feedback',
       'reason.mentioned': 'you were mentioned',
       'reason.checks-failing': 'checks are failing',
       'reason.branch-checks-failing': 'red branch',
@@ -469,8 +475,12 @@ window.__ModuleLoader__.load({
       'limit.history': '较长的拉取请求：不读取很早的审核和评论；你最近的审核始终会读取',
       'page.unauthHint': 'gh 似乎未登录。请在终端运行 `gh auth login` 后刷新。',
       'page.unavailableHint': '未找到 gh。请安装 GitHub CLI 并运行 `gh auth login` 登录。',
-      'section.review': '等待你审核',
-      'section.rereview': '需要重新审核',
+      'section.reviews': '审核',
+      'section.review': '等待我审核',
+      'section.rereview': '等待我复审',
+      'section.feedback': '我的 PR 收到的反馈',
+      'action.addressChanges': '处理修改请求',
+      'action.reply': '回复反馈',
       'section.merge': '可以合并',
       'section.respond': '需要你处理',
       'section.ci': 'CI 失败',
@@ -485,7 +495,7 @@ window.__ModuleLoader__.load({
       'reason.approved-checks-failing': '已批准，但 CI 失败',
       'reason.changes-requested': '有人要求修改',
       'reason.conflict': '与目标分支存在合并冲突',
-      'reason.review-feedback': '审核意见 — 需要修改',
+      'reason.review-feedback': '有新的审核反馈',
       'reason.mentioned': '有人提到了你',
       'reason.checks-failing': '检查失败',
       'reason.branch-checks-failing': '分支检查失败',
@@ -905,6 +915,7 @@ window.__ModuleLoader__.load({
         outline: var(--adx-ring-w) solid var(--adx-ring); outline-offset: -1px;
       }
       @media (hover: hover) { .adx-row:hover .adx-row-title { text-decoration: underline; text-underline-offset: 3px; } }
+      .adx-feedback-action { position: relative; align-self: flex-start; z-index: 1; }
       .adx-row-meta { display: block; font-size: 13px; line-height: 21px; color: var(--adx-ink-3);
                       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .adx-row-meta > span + span::before { content: ' · '; padding: 0 2px; }
@@ -1492,7 +1503,7 @@ window.__ModuleLoader__.load({
     /* ------------------------------------------------ snooze and attention */
 
     /** Sections whose items need the user's action; `issues` is triage only. */
-    const ACTIONABLE_SECTIONS = ['review', 'rereview', 'merge', 'respond', 'ci']
+    const ACTIONABLE_SECTIONS = [...REVIEW_SECTIONS, 'merge', 'respond', 'ci']
     const SNOOZE_STORAGE_KEY = 'triage-desk:snoozed:v2'
     /** Time-based snoozes end at this local hour. */
     const SNOOZE_HOUR = 9
@@ -1855,8 +1866,8 @@ window.__ModuleLoader__.load({
         author: { login: 'monalisa' },
         reason: 'ready-to-merge',
       },
-      respond: {
-        section: 'respond',
+      feedback: {
+        section: 'feedback',
         url: 'https://github.com/acme/app/pull/31',
         repo: 'acme/app',
         number: 31,
@@ -1866,6 +1877,10 @@ window.__ModuleLoader__.load({
         ref: '',
         author: { login: 'hubot' },
         reason: 'review-feedback',
+      },
+      respond: {
+        section: 'respond', url: 'https://github.com/acme/app/issues/12', repo: 'acme/app',
+        number: 12, kind: 'issue', title: 'Repair the checkout test', author: { login: 'octocat' }, reason: 'assigned-to-you',
       },
       ci: {
         section: 'ci',
@@ -3171,6 +3186,7 @@ window.__ModuleLoader__.load({
         buildRequest: (scenarioId) => ({
           scenario: scenarioId,
           url: item.url,
+          section,
           kind: item.kind,
           number: item.number,
           title: item.title,
@@ -3348,6 +3364,12 @@ window.__ModuleLoader__.load({
                 rowTitle,
               ),
           h('span', { className: 'adx-row-meta' }, meta),
+          section === 'feedback' && !selectMode && hasUrl ? h('a', {
+            className: 'adx-link adx-feedback-action',
+            href: item.url + (item.reason === 'changes-requested' ? '/files' : '#issuecomment-new'),
+            target: '_blank',
+            rel: 'noreferrer noopener',
+          }, t(item.reason === 'changes-requested' ? 'action.addressChanges' : 'action.reply')) : null,
         ),
         h(
           'span',
@@ -5560,11 +5582,15 @@ window.__ModuleLoader__.load({
       const snoozedCount = listing.snoozedCount
       const sectionCounts = {}
       for (const section of listing.normal) sectionCounts[section.id] = (sectionCounts[section.id] || 0) + section.items.length
+      sectionCounts.reviews = REVIEW_SECTIONS.reduce((sum, id) => sum + (sectionCounts[id] || 0), 0)
+      const reviewSubfilter = REVIEW_SECTIONS.includes(activeFilter)
+      const reviewsView = activeFilter === 'reviews' || reviewSubfilter
       const allCount = listing.normal.reduce((sum, section) => sum + section.items.length, 0)
       const visible = useMemo(
         () =>
           (snoozedView ? listing.snoozedList : listing.normal).filter(
-            (section) => (snoozedView || activeFilter === 'all' || section.id === activeFilter) && section.items.length > 0,
+            (section) => (snoozedView || activeFilter === 'all' || section.id === activeFilter ||
+              (activeFilter === 'reviews' && REVIEW_SECTIONS.includes(section.id))) && section.items.length > 0,
           ),
         [listing, activeFilter, snoozedView],
       )
@@ -5661,7 +5687,18 @@ window.__ModuleLoader__.load({
       const pollSeconds = Number.isFinite(Number(state.pollSeconds)) ? Number(state.pollSeconds) : 1200
 
       const sectionTone = (id) =>
-        id === 'review' ? 'info' : id === 'rereview' || id === 'respond' ? 'warn' : id === 'merge' ? 'ok' : id === 'ci' ? 'err' : 'idle'
+        id === 'review' ? 'info' : id === 'rereview' || id === 'feedback' || id === 'respond' ? 'warn' : id === 'merge' ? 'ok' : id === 'ci' ? 'err' : 'idle'
+
+      const filterChip = (id) => {
+        const pressed = activeFilter === id || (id === 'reviews' && reviewSubfilter)
+        if (!sectionCounts[id] && !pressed) return null
+        const parent = REVIEW_SECTIONS.includes(id) ? 'reviews' : 'all'
+        return h('button', {
+          key: id, type: 'button', className: 'adx-chip',
+          'aria-pressed': pressed ? 'true' : 'false',
+          onClick: () => store.set({ filter: activeFilter === id ? parent : id }),
+        }, t('section.' + id), h('span', { className: 'adx-chip-count' }, String(sectionCounts[id] || 0)))
+      }
 
       const openSettings = () => {
         setConfirmLeave(false)
@@ -5822,20 +5859,7 @@ window.__ModuleLoader__.load({
                           t('page.filterAll'),
                           h('span', { className: 'adx-chip-count' }, String(allCount)),
                         ),
-                        SECTION_ORDER.filter((id) => (sectionCounts[id] || 0) > 0 || activeFilter === id).map((id) =>
-                          h(
-                            'button',
-                            {
-                              key: id,
-                              type: 'button',
-                              className: 'adx-chip',
-                              'aria-pressed': activeFilter === id ? 'true' : 'false',
-                              onClick: () => store.set({ filter: activeFilter === id ? 'all' : id }),
-                            },
-                            t('section.' + id),
-                            h('span', { className: 'adx-chip-count' }, String(sectionCounts[id] || 0)),
-                          ),
-                        ),
+                        ['reviews', ...OTHER_SECTIONS].map(filterChip),
                         snoozedCount > 0 || snoozedView
                           ? h(
                               'button',
@@ -5852,6 +5876,9 @@ window.__ModuleLoader__.load({
                             )
                           : null,
                       ),
+                  reviewsView
+                    ? h('div', { className: 'adx-filters', role: 'group', 'aria-label': t('section.reviews') }, REVIEW_SECTIONS.map(filterChip))
+                    : null,
                   data !== null && showSources
                     ? h(
                         'div',

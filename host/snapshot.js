@@ -62,7 +62,7 @@ export function createSnapshotStore({ ctx, settings, resolveGh, log: safeLog, pr
         orgs: settings.orgs,
         org: '',
         user: null,
-        counts: { review: 0, rereview: 0, merge: 0, respond: 0, ci: 0, issues: 0, total: 0 },
+        counts: { review: 0, rereview: 0, feedback: 0, merge: 0, respond: 0, ci: 0, issues: 0, total: 0 },
         sections: SECTION_IDS.map((id) => ({ id, items: [] })),
         warnings: [],
         error: { code: `gh-${code}`, message },

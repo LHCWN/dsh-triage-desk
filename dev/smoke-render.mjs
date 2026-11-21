@@ -1491,7 +1491,8 @@ const inbox = (overrides = {}) => ({
   settings: { refreshSeconds: 1200 }, warnings: [], meta: {},
   sections: [
     { id: 'review', items: overrides.review ?? [pull('review', 1), pull('review', 2, { optional: true }), pull('review', 3, { source: acme })] },
-    { id: 'rereview', items: [] },
+    { id: 'rereview', items: overrides.rereview ?? [] },
+    { id: 'feedback', items: overrides.feedback ?? [] },
     { id: 'merge', items: [pull('merge', 5, { source: acme })] },
     { id: 'respond', items: overrides.respond ?? [pull('respond', 4)] },
     { id: 'ci', items: overrides.ci ?? [pull('ci', 4), branchItem] },
@@ -1543,6 +1544,28 @@ const rowButton = (harness, title, label, nth = 0) => {
 }
 
 {
+  const harness = settingsHarness({ snapshotPayload: inbox({
+    rereview: [pull('rereview', 8, { reason: 're-review-requested' })],
+    feedback: [pull('feedback', 4, { reason: 'changes-requested' }), pull('feedback', 6, { reason: 'review-feedback' })],
+    respond: [pull('respond', 7, { reason: 'conflict' })],
+  }), withPanel: true })
+  await harness.flush()
+  const chip = (id) => harness.nodes().find((node) => node.props?.className === 'adx-chip'
+    && flattenTree(node.props.children).includes('section.' + id))
+  assert.equal(inboxView(harness).chip('reviews'), '6')
+  harness.click(chip('reviews'))
+  assert.deepEqual(inboxView(harness).rows, ['PR 1', 'PR 2', 'PR 3', 'PR 8', 'PR 4', 'PR 6'])
+  assert.equal(inboxView(harness).total, '8', 'feedback and CI on PR 4 count once')
+  harness.click(chip('feedback'))
+  assert.deepEqual(inboxView(harness).rows, ['PR 4', 'PR 6'])
+  assert.ok(harness.nodes().some((node) => node.type === 'a' && node.props.href.endsWith('/4/files')
+    && node.props.children.includes('action.addressChanges')))
+  assert.ok(harness.nodes().some((node) => node.type === 'a' && node.props.href.endsWith('/6#issuecomment-new')
+    && node.props.children.includes('action.reply')))
+  harness.dispose()
+}
+
+{
   // Badge: actionable items once each, optional review requests left out;
   // every list count follows the source filter and the search.
   const harness = settingsHarness({ snapshotPayload: inbox(), withPanel: true })
@@ -1554,14 +1577,14 @@ const rowButton = (harness, title, label, nth = 0) => {
   assert.ok(harness.nodes().some((node) => node.type === 'path' && node.props.d === 'M9 7H15V9H9L10 8Z'),
     'the sidebar shows the Triage Desk mark (the selected row of the prompt queue)')
   assert.equal(view.all, '8', 'All counts the rows the list shows')
-  assert.equal(view.chip('review'), '3')
+  assert.equal(view.chip('reviews'), '3')
   assert.equal(view.chip('ci'), '2')
   harness.store.set({ sourceFilter: 'org:acme' })
   await harness.flush()
   view = inboxView(harness)
   assert.deepEqual(view.rows, ['PR 3', 'PR 5'])
   assert.equal(view.all, '2', 'the All chip follows the source filter')
-  assert.equal(view.chip('review'), '1', 'section chips follow the source filter')
+  assert.equal(view.chip('reviews'), '1', 'section chips follow the source filter')
   assert.equal(view.chip('respond'), null, 'a section without rows for the source has no chip')
   assert.equal(view.total, '2', 'the header total follows the source filter')
   assert.equal(view.badge, '5', 'the sidebar badge stays global')
@@ -1572,7 +1595,7 @@ const rowButton = (harness, title, label, nth = 0) => {
   assert.deepEqual(view.rows, ['PR 4', 'PR 4'])
   assert.equal(view.all, '2', 'chip counts follow the search')
   assert.equal(view.chip('respond'), '1')
-  assert.equal(view.chip('review'), null)
+  assert.equal(view.chip('reviews'), null)
   harness.dispose()
 }
 

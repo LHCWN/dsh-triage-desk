@@ -316,8 +316,11 @@ of `POST /triage-desk/agents/find` (the host leaves out agents whose executable
 is already configured; an oversized or non-JSON body is a 400; an older host
 ignores the body and the client compares exact commands and the program word).
 
-Snapshot sections are fixed: `review`, `rereview`, `merge`, `respond`, `ci`,
-`issues`. Keep the host response shape and client expectations in sync.
+The Reviews filter groups the `review`, `rereview` and `feedback` snapshot
+sections. The other sections are `merge`, `respond`, `ci` and `issues`.
+Saved scenarios bound to `respond` also apply to `feedback` on upgrade.
+Saving scenarios writes `scenariosVersion: 2` so subsequent edits to either
+binding persist.
 
 ## Verification
 

@@ -76,7 +76,7 @@ export function normalizeLauncherConfig(config) {
   // A new profile, an unknown id or "dsh": launches open a DSH chat.
   const savedDefault = follow(input.defaultAgent)
   const defaultAgent = typeof savedDefault === 'string' && ids.has(savedDefault) ? savedDefault : DSH_TARGET
-  const scenarios = normalizeScenarios(input.scenarios).map((scenario) =>
+  const scenarios = normalizeScenarios(input.scenarios, { upgradeFeedback: !(input.scenariosVersion >= 2) }).map((scenario) =>
     scenario.agent === DSH_TARGET && legacy !== undefined ? { ...scenario, agent: legacy } : scenario)
   const requestedDefault = typeof input.defaultScenario === 'string' ? input.defaultScenario.trim() : ''
   const defaultScenario = scenarios.some((entry) => entry.id === requestedDefault && entry.scope === 'item')

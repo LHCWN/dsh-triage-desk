@@ -312,7 +312,7 @@ check('builtin scenarios are complete and titled', () => {
   for (const scenario of BUILTIN_SCENARIOS) {
     assert.equal(scenario.agent, 'default', scenario.id)
     assert.ok(BUILTIN_SCENARIO_TITLES[scenario.id], scenario.id)
-    assert.ok(scenario.sections.length >= 1 && scenario.sections.length <= 6, scenario.id)
+    assert.ok(scenario.sections.length >= 1 && scenario.sections.length <= SCENARIO_SECTION_IDS.length, scenario.id)
     assert.ok(typeof scenario.prompt === 'string' && scenario.prompt.trim() !== '', scenario.id)
   }
   assert.ok(builtinScenario('review-all').prompt.includes('{links}'))
@@ -417,6 +417,15 @@ check('the default scenario falls back to link for non-item ids', () => {
   assert.equal(normalizeLauncherConfig({ defaultScenario: 'review-pr', scenarios: defaultScenarios() }).defaultScenario, 'review-pr')
   assert.equal(normalizeLauncherConfig({ defaultScenario: 'review-all', scenarios: defaultScenarios() }).defaultScenario, 'link')
   assert.equal(normalizeLauncherConfig({ defaultScenario: 'unknown', scenarios: defaultScenarios() }).defaultScenario, 'link')
+})
+
+check('saved reply scenarios follow feedback into Reviews until their bindings are edited', () => {
+  const reply = { id: 'my-reply', label: 'My reply', sections: ['respond'], prompt: 'Answer {url}' }
+  const saved = { scenarios: [reply] }
+  const read = (config) => normalizeLauncherConfig(config).scenarios.find((entry) => entry.id === reply.id)
+  assert.deepEqual(read(saved).sections, ['respond', 'feedback'])
+  assert.equal(read(saved).prompt, reply.prompt)
+  assert.deepEqual(read({ ...saved, scenariosVersion: 2 }).sections, ['respond'])
 })
 
 check('custom scenarios round-trip through normalization', () => {
