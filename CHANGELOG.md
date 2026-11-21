@@ -5,21 +5,27 @@
 ### Added
 
 - Preview and edit the task prompt before opening a local or remote agent. Select the machine and agent separately. Copy the exact draft or the row URL.
-- Agents and templates appear first in Settings. Launch environments groups terminal and repository settings with searchable SSH hosts, connection checks and remote agent detection.
+- The GitHub section groups account, sources, refresh and PR rules above Agents. It collapses when signed in. The Run on picker lists this computer and named SSH hosts in both Settings and drafts. Selecting a host checks its agents. Machines have separate default agents and share prompt templates. Terminal and repository folders are configured in Launch environments.
 - SSH folders accept `~/projects`. When a checkout is missing, choose a folder before opening the agent. Remote detection uses the interactive shell PATH.
 
 ### Changed
 
+- Local repository overrides are grouped in a collapsed section with a count. Each override has separate repository and folder fields.
 - Group actions show the number of visible items they will send, including in
   All. First reviews and re-reviews launch separately. Use Select to choose
   specific PRs or include optional reviews. Trimmed drafts report how many fit. If none fit,
   the panel reports an error before opening the draft.
 - The Reviews tab groups first reviews, repeat reviews and feedback on your PRs.
   A direct re-request offers the re-review scenario on both unchanged and updated heads.
-  Feedback rows link to the conversation or the files with requested changes.
+  The title opens the PR conversation. Only requested changes add a second link to the changed files.
   Saved scenarios for *Needs your action* also apply to the new feedback group.
 
 ### Fixed
+
+- SSH host selection, saved settings, and launches preserve alias case. Renaming
+  a saved host keeps its agent preferences and repository folders.
+- A remote default agent can be reset to Automatic when a scan finds no agents.
+- A failed GitHub connection check appears in the collapsed settings heading.
 
 - Pending team requests move to re-review after you review and the head changes.
   After new commits, an approval must cover the current head for the re-review

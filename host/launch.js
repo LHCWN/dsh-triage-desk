@@ -14,6 +14,8 @@ import {
   bareAgentCommand,
   buildSshScripts,
   SSH_AGENTS,
+  SSH_ALIAS,
+  configuredSshHosts,
   buildClipboardLauncherScript,
   buildDraftCommand,
   buildDraftLauncherScript,
@@ -34,6 +36,7 @@ import {
   scenarioTitle,
   withAgentExecutable,
 } from '../launcher.js'
+import { probeRemoteAgents } from './agents.js'
 import { LaunchError } from './errors.js'
 
 export function createLaunch({
@@ -217,9 +220,15 @@ export function createLaunch({
   }
 
   const launchSsh = async (alias, rendered, signal, requestedAgent) => {
-    const server = launcherSettings.sshServers.find((entry) => entry.alias === alias)
-    if (!server) throw new LaunchError('bad-destination', 'choose a saved SSH destination')
-    const agent = SSH_AGENTS.find((entry) => entry.id === (requestedAgent || server.agent))
+    if (typeof alias !== 'string' || !SSH_ALIAS.test(alias)) throw new LaunchError('bad-destination', 'choose a named SSH host')
+    let server = launcherSettings.sshServers.find((entry) => entry.alias === alias)
+    if (!server) {
+      if (!(await configuredSshHosts()).includes(alias)) throw new LaunchError('bad-destination', 'choose a saved destination or a named OpenSSH host')
+      server = { alias, folders: [] }
+    }
+    const preferred = requestedAgent || server.agent
+    const agent = preferred ? SSH_AGENTS.find((entry) => entry.id === preferred)
+      : (await probeRemoteAgents(server.alias, runProcess))[0]
     if (!agent) throw new LaunchError('unknown-agent', 'choose a supported SSH agent')
     const title = `SSH ${server.alias} · ${agent.label} · ${scenarioTitle(rendered.scenario)}`
     void cleanupStaleTempDirs()

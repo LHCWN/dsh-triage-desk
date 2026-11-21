@@ -125,6 +125,7 @@ function fakeHandle(exitCode, stdout, stderr) {
 function fakeSpawn(spec) {
   const argv = spec.argv
   if (argv[0] === 'ssh' && argv.includes('ConnectTimeout=8')) {
+    if (argv.at(-2) === 'folders-only') return fakeHandle(0, '__td_agent__codex\n', '')
     assert.equal(argv.at(-2), 'unsaved-host')
     return fakeHandle(0, 'login banner\n__td_agent__claude\n__td_agent__codex\n', '')
   }
@@ -253,6 +254,7 @@ const ctx = {
 apply(ctx, {
   sshServers: [
     { alias: 'builder', agent: 'claude', cwd: '/work/remote' },
+    { alias: 'folders-only', agent: '', folders: ['/projects'] },
     ...(posix ? [{ alias: 'draft-fixture', agent: 'claude', cwd: remoteRoot }] : []),
   ],
   agents: [
@@ -354,14 +356,37 @@ await recordAsync('repository discovery uses only the selected saved destination
   assert.equal((await json(await scan('unknown'))).error.code, 'bad-destination')
 })
 
-await recordAsync('SSH launches resolve only saved destinations and use the remote folder and agent', async () => {
+await recordAsync('a named OpenSSH host launches with the selected remote agent before saving settings', async () => {
+  await fs.mkdir(path.join(fixture, '.ssh'), { recursive: true })
+  await fs.writeFile(path.join(fixture, '.ssh', 'config'), 'Host STAGING-CI\n  HostName upper.invalid\nHost staging-ci\n  HostName lower.invalid\nHost BUILDER\n  HostName other.invalid\n')
+  await withHome(fixture, async () => {
+    const body = { url: PR_URL, sshAlias: 'staging-ci', agent: 'codex', draft: 'Run the migration' }
+    const result = await json(await callHandler('/triage-desk/launch', 'POST', body))
+    assert.equal(result.sshAlias, 'staging-ci')
+    assert.equal(result.agent.id, 'codex')
+    assert.equal(result.cwdMode, 'ssh')
+    for (const alias of ['staging-ci', 'STAGING-CI', 'BUILDER', 'builder']) {
+      const launch = await json(await callHandler('/triage-desk/launch', 'POST', { ...body, sshAlias: alias }))
+      assert.equal(launch.sshAlias, alias)
+      const script = await fs.readFile(captured.launchFiles.at(-1), 'utf8')
+      assert.ok(script.includes('ssh -tt -- ' + alias + ' sh '), 'the SSH command must target ' + alias)
+    }
+    const wrongCase = await json(await callHandler('/triage-desk/launch', 'POST', { ...body, sshAlias: 'Staging-Ci' }))
+    assert.equal(wrongCase.error.code, 'bad-destination')
+    const foldersOnly = await json(await callHandler('/triage-desk/launch', 'POST', { url: PR_URL, sshAlias: 'folders-only' }))
+    assert.equal(foldersOnly.agent?.id, 'codex', 'a folders-only host uses an installed agent')
+    const missing = await json(await callHandler('/triage-desk/launch', 'POST', { ...body, sshAlias: 'unknown' }))
+    assert.equal(missing.error.code, 'bad-destination')
+    await cleanupLaunches()
+  })
+})
+
+await recordAsync('SSH launches resolve saved destinations and use the remote folder and agent', async () => {
   const body = { url: PR_URL, scenario: 'custom-review', sshAlias: 'builder' }
   const result = await json(await callHandler('/triage-desk/launch', 'POST', body))
   assert.equal(result.cwdMode, 'ssh')
   assert.equal(result.cwd, null, 'the SSH terminal resolves the actual directory')
   assert.equal(result.agent.id, 'claude')
-  const unknown = await json(await callHandler('/triage-desk/launch', 'POST', { ...body, sshAlias: 'unknown' }))
-  assert.equal(unknown.error.code, 'bad-destination')
   await cleanupLaunches()
 })
 
@@ -798,8 +823,9 @@ await recordAsync('config POST rejects invalid scenarios', async () => {
     })
   }
   const cases = [
+    ['duplicate repository override', { repoPaths: { 'Owner/Repo': fixture, 'owner/repo': fixture } }],
     ['unsafe ssh alias', { sshServers: [{ alias: '-V', agent: 'claude', cwd: '/work' }] }],
-    ['duplicate ssh alias', { sshServers: ['build', 'BUILD'].map((alias) => ({ alias, agent: 'codex', cwd: '/work' })) }],
+    ['duplicate ssh alias', { sshServers: ['build', 'build'].map((alias) => ({ alias, agent: 'codex', cwd: '/work' })) }],
     ['invalid remote alternative', { sshServers: [{ alias: 'build', agent: 'claude', alternatives: ['unknown'] }] }],
     ['invalid remote folder list', { sshServers: [{ alias: 'build', agent: 'claude', folders: ['relative'] }] }],
     ['relative remote cwd', { sshServers: [{ alias: 'build', agent: 'claude', cwd: 'work' }] }],
@@ -1583,6 +1609,17 @@ await recordAsync('a fresh profile defaults to DSH and lists only installed agen
   assert.equal(res.statusCode, 200, res.body)
   assert.equal((await json(res)).agent.id, 'claude')
   await cleanupLaunches()
+})
+
+await recordAsync('SSH destinations differing only by case retain independent preferences', async () => {
+  const sshServers = [
+    { alias: 'Prod', agent: 'claude', folders: ['/prod'] },
+    { alias: 'prod', agent: 'codex', folders: ['/stage'] },
+  ]
+  const res = await callHandler('/triage-desk/config', 'POST', { sshServers })
+  assert.equal(res.statusCode, 200, res.body)
+  const { saved } = await json(res)
+  assert.deepEqual(saved.sshServers.map(({ alias, agent, folders }) => ({ alias, agent, folders })), sshServers)
 })
 
 await fs.rm(fixture, { recursive: true, force: true })

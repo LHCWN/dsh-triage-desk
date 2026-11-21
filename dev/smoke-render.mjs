@@ -610,7 +610,11 @@ function settingsHarness({
       if (url === '/triage-desk/pick-directory' || url === '/triage-desk/pick-clone') {
         return new Promise((resolve, reject) => pendingPickers.push({ resolve, reject, url }))
       }
-      if (url === '/triage-desk/ssh/check') return Promise.resolve(response(200, { agents: [{ id: 'claude', label: 'Claude Code' }] }))
+      if (url === '/triage-desk/ssh/check') {
+        (host.probed ??= []).push(JSON.parse(options.body).alias)
+        return Promise.resolve(host.sshError ? response(502, { error: { message: host.sshError } }) :
+          response(200, { ok: true, agents: host.sshAgents ?? [{ id: 'claude', label: 'Claude Code' }] }))
+      }
       if (url === '/triage-desk/clones?refresh=1&sshAlias=old') {
         return Promise.resolve(response(200, { ok: true, clones: [{ repo: 'acme/widgets', path: '/original/fork' }] }))
       }
@@ -640,7 +644,7 @@ function settingsHarness({
       if (url === '/triage-desk/config') host.configReads += 1
       if (url === '/triage-desk/config' && host.unavailable) return Promise.reject(new Error('restarting'))
       if (url === '/triage-desk/config') return Promise.resolve(response(200, { config, saveError: host.saveError }))
-      if (url === '/triage-desk/auth') return Promise.resolve(response(200, { auth: state.auth }))
+      if (url === '/triage-desk/auth') return Promise.resolve(host.authError ? response(503, { error: { message: host.authError } }) : response(200, { auth: state.auth }))
       if (url.split('?')[0] === '/triage-desk/snapshot') {
         host.snapshotReads += 1
         // Like the host, the default snapshot reports the saved refresh setting
@@ -1404,6 +1408,153 @@ for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-
   harness.dispose()
 }
 
+function labeledControl(harness, label, type = 'select') {
+  const field = harness.nodes().find((node) => node.type === 'label' && node.props.children.includes(label))
+  return flattenTree(field?.props.children || []).find((node) => node.type === type)
+}
+
+const runOnConfig = { supportsRunOn: true, supportsTaskDefault: true, defaultScenario: '', supportsEditablePrompt: true, supportsSshRepositoryFolders: true,
+  sshServers: [{ alias: 'builder', agent: 'codex', folders: [], alternatives: [] }],
+  sshHosts: ['builder', 'BUILDER', 'staging'], sshAgents: [{ id: 'claude', label: 'Claude Code' }, { id: 'codex', label: 'Codex' }] }
+
+{
+  const harness = settingsHarness({ snapshotPayload: snapshot, configExtra: runOnConfig })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'launch.title'))
+  await harness.flush()
+  const machine = labeledControl(harness, 'launch.machine')
+  assert.deepEqual(flattenTree(machine.props.children).filter((node) => node.type === 'option').map((node) => node.props.value),
+    ['', 'builder', 'BUILDER', 'staging'])
+  assert.equal(harness.host.probed, undefined)
+  harness.host.sshError = 'Connection refused'
+  harness.change(machine, 'builder')
+  await harness.flush()
+  assert.equal(labeledControl(harness, 'launch.agent').props.value, 'codex', 'a failed batch check keeps the saved SSH choice')
+  harness.change(labeledControl(harness, 'launch.prompt', 'textarea'), 'Preserve this edit')
+  harness.change(machine, 'staging')
+  await harness.flush()
+  assert.ok(harness.text().includes('Connection refused'))
+  assert.ok(flattenTree(labeledControl(harness, 'launch.agent').props.children).some((node) => node.props?.value === 'codex'),
+    'an interactive-only host permits a manual agent choice')
+  assert.equal(labeledControl(harness, 'launch.agent').props.value, '')
+  harness.host.sshError = ''
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('launch.retry')))
+  await harness.flush()
+  const agent = labeledControl(harness, 'launch.agent')
+  harness.change(agent, 'claude')
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('launch.open')))
+  await harness.flush()
+  assert.deepEqual(harness.host.probed, ['builder', 'staging', 'staging'])
+  assert.equal(harness.launches.at(-1).body.sshAlias, 'staging')
+  assert.equal(harness.launches.at(-1).body.draft, 'Preserve this edit')
+  harness.dispose()
+}
+
+{
+  const harness = settingsHarness({ configExtra: runOnConfig })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+  await harness.flush()
+  const text = harness.text()
+  const groups = harness.nodes().filter((node) => node.type === 'details')
+  const github = groups.find((group) => group.props.children[0]?.props.children.includes('settings.githubTitle'))
+  assert.ok(github, 'GitHub connection and inbox settings share a single section')
+  assert.equal(github.props.open, false, 'connected accounts start collapsed')
+  harness.click(github.props.children[0])
+  assert.ok(harness.nodes().some((node) => node.type === 'details' && node.props.open &&
+    node.props.children[0]?.props.children.includes('settings.githubTitle')))
+  const fields = flattenTree(github.props.children)
+  for (const key of ['settings.orgs', 'settings.personal', 'settings.refresh', 'settings.green', 'settings.bots']) {
+    assert.ok(fields.includes(key), key + ' stays in GitHub')
+  }
+  assert.ok(text.indexOf('settings.bots') < text.indexOf('settings.agentsSection'))
+  harness.host.authError = 'Host timeout'
+  await harness.store.loadAuth(true)
+  await harness.flush()
+  const authSummary = () => harness.nodes().find((node) => node.type === 'summary' && node.props.children.includes('settings.githubTitle'))
+  harness.click(authSummary())
+  assert.ok(flattenTree(authSummary().props.children).includes('settings.githubAuthError:Host timeout'))
+  assert.ok(!flattenTree(authSummary().props.children).includes('@tester'))
+  harness.host.authError = ''
+  await harness.store.loadAuth(true)
+  await harness.flush()
+  assert.ok(flattenTree(authSummary().props.children).includes('@tester'))
+  const pick = () => labeledControl(harness, 'launch.machine')
+  harness.change(labeledControl(harness, 'settings.foldersOn'), 'staging')
+  harness.change(labeledControl(harness, 'settings.ssh.folders', 'textarea'), '~/projects')
+  harness.host.sshError = 'Authentication requires a terminal'
+  harness.change(pick(), 'staging')
+  await harness.flush()
+  assert.equal(labeledControl(harness, 'settings.defaultAgent').props.value, '', 'folder edits do not assign an agent')
+  assert.equal(labeledControl(harness, 'settings.defaultAgent').props.disabled, false)
+  harness.host.sshError = ''
+  harness.change(pick(), 'builder')
+  await harness.flush()
+  assert.equal(labeledControl(harness, 'settings.defaultAgent').props.value, 'codex', 'retain a missing preferred agent')
+  harness.host.sshAgents = []
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('settings.scanAgain')))
+  await harness.flush()
+  const missingDefault = labeledControl(harness, 'settings.defaultAgent')
+  assert.equal(missingDefault.props.disabled, false, 'the saved preference can be cleared after an empty scan')
+  harness.change(missingDefault, '')
+  delete harness.host.sshAgents
+  harness.change(pick(), 'staging')
+  await harness.flush()
+  assert.ok(harness.text().includes('settings.scenarios'))
+  assert.ok(!harness.text().includes('settings.manageAgents'))
+  harness.change(labeledControl(harness, 'settings.defaultAgent'), 'claude')
+  harness.change(pick(), '')
+  assert.ok(harness.text().includes('settings.manageAgents'))
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('settings.save')))
+  assert.deepEqual(harness.pending[0].body.sshServers.map(({ alias, agent }) => [alias, agent]),
+    [['builder', ''], ['staging', 'claude']])
+  assert.equal(harness.pending[0].body.defaultAgent, state.config.defaultAgent)
+  harness.dispose()
+}
+
+{
+  const savedHost = { alias: 'Prod', agent: 'codex', alternatives: ['claude'], folders: ['~/projects', '/work'] }
+  const otherHost = { alias: 'unrelated', agent: '', alternatives: [], folders: ['/srv'] }
+  const harness = settingsHarness({ configExtra: { ...runOnConfig,
+    sshServers: [savedHost, otherHost], sshHosts: ['prod', 'Prod', 'unrelated'] } })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+  await harness.flush()
+  const button = (label) => harness.nodes().find((node) => node.type === 'button' && node.props.children.includes(label))
+  const alias = () => labeledControl(harness, 'settings.ssh.alias', 'input')
+  harness.change(labeledControl(harness, 'settings.foldersOn'), 'Prod')
+  harness.change(labeledControl(harness, 'launch.machine'), 'Prod')
+  harness.click(button('settings.renameHost'))
+  harness.change(alias(), 'unrelated')
+  assert.equal(button('settings.applyRename').props.disabled, true, 'another saved host cannot be overwritten')
+  harness.change(alias(), 'prod')
+  harness.click(button('settings.applyRename'))
+  await harness.flush()
+  assert.equal(labeledControl(harness, 'launch.machine').props.value, 'prod')
+  assert.equal(labeledControl(harness, 'settings.foldersOn').props.value, 'prod')
+  assert.equal(labeledControl(harness, 'settings.ssh.folders', 'textarea').props.value, '~/projects\n/work')
+  assert.deepEqual(harness.host.probed, ['Prod', 'prod'])
+  harness.click(button('settings.save'))
+  assert.deepEqual(harness.pending[0].body.sshServers, [{ ...savedHost, alias: 'prod' }, otherHost])
+  harness.dispose()
+}
+
+{
+  const template = { ...state.config.scenarios[1], label: 'Pinned template', agent: 'claude' }
+  const harness = settingsHarness({ configExtra: runOnConfig, scenarios: [template] })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.className === 'adx-scenario-toggle'))
+  assert.ok(harness.text().includes('settings.localOverride:Claude Code'))
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('settings.useMachineDefault')))
+  assert.ok(!harness.text().includes('settings.localOverride'))
+  assert.ok(!harness.nodes().some((node) => node.type === 'label' && flattenTree(node.props.children).includes('settings.scenarioAgent')))
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('settings.save')))
+  assert.equal(harness.pending[0].body.scenarios[0].agent, 'default')
+  harness.dispose()
+}
+
 function scenarioPicker(harness) {
   return harness.nodes().find((node) => node.type === 'select' && node.props.className === 'adx-select'
     && flattenTree(node.props.children).some((child) => child.type === 'option'))
@@ -1836,8 +1987,9 @@ const rowButton = (harness, title, label, nth = 0) => {
   assert.deepEqual(inboxView(harness).rows, ['PR 4', 'PR 6'])
   assert.ok(harness.nodes().some((node) => node.type === 'a' && node.props.href.endsWith('/4/files')
     && node.props.children.includes('action.addressChanges')))
-  assert.ok(harness.nodes().some((node) => node.type === 'a' && node.props.href.endsWith('/6#issuecomment-new')
-    && node.props.children.includes('action.reply')))
+  const feedbackLinks = harness.nodes().filter((node) => node.type === 'a' && node.props.href.includes('/pull/6'))
+  assert.deepEqual(feedbackLinks.map((node) => node.props.href), ['https://github.com/acme/app/pull/6'])
+  assert.ok(rowButton(harness, 'PR 6', 'launch.title'), 'ordinary feedback still offers an agent draft')
   harness.click(rowButton(harness, 'PR 4', 'snooze.button'))
   harness.click(harness.nodes().find((node) => node.props?.['data-choice'] === 'activity'))
   assert.deepEqual(inboxView(harness).rows, ['PR 6'])
@@ -2433,59 +2585,73 @@ for (const target of ['dsh', 'claude']) {
   harness.dispose()
 }
 
-for (const mode of ['dir', 'clone']) {
-  const harness = settingsHarness()
+{
+  const harness = settingsHarness({ configExtra: { repoPaths: { 'owner/old': '/old-clone' } } })
   await harness.flush()
   harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
   await harness.flush()
-  const button = (key) => harness.nodes().find((node) => node.type === 'button' && node.props.children.includes(key))
-  const field = (id) => harness.nodes().find((node) => node.props?.id === id)
-  const id = mode === 'dir' ? 'adx-clone-dirs' : 'adx-repo-paths'
-  harness.change(field(id), mode === 'dir' ? '/old-root' : 'owner/old = /old-clone')
-  harness.click(button(mode === 'dir' ? 'settings.pickFolder' : 'settings.pickClone'))
-  assert.equal(harness.pendingPickers.length, 1, 'opening a native picker sends one request')
-  harness.change(field(id), mode === 'dir' ? '/edited-root\n/picked-root' : 'owner/new = /edited-clone\nowner/picked \t = /old-picked-clone')
-  harness.pendingPickers.shift().resolve({
-    status: 200, ok: true,
-    json: async () => mode === 'dir'
-      ? { ok: true, path: '/picked-root' }
-      : { ok: true, repo: 'owner/picked', path: '/picked-clone' },
-  })
-  await harness.flush()
-  const expected = mode === 'dir' ? '/edited-root\n/picked-root' : 'owner/new = /edited-clone\nowner/picked = /picked-clone'
-  assert.equal(field(id).props.value, expected, mode + ': picker merges into current edits without resurrecting deleted paths')
-  harness.click(button('settings.save'))
-  assert.deepEqual(harness.pending[0].body[mode === 'dir' ? 'cloneDirs' : 'repoPaths'], mode === 'dir'
-    ? ['/edited-root', '/picked-root']
-    : { 'owner/new': '/edited-clone', 'owner/picked': '/picked-clone' })
+  const buttons = (key) => harness.nodes().filter((node) => node.type === 'button' && node.props.children.includes(key))
+  const click = (key, index = 0) => harness.click(buttons(key)[index])
+  const inputs = (placeholder) => harness.nodes().filter((node) => node.type === 'input' && node.props.placeholder === placeholder)
+  const repo = () => inputs('owner/repo')
+  const folder = () => inputs('~/Projects/repo')
+  const pickerReply = async (payload) => {
+    harness.pendingPickers.shift().resolve({ status: 200, ok: true, json: async () => ({ ok: true, ...payload }) })
+    await harness.flush()
+  }
+  assert.ok(harness.text().includes('settings.repoPaths (1)'), 'the disclosure counts existing overrides')
+  assert.equal(repo()[0].props.value, 'owner/old')
+  assert.equal(folder()[0].props.value, '/old-clone')
+
+  const roots = () => harness.nodes().find((node) => node.props?.id === 'adx-clone-dirs')
+  click('settings.pickFolder')
+  harness.change(roots(), '/edited-root\n/picked-root')
+  await pickerReply({ path: '/picked-root' })
+  assert.equal(roots().props.value, '/edited-root\n/picked-root')
+
+  click('settings.addRepoPath')
+  click('settings.pickFolder', 2)
+  assert.equal(harness.pendingPickers[0].url, '/triage-desk/pick-clone')
+  harness.change(repo()[1], 'owner/typed')
+  await pickerReply({ repo: 'owner/detected', path: '/picked=clone' })
+  assert.equal(repo()[1].props.value, 'owner/typed', 'respect edits while the picker is open')
+  assert.equal(folder()[1].props.value, '/picked=clone')
+
+  for (const duplicate of ['owner/old', 'Owner/OLD']) {
+    harness.change(repo()[1], duplicate)
+    click('settings.save')
+    assert.equal(harness.pending.length, 0, 'reject duplicate repository ' + duplicate)
+    assert.ok(harness.text().includes('settings.duplicateRepoPath:2'))
+  }
+  harness.change(repo()[1], '')
+  click('settings.save')
+  assert.equal(harness.pending.length, 0, 'incomplete pairs cannot be saved')
+  click('settings.pickFolder', 2)
+  await pickerReply({ repo: 'owner/detected', path: '/picked=clone' })
+  assert.equal(repo()[1].props.value, 'owner/detected')
+  click('settings.pickFolder', 1)
+  assert.equal(harness.pendingPickers[0].url, '/triage-desk/pick-directory')
+  click('settings.removeRepoPath')
+  await pickerReply({ path: '/obsolete' })
+  click('settings.save')
+  assert.deepEqual(harness.pending[0].body.repoPaths, { 'owner/detected': '/picked=clone' })
+  assert.deepEqual(harness.pending[0].body.cloneDirs, ['/edited-root', '/picked-root'])
   harness.reply(200, { ok: true })
   await harness.flush()
   harness.dispose()
 }
 
-for (const invalid of ['owner/broken /missing-equals', ' = /missing-repository', 'owner/broken = ']) {
-  const harness = settingsHarness()
+{
+  const harness = settingsHarness({ configExtra: { repoPaths: { 'Owner/Repo': '/one', 'owner/repo': '/two' } } })
   await harness.flush()
   harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
   await harness.flush()
-  const button = (key) => harness.nodes().find((node) => node.type === 'button' && node.props.children.includes(key))
-  const field = () => harness.nodes().find((node) => node.props?.id === 'adx-repo-paths')
-  const text = 'owner/valid = /valid-clone\n \t\n' + invalid
-  harness.change(field(), text)
-  harness.click(button('settings.save'))
-  assert.equal(harness.pending.length, 0, 'malformed mapping must block persistence instead of silently deleting it: ' + invalid)
-  assert.ok(harness.text().includes('settings.invalidRepoPaths:3'), 'validation identifies the invalid line, counting blank lines')
-  assert.equal(field().props.value, text, 'failed validation preserves all mapping text for repair')
-  assert.ok(!button('settings.save').props.disabled, 'invalid mapping remains dirty and repairable')
-  harness.change(field(), 'owner/valid = /valid-clone\n \t\nowner/repaired = /path/with=equals')
-  harness.click(button('settings.save'))
-  assert.equal(harness.pending.length, 1, 'repairing the line allows saving')
-  assert.deepEqual(harness.pending[0].body.repoPaths, {
-    'owner/valid': '/valid-clone', 'owner/repaired': '/path/with=equals',
-  }, 'valid mappings and equals characters inside paths survive the repair')
+  harness.change(harness.nodes().find((node) => node.props?.id === 'adx-clone-dirs'), '/new-root')
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('settings.save')))
+  assert.deepEqual(harness.pending[0].body.cloneDirs, ['/new-root'])
+  assert.equal(Object.hasOwn(harness.pending[0].body, 'repoPaths'), false, 'unrelated edits preserve legacy overrides')
   harness.reply(200, { ok: true })
   await harness.flush()
-  assert.ok(harness.text().includes('settings.saved'), 'repaired mappings can be confirmed saved')
   harness.dispose()
 }
 

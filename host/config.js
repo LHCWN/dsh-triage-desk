@@ -118,6 +118,7 @@ export function publicConfig(settings, runtime, launcher, detected, environment 
     sshAgents: SSH_AGENTS,
     sshHosts: environment.sshHosts || [],
     supportsEditablePrompt: true,
+    supportsRunOn: true,
     // `defaultAgent` (the saved choice, shown in Settings) may be DSH_TARGET.
     // `defaultTarget`: what the panel opens for "default" (the saved agent
     // while it can start, else DSH); `effectiveDefaultAgent`: what a launch
@@ -231,16 +232,18 @@ function sanitizeRepoPaths(input) {
     throw new BadRequest('repoPaths must be an object of "owner/repo" to absolute path')
   }
   const paths = {}
-  let count = 0
+  const seen = new Set()
   for (const key of Object.keys(input)) {
-    if (count >= MAX_REPO_PATHS) throw new BadRequest(`at most ${MAX_REPO_PATHS} manual clone paths are supported`)
+    if (seen.size >= MAX_REPO_PATHS) throw new BadRequest(`at most ${MAX_REPO_PATHS} manual clone paths are supported`)
     if (!REPO_PATTERN.test(key)) throw new BadRequest(`invalid repository key "${key}"`)
+    const normalized = key.toLowerCase()
+    if (seen.has(normalized)) throw new BadRequest(`duplicate repository override "${key}"`)
     const expanded = expandHome(typeof input[key] === 'string' ? input[key] : '')
     if (expanded === '') throw new BadRequest(`missing path for "${key}"`)
     if (!path.isAbsolute(expanded)) throw new BadRequest(`clone path must be absolute: "${input[key]}"`)
     if (/[\r\n\u0000]/.test(expanded) || expanded.length > 300) throw new BadRequest(`invalid clone path for "${key}"`)
     paths[key] = path.normalize(expanded)
-    count += 1
+    seen.add(normalized)
   }
   return paths
 }

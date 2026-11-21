@@ -46,8 +46,8 @@ The **Reviews** tab groups the three review queues. Select a group to filter fur
   covering the new head can make the re-review optional when GitHub's review
   requirements are satisfied.
 - **Feedback on my PRs** includes requested changes and new comments, including
-  inline replies, on your PRs and drafts. Open the changed files to address a
-  request or reply in the PR conversation. An approval alone creates no
+  inline replies, on your PRs and drafts. Open the PR conversation from its title or use
+  the agent button to draft a reply. Requested changes also link to the files. An approval alone creates no
   feedback task.
 - **Ready to merge**: your non-draft PRs that are approved, mergeable, and (by
   default) green. PRs GitHub marks `BLOCKED` are excluded even when approval and
@@ -92,11 +92,17 @@ Other panel features:
   `Status: stale|partial — reason` line when the last refresh failed or some
   sources could not be read, and tells an empty inbox apart from requested
   sections that are empty while others are not.
-- **Settings in the panel**: organizations, personal repositories, auto-refresh
-  interval, green-CI merge rule, bot-review handling, terminal, prompt delivery,
-  agents, launch scenarios, and clone search. Terminal settings are grouped under
-  *Launch environments* alongside clone search. The
-  auto-refresh select accepts **Custom…** in minutes (1–60).
+- **Settings in the panel** has three sections, in this order.
+  - **GitHub** contains the connection, organizations, personal repositories,
+    refresh interval, and PR rules. **Custom…** accepts an interval of 1–60 minutes.
+  - **Agents** uses **Run on** to select the machine whose default agent you
+    want to edit. **Configure local agents** edits commands on this computer.
+    Selecting an SSH host checks its available agents. **Prompt templates**
+    applies across machines.
+  - **Launch environments** contains the terminal, prompt delivery, and working
+    folders. **Repository folders on** selects the machine whose folders you
+    want to edit. Local **Repository overrides** bind a GitHub repository to
+    a specific working copy.
 - Light and dark themes both use the host theme tokens.
 
 ## Snooze
@@ -128,10 +134,11 @@ Other panel features:
 
 ## Launch scenarios
 
-Open a row or group to preview and edit its rendered prompt. Select a machine
+Click the terminal button on a row or in a group heading to preview and edit its rendered prompt. Select a machine
 and agent, then **Open** or **Copy prompt**. Agent selection and draft edits are
-independent. Settings → **Agents** controls each template's prompt, preferred
-agent, enabled state, order and applicable sections. The saved row default
+independent. **Settings → Agents → Prompt templates** controls each template's prompt, enabled state, order and
+applicable sections. Templates use the selected machine’s default agent. An existing
+local override can be cleared with **Use machine default**. The saved row default
 takes precedence where it applies. Built-in task templates cover initial review,
 re-review, repair, replies and issue triage. Group templates use the visible
 items in their own section. Existing scenarios bound to *Needs
@@ -316,7 +323,7 @@ recognized, and managers without a marker beside the `.exe` (aqua's
 `aqua-proxy.exe` hard links, for one) are not covered. For such an install,
 write the absolute path of the program the shim starts in the agent command.
 
-For every other agent, Settings → **Prompt delivery** (config key
+For other local agents, **Settings → Launch environments → Prompt delivery** (config key
 `promptDelivery`) chooses how the prompt arrives:
 
 - **Type into the agent** (`paste`, the default and recommended): the agent runs
@@ -385,8 +392,9 @@ before each launch.
 
 ### Agents
 
-Built-in agents (edit or extend them in Settings; the form edits the name and the
-launch command, while the internal agent id stays stable and is not shown):
+For **This computer**, open **Settings → Agents → Configure local agents** to edit
+a display name or launch command. The agent ID stays the same when you rename it.
+The built-in commands are listed below.
 
 | Agent id | Launch command | Prompt delivery |
 |---|---|---|
@@ -492,18 +500,18 @@ and the warning lists the rejected ones.
 
 ## Clone discovery
 
-- Manual `owner/repo = /path` overrides (`repoPaths`) win; the repository name is
+- Manual repository folder overrides (`repoPaths`) win; the repository name is
   matched case-insensitively. Then the configured clone directories
   (`cloneDirs`) are searched. Without configured directories the plugin
   searches the typical folders that exist (`~/Projects`, `~/Developer`,
   `~/Documents/GitHub`, …) together with project roots detected in your home.
-- Clone folders can be added with the native system folder picker. For manual
-  paths, pick a clone folder and the plugin derives its `owner/repo` (from
-  `upstream`, then `origin`, then the first other GitHub remote). Picker results
-  preserve edits made while the dialog is open.
-- Each nonempty manual mapping line needs `owner/repo = /absolute/path`; missing
-  separators, repositories, or paths block saving with a line-specific error,
-  keeping the text for correction.
+- Under **Launch environments**, select **This computer** and expand **Repository
+  overrides** to add, edit, or remove a repository and its local folder. The
+  collapsed heading shows the number of overrides. Existing mappings appear here.
+  When editing overrides, enter each GitHub repository once, regardless of case.
+- **Choose folder…** opens the native picker. If the repository field is empty,
+  choosing a working copy fills it from the GitHub remote (upstream, then
+  origin, then another GitHub remote). You can also enter both fields by hand.
 - Each saved SSH destination searches its own folders, including each folder itself
   and three levels of visible subdirectories (up to 1,500 directories per root).
   Nested directory symlinks are skipped. Discovery reads GitHub fetch URLs
@@ -566,7 +574,7 @@ Fields:
 | `repoPaths` | `{}` | Optional `owner/repo` → absolute clone path exceptions, up to 50, matched case-insensitively (under *Launch environments*) |
 | `scenarios` | built-in set | Named launch scenarios: `{ id, label?, scope: 'item' \| 'section', sections, prompt, agent: 'default' \| <agent id>, enabled }`; array order resolves competing templates; an empty `prompt` on a built-in scenario means its current default |
 | `defaultScenario` | empty string | Task-based preselection, or an enabled row scenario ID where applicable |
-| `sshServers` | `[]` | Remote destinations. Each entry has a literal OpenSSH `alias`, built-in `agent` ID, optional built-in `alternatives` and ordered remote `folders` (absolute or `~/…`) (up to eight). A legacy `cwd` supplies one folder |
+| `sshServers` | `[]` | Remote destinations. Each entry has a case-sensitive OpenSSH `alias`, preferred built-in `agent` ID (empty uses the first detected agent), optional built-in `alternatives` and ordered remote `folders` (absolute or `~/…`) (up to eight). A legacy `cwd` supplies one folder |
 | `ghCommand` | `gh` | Path to the GitHub CLI |
 | `timeoutMs` | `30000` | Timeout of one `gh` invocation |
 | `meLogins` | `[]` | Extra self logins: decide ownership, direct review requests, your activity, and recent branch authors on the items the signed-in account's searches find. PRs that involve only an alias are not found; aliases add no sources or team memberships |

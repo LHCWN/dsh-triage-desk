@@ -311,7 +311,7 @@ host renders the prompt from the snapshot and returns `scenario`, `count`,
 `trimmed`, `cwdMode` alongside the base launch fields.
 
 `publicConfig` also advertises client-facing capabilities (`supportsPrompt`,
-`supportsAgentDiscovery`); every new client-to-host route should be gated the same
+`supportsAgentDiscovery`, `supportsRunOn`); every new client-to-host route should be gated the same
 way so an older running host never receives a request it cannot answer. Additive
 fields the client reads with a fallback for an older host: `invalidAgents`,
 `labels: { sections, reasons }` (prompt preview labels, otherwise raw codes.

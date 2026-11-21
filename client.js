@@ -158,7 +158,6 @@ window.__ModuleLoader__.load({
       'section.rereview': 'Awaiting my re-review',
       'section.feedback': 'Feedback on my PRs',
       'action.addressChanges': 'Address requested changes',
-      'action.reply': 'Reply to feedback',
       'section.merge': 'Ready to merge',
       'section.respond': 'Needs your action',
       'section.ci': 'CI is failing',
@@ -263,7 +262,20 @@ window.__ModuleLoader__.load({
       'launch.chooseAgent': 'Choose an agent',
       'launch.tooLong': 'Shorten the draft to 16,000 characters.',
       'launch.prompt': 'Prompt',
-      'launch.machine': 'Open on',
+      'settings.addSshHost': 'Add SSH host…',
+      'settings.useHost': 'Use host',
+      'settings.renameHost': 'Rename saved host…',
+      'settings.applyRename': 'Rename',
+      'settings.aliasInUse': 'A saved host already uses this alias.',
+      'settings.localOverride': 'Local agent override · {agent}',
+      'settings.useMachineDefault': 'Use machine default',
+      'settings.foldersOn': 'Repository folders on',
+      'settings.forgetHost': 'Remove saved host settings',
+      'settings.scanAgain': 'Scan again',
+      'settings.foundAgents': 'Agents found: {n}',
+      'settings.autoAgent': 'Automatic (first detected agent)',
+      'settings.manualSshAgent': 'Could not check installed agents: {error}. Choose an agent manually or retry.',
+      'launch.machine': 'Run on',
       'launch.local': 'This computer',
       'settings.environments': 'Launch environments',
       'settings.agentsSection': 'Agents',
@@ -322,13 +334,15 @@ window.__ModuleLoader__.load({
       'settings.cloneDirs': 'Repository folders',
       'settings.cloneDirsHint': 'The plugin searches for Git working copies. One path per line; empty auto-detects project roots in your home, then falls back to: {list}.',
       'settings.cloneDirsPlaceholder': '~/Projects',
-      'settings.repoPaths': 'Exact paths for individual repositories',
-      'settings.repoPathsHint': 'Exceptions only: use when a clone lives elsewhere or has a different name. One "owner/repo = /absolute/path" per line; wins over folder search.',
-      'settings.repoPathsPlaceholder': 'owner/repo = ~/Projects/repo',
-      'settings.invalidRepoPaths': 'Line {line}: enter a repository and path separated by "=" (owner/repo = /path).',
+      'settings.repoPaths': 'Repository overrides',
+      'settings.overrideRepo': 'Repository',
+      'settings.overrideFolder': 'Local folder',
+      'settings.addRepoPath': 'Add override',
+      'settings.removeRepoPath': 'Remove override',
+      'settings.invalidRepoPaths': 'Override {n}: enter a repository (owner/repo) and a local folder.',
+      'settings.duplicateRepoPath': 'Override {n}: this repository already has an override.',
       'settings.scan': 'Find repositories',
       'settings.pickFolder': 'Choose folder…',
-      'settings.pickClone': 'Choose clone…',
       'settings.picking': 'Choosing…',
       'settings.pickFailed': 'Could not open the system folder picker.',
       'settings.scanning': 'Scanning…',
@@ -516,7 +530,6 @@ window.__ModuleLoader__.load({
       'section.rereview': '等待我复审',
       'section.feedback': '我的 PR 收到的反馈',
       'action.addressChanges': '处理修改请求',
-      'action.reply': '回复反馈',
       'section.merge': '可以合并',
       'section.respond': '需要你处理',
       'section.ci': 'CI 失败',
@@ -621,7 +634,20 @@ window.__ModuleLoader__.load({
       'launch.chooseAgent': '选择智能体',
       'launch.tooLong': '请将草稿缩短至 16,000 个字符。',
       'launch.prompt': '提示词',
-      'launch.machine': '打开位置',
+      'settings.addSshHost': '添加 SSH 主机…',
+      'settings.useHost': '使用主机',
+      'settings.renameHost': '重命名已保存的主机…',
+      'settings.applyRename': '重命名',
+      'settings.aliasInUse': '已有主机使用此别名。',
+      'settings.localOverride': '本机智能体例外 · {agent}',
+      'settings.useMachineDefault': '使用机器默认设置',
+      'settings.foldersOn': '仓库目录所在主机',
+      'settings.forgetHost': '清除此主机的已保存设置',
+      'settings.scanAgain': '重新扫描',
+      'settings.foundAgents': '找到的智能体：{n}',
+      'settings.autoAgent': '自动（首个检测到的智能体）',
+      'settings.manualSshAgent': '未能检查已安装的智能体：{error}。请手动选择或重试。',
+      'launch.machine': '运行位置',
       'launch.local': '本机',
       'settings.environments': '启动环境',
       'settings.agentsSection': '智能体',
@@ -680,13 +706,15 @@ window.__ModuleLoader__.load({
       'settings.cloneDirs': '仓库文件夹',
       'settings.cloneDirsHint': '插件会搜索 Git 工作副本。每行一个路径；留空会自动发现主目录中的项目根目录，然后使用默认目录：{list}。',
       'settings.cloneDirsPlaceholder': '~/Projects',
-      'settings.repoPaths': '单个仓库的精确路径',
-      'settings.repoPathsHint': '仅用于例外：当克隆在其他位置或目录名不同。每行 owner/repo = /绝对/路径；优先于文件夹搜索。',
-      'settings.repoPathsPlaceholder': 'owner/repo = ~/Projects/repo',
-      'settings.invalidRepoPaths': '第 {line} 行：请输入用“=”分隔的仓库和路径（owner/repo = /路径）。',
+      'settings.repoPaths': '仓库路径例外',
+      'settings.overrideRepo': '仓库',
+      'settings.overrideFolder': '本机文件夹',
+      'settings.addRepoPath': '添加例外',
+      'settings.removeRepoPath': '移除例外',
+      'settings.invalidRepoPaths': '第 {n} 项：请输入仓库（owner/repo）及本机文件夹。',
+      'settings.duplicateRepoPath': '第 {n} 项：此仓库已有路径例外。',
       'settings.scan': '查找仓库',
       'settings.pickFolder': '选择文件夹…',
-      'settings.pickClone': '选择克隆…',
       'settings.picking': '选择中…',
       'settings.pickFailed': '无法打开系统文件夹选择器。',
       'settings.scanning': '正在扫描…',
@@ -1172,17 +1200,25 @@ window.__ModuleLoader__.load({
         .adx-scenario-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
       }
       .adx-auth { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
-      .adx-auth-head, .adx-auth > .adx-form-note { flex-basis: 100%; }
-      .adx-auth > .adx-form-note { order: 1; }
+      .adx-auth > .adx-form-note { flex-basis: 100%; order: 1; }
       .adx-auth-line { flex: 1 1 16em; margin: 0; }
       .adx-auth-actions { display: flex; flex-wrap: wrap; gap: 6px; }
       .adx-draft, .adx-draft label, .adx-ssh-fields, .adx-ssh-fields .adx-launch-agent { display: grid; gap: 6px; }
       .adx-draft textarea { width: 100%; box-sizing: border-box; resize: vertical; }
       .adx-launch-menu:has(.adx-draft) { width: min(400px, 85vw); max-height: 70vh; overflow-y: auto; }
+      .adx-run-on { display: grid; gap: 6px; font-weight: 500; }
+      .adx-run-on-status, .adx-run-on-add { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .adx-run-on-status { font-size: 12px; color: var(--adx-ink-3); }
+      .adx-alternative { display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; }
       .adx-ssh-fields fieldset { min-width: 0; }
       .adx-ssh-fields fieldset label { display: inline-flex; margin-right: 12px; }
       .adx-ssh-fields [role=status]:empty { display: none; }
       .adx-form { display: flex; flex-direction: column; gap: 18px; max-width: 620px; padding-top: 6px; }
+      .adx-form > .adx-advanced { padding-bottom: 14px; border-bottom: 1px solid var(--adx-hairline-soft); }
+      .adx-advanced-summary { cursor: pointer; }
+      .adx-form > .adx-advanced > summary { font-size: 15px; font-weight: 600; }
+      .adx-form > .adx-advanced[open] > * + * { margin-block-start: 12px; }
+      .adx-account-name { margin-inline-start: 8px; font-size: 13px; font-weight: 400; color: var(--adx-ink-3); }
       .adx-form-head { display: flex; align-items: center; gap: 8px; }
       .adx-form-head h2 { margin: 0; font-size: 16px; line-height: 24px; font-weight: 500; }
       .adx-form-back { font-size: 13px; line-height: 20px; color: var(--adx-ink-2); }
@@ -1282,6 +1318,8 @@ window.__ModuleLoader__.load({
         box-shadow: 0 0 0 2px color-mix(in srgb, var(--adx-info) 25%, transparent);
       }
       .adx-agents { display: flex; flex-direction: column; gap: 8px; }
+      .adx-overrides { padding-top: 8px; }
+      .adx-override { display: grid; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--adx-hairline-soft); }
       .adx-agent-row { display: grid; grid-template-columns: minmax(110px, 0.7fr) minmax(180px, 1.6fr) 28px; gap: 8px; align-items: center; }
       .adx-agent-row .adx-input { height: 32px; font-size: 13px; }
       .adx-agent-add { align-self: flex-start; }
@@ -1902,21 +1940,6 @@ window.__ModuleLoader__.load({
           left.length > 0 ? h('span', { className: 'adx-tooltip-quiet' }, t('count.excluded', { list: left.join(' · ') })) : null,
         ),
       )
-    }
-
-    function parseRepoPathsText(text) {
-      const result = {}
-      const lines = String(text || '').split('\n')
-      for (let index = 0; index < lines.length; index += 1) {
-        const trimmed = lines[index].trim()
-        if (trimmed === '') continue
-        const equals = trimmed.indexOf('=')
-        const key = equals === -1 ? '' : trimmed.slice(0, equals).trim()
-        const value = equals === -1 ? '' : trimmed.slice(equals + 1).trim()
-        if (key === '' || value === '') return { paths: null, invalidLine: index + 1 }
-        result[key] = value
-      }
-      return { paths: result, invalidLine: null }
     }
 
     /* ------------------------------------------------- scenario helpers */
@@ -3104,6 +3127,43 @@ window.__ModuleLoader__.load({
       )
     }
 
+    function RunOnPicker({ t, servers, hosts, machine, onChange, disabled, onAdd, label = 'launch.machine' }) {
+      const names = new Set([...servers.map((server) => server.alias.trim()), ...hosts].filter(Boolean))
+      return h('label', { className: 'adx-run-on' }, t(label),
+        h('select', { className: 'adx-select', value: machine, disabled, onChange: (event) => {
+          if (event.target.value === ':add') onAdd()
+          else onChange(event.target.value)
+        } }, h('option', { value: '' }, t('launch.local')),
+        [...names].map((alias) => h('option', { key: alias, value: alias }, alias)),
+        onAdd && h('option', { value: ':add' }, t('settings.addSshHost'))))
+    }
+
+    function useRemoteAgents(alias) {
+      const [result, setResult] = useState(null)
+      const [attempt, setAttempt] = useState(0)
+      useEffect(() => {
+        setResult(null)
+        if (!alias) return undefined
+        let current = true
+        postJson('/triage-desk/ssh/check', { alias }).then(({ agents }) => {
+          if (current) setResult({ alias, attempt, agents })
+        }).catch((failure) => {
+          if (current) setResult({ alias, attempt, error: failure.message })
+        })
+        return () => { current = false }
+      }, [alias, attempt])
+      return { result: result?.alias === alias && result.attempt === attempt ? result : null,
+        scan: () => setAttempt((value) => value + 1) }
+    }
+
+    function RemoteScan({ t, probe }) {
+      const { result, scan } = probe
+      return h('div', { className: 'adx-run-on-status' },
+        h('span', { role: 'status' }, result?.error ? t('settings.manualSshAgent', { error: result.error }) : (result
+          ? t('settings.foundAgents', { n: result.agents.length }) : t('settings.connectionChecking'))),
+        result && outlineButton(t(result.error ? 'launch.retry' : 'settings.scanAgain'), scan))
+    }
+
     function DraftEditor({ t, config, actions, targets, count, group }) {
       const textArea = useRef(null)
       useEffect(() => {
@@ -3114,7 +3174,7 @@ window.__ModuleLoader__.load({
       }, [actions.manualPrompt])
       const [machine, setMachine] = useState('')
       const [choice, setChoice] = useState('')
-      const [probe, setProbe] = useState(null)
+      const probe = useRemoteAgents(machine)
       const [draft, setDraft] = useState(null)
       const [error, setError] = useState('')
       const [attempt, setAttempt] = useState(0)
@@ -3130,56 +3190,46 @@ window.__ModuleLoader__.load({
         }).catch((failure) => { if (current) setError(failure.message) })
         return () => { current = false }
       }, [identity, empty, attempt])
-      useEffect(() => {
-        if (!machine) return undefined
-        let current = true
-        postJson('/triage-desk/ssh/check', { alias: machine }).then(({ agents }) => {
-          if (current) setProbe({ machine, agents })
-        }).catch((failure) => { if (current) setProbe({ machine, error: failure.message }) })
-        return () => { current = false }
-      }, [machine])
-
       const server = targets.servers.find(({ alias }) => alias === machine)
-      const checked = probe?.machine === machine ? probe : null
-      const configured = new Set([server?.agent, ...(server?.alternatives || [])])
-      const remoteAgents = checked?.agents || configList(config, 'sshAgents').filter(({ id }) => configured.has(id))
+      // Batch-mode probing can fail on a host that permits interactive login.
+      const configured = new Set([choice, server?.agent, ...(server?.alternatives || [])])
+      const catalog = configList(config, 'sshAgents')
+      const remoteAgents = probe.result?.agents ?? (probe.result?.error ? catalog : catalog.filter(({ id }) => configured.has(id)))
       const template = configList(config, 'scenarios').find(({ id }) => id === draft?.scenario.id)
       const pinned = template && scenarioPinnedAgent(template, targets.agents)
-      const preferred = server ? server.agent : pinned?.id || targets.selected
-      const options = server ? remoteAgents.map(({ id, label }) => h('option', { key: id, value: id }, label)) :
+      const preferred = machine ? server?.agent : pinned?.id || targets.selected
+      const options = machine ? remoteAgents.map(({ id, label }) => h('option', { key: id, value: id }, label)) :
         [...(targets.dsh ? [h('option', { key: DSH_TARGET, value: DSH_TARGET }, t('launch.dshTarget'))] : []),
           ...agentOptions(t, targets.ordered, targets.detected)]
-      const offered = server ? remoteAgents.map(({ id }) => id) :
+      const offered = machine ? remoteAgents.map(({ id }) => id) :
         [...(targets.dsh ? [DSH_TARGET] : []), ...targets.ordered.map(({ id }) => id)]
-      const selected = [choice, preferred].find((id) => offered.includes(id)) || (server ? '' : offered[0]) || ''
+      const automatic = !machine || (!preferred && probe.result?.agents)
+      const selected = [choice, preferred].find((id) => offered.includes(id)) || (automatic ? offered[0] : '') || ''
       const busy = actions.busy
       const tooLong = draft && Array.from(draft.prompt).length > 16000
       const ready = draft?.identity === identity && draft.prompt.trim() && !tooLong && count !== 0
       const open = () => {
         const id = draft.scenario.id || undefined
-        if (!server && selected === DSH_TARGET) actions.launchDsh(id, draft)
-        else actions.launch(id, selected, server?.alias, draft.prompt)
+        if (!machine && selected === DSH_TARGET) actions.launchDsh(id, draft)
+        else actions.launch(id, selected, machine || undefined, draft.prompt)
       }
       return h('div', { className: 'adx-draft' },
-        targets.servers.length > 0 && h('label', null, t('launch.machine'),
-          h('select', { className: 'adx-select', value: machine, disabled: busy, onChange: (event) => {
-            setMachine(event.target.value)
+        (config.supportsRunOn || targets.servers.length > 0) && h(RunOnPicker, { t, servers: targets.servers,
+          hosts: config.supportsRunOn ? configList(config, 'sshHosts') : [], machine, disabled: busy, onChange: (alias) => {
+            setMachine(alias)
             setChoice('')
-            setProbe(null)
-          } }, h('option', { value: '' }, t('launch.local')), targets.servers.map(({ alias }) =>
-            h('option', { key: alias, value: alias }, 'SSH · ' + alias)))),
+          } }),
         h('label', null, t('launch.agent'), h('select', { className: 'adx-select', value: selected, disabled: busy,
           onChange: (event) => setChoice(event.target.value) },
           !selected && h('option', { value: '', disabled: true }, t('launch.chooseAgent')), options)),
-        checked?.error && h('span', { className: 'adx-form-note', role: 'status' }, checked.error),
-        server && checked?.agents?.length === 0 && h('span', { role: 'status' }, t('launch.noAgents')),
+        machine && h(RemoteScan, { t, probe }),
         group && draft && h('span', { className: 'adx-form-note' }, batchActionLabel(t, template || draft.scenario, group, count)),
         h('label', null, t('launch.prompt'), h('textarea', { className: 'adx-textarea', rows: 6, ref: textArea,
           value: draft?.identity === identity ? draft.prompt : '', disabled: busy || draft?.identity !== identity,
           onChange: (event) => setDraft({ ...draft, prompt: event.target.value }) })),
         tooLong && h('div', { role: 'alert' }, t('launch.tooLong')),
         error && h('div', { role: 'alert' }, error, outlineButton(t('launch.retry'), () => setAttempt(attempt + 1))),
-        !server && launchVia(t, config, { ...targets, selected }),
+        !machine && launchVia(t, config, { ...targets, selected }),
         h('div', { className: 'adx-form-actions' },
           h('button', { type: 'button', className: 'adx-btn adx-btn--primary', disabled: !ready || !selected || busy, onClick: open }, t('launch.open')),
           h('button', { type: 'button', className: 'adx-btn adx-btn--outline', disabled: !ready || busy,
@@ -3580,12 +3630,12 @@ window.__ModuleLoader__.load({
                 rowTitle,
               ),
           h('span', { className: 'adx-row-meta' }, meta),
-          section === 'feedback' && !selectMode && hasUrl ? h('a', {
+          section === 'feedback' && addressChanges && !selectMode && hasUrl ? h('a', {
             className: 'adx-link adx-feedback-action',
-            href: item.url + (addressChanges ? '/files' : '#issuecomment-new'),
+            href: item.url + '/files',
             target: '_blank',
             rel: 'noreferrer noopener',
-          }, t(addressChanges ? 'action.addressChanges' : 'action.reply')) : null,
+          }, t('action.addressChanges')) : null,
         ),
         h(
           'span',
@@ -4236,12 +4286,7 @@ window.__ModuleLoader__.load({
         terminal: typeof config.terminal === 'string' ? config.terminal : 'auto',
         promptDelivery: config.promptDelivery === 'clipboard' ? 'clipboard' : 'paste',
         cloneDirs: Array.isArray(config.cloneDirs) ? config.cloneDirs.join('\n') : '',
-        repoPaths:
-          config.repoPaths !== null && typeof config.repoPaths === 'object' && !Array.isArray(config.repoPaths)
-            ? Object.keys(config.repoPaths)
-                .map((key) => key + ' = ' + config.repoPaths[key])
-                .join('\n')
-            : '',
+        repoPaths: Object.entries(config.repoPaths || {}).map(([repo, path]) => ({ _key: newAgentRowKey(), repo, path })),
         scenarios: Array.isArray(config.scenarios)
           ? config.scenarios.map((scenario) => ({
               _key: newAgentRowKey(),
@@ -4337,6 +4382,11 @@ window.__ModuleLoader__.load({
       const [refreshCustom, setRefreshCustom] = useState(initial === null ? false : initial.refreshCustom)
       const [picking, setPicking] = useState(null)
       const [openScenario, setOpenScenario] = useState(null)
+      const [githubExpanded, setGithubExpanded] = useState(null)
+      const [machine, setMachine] = useState('')
+      const [folderMachine, setFolderMachine] = useState('')
+      const [hostEdit, setHostEdit] = useState(null)
+      const probe = useRemoteAgents(machine)
       const [findingAgents, setFindingAgents] = useState(false)
       const [invalidAgentKey, setInvalidAgentKey] = useState(null)
       const initialized = useRef(initial !== null)
@@ -4409,26 +4459,23 @@ window.__ModuleLoader__.load({
         })
       }
 
-      const addRepoPath = (repo, path) => {
-        update((previous) => {
-          const lines = String(previous.repoPaths || '')
-            .split('\n')
-            .map((line) => line.trim())
-            .filter(Boolean)
-            .filter((line) => line.indexOf('=') === -1 || line.slice(0, line.indexOf('=')).trim() !== repo)
-          lines.push(repo + ' = ' + path)
-          return { repoPaths: lines.join('\n') }
-        })
-      }
+      const updateRepoPath = (key, patch) => update((previous) => ({
+        repoPaths: previous.repoPaths.map((row) => row._key === key ? { ...row, ...patch(row) } : row),
+      }))
 
-      const pickPath = async (mode) => {
+      const pickPath = async (row) => {
         if (picking !== null) return
-        setPicking(mode)
+        setPicking(row ? row._key : 'dir')
         try {
-          const payload = await postJson(mode === 'dir' ? '/triage-desk/pick-directory' : '/triage-desk/pick-clone', {})
-          if (payload.path === null || payload.path === undefined) return
-          if (mode === 'dir') addCloneDir(payload.path)
-          else addRepoPath(payload.repo, payload.path)
+          const detectRepo = row && !row.repo.trim()
+          const payload = await postJson(detectRepo ? '/triage-desk/pick-clone' : '/triage-desk/pick-directory', {})
+          if (!payload.path) return
+          if (row) {
+            updateRepoPath(row._key, (current) => ({
+              repo: current.repo || payload.repo || '',
+              path: current.path === row.path ? payload.path : current.path,
+            }))
+          } else addCloneDir(payload.path)
         } catch (error) {
           setNotice({
             tone: 'error',
@@ -4725,10 +4772,25 @@ window.__ModuleLoader__.load({
           return
         }
         const agentsEdited = JSON.stringify(form.agents) !== JSON.stringify((baseline.current || {}).agents)
-        const parsedRepoPaths = parseRepoPathsText(form.repoPaths)
-        if (parsedRepoPaths.invalidLine !== null) {
-          setNotice({ tone: 'error', text: t('settings.invalidRepoPaths', { line: parsedRepoPaths.invalidLine }) })
-          return
+        const repoPaths = {}
+        const repoPathsEdited = JSON.stringify(form.repoPaths) !== JSON.stringify(baseline.current?.repoPaths)
+        if (repoPathsEdited) {
+          const seen = new Set()
+          for (const [index, row] of form.repoPaths.entries()) {
+            const repo = row.repo.trim()
+            const path = row.path.trim()
+            if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) || !path) {
+              setNotice({ tone: 'error', text: t('settings.invalidRepoPaths', { n: index + 1 }) })
+              return
+            }
+            const key = repo.toLowerCase()
+            if (seen.has(key)) {
+              setNotice({ tone: 'error', text: t('settings.duplicateRepoPath', { n: index + 1 }) })
+              return
+            }
+            seen.add(key)
+            repoPaths[repo] = path
+          }
         }
         store
           .saveConfig({
@@ -4765,7 +4827,7 @@ window.__ModuleLoader__.load({
               .split('\n')
               .map((entry) => entry.trim())
               .filter((entry) => entry.length > 0),
-            repoPaths: parsedRepoPaths.paths,
+            ...(repoPathsEdited ? { repoPaths } : {}),
             scenarios: form.scenarios.map((scenario) => ({
               id: String(scenario.id || '').trim().toLowerCase(),
               label: String(scenario.label || '').trim(),
@@ -4848,27 +4910,18 @@ window.__ModuleLoader__.load({
       const startLogin = () => {
         void store.loginGithub().catch(() => undefined)
       }
+      const showGithub = githubExpanded ?? !state.auth?.authenticated
+      const githubError = state.authError && t('settings.githubAuthError', { message: state.authError })
       const renderAuth = () => {
         const auth = state.auth
         const rows = []
-        rows.push(
-          h(
-            'div',
-            { className: 'adx-auth-head', key: 'head' },
-            h('span', { className: 'adx-auth-title' }, t('settings.githubTitle')),
-          ),
-        )
         if (state.authStatus === 'loading' && auth === null) {
           rows.push(h('p', { className: 'adx-form-note', key: 'loading' }, t('settings.connectionChecking')))
         }
-        if (state.authError !== null) {
-          rows.push(
-            h(
-              'p',
-              { className: 'adx-form-note', key: 'error' },
-              t('settings.githubAuthError', { message: state.authError }),
-            ),
-          )
+        if (state.authError) {
+          return h('div', { className: 'adx-auth' },
+            h('p', { className: 'adx-form-note', role: 'status' }, githubError),
+            outlineButton(t('launch.retry'), checkAuth))
         }
         if (auth !== null) {
           if (auth.available === false) {
@@ -4887,7 +4940,7 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 { className: 'adx-auth-actions', key: 'missing-actions' },
-                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t(state.authError ? 'launch.retry' : 'settings.connectionCheck')),
+                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t('settings.connectionCheck')),
               ),
             )
           } else if (auth.authenticated === true) {
@@ -4902,7 +4955,7 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 { className: 'adx-auth-actions', key: 'actions' },
-                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t(state.authError ? 'launch.retry' : 'settings.connectionCheck')),
+                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t('settings.connectionCheck')),
               ),
             )
           } else {
@@ -4921,7 +4974,7 @@ window.__ModuleLoader__.load({
                   },
                   state.loginStatus === 'launching' ? t('settings.githubOpening') : t('settings.githubLogin'),
                 ),
-                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t(state.authError ? 'launch.retry' : 'settings.connectionCheck')),
+                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t('settings.connectionCheck')),
               ),
             )
             if (state.loginStatus === 'launched') {
@@ -4938,7 +4991,6 @@ window.__ModuleLoader__.load({
             }
           }
         }
-        if (state.authError && !auth) rows.push(outlineButton(t('launch.retry'), checkAuth))
         return h('div', { className: 'adx-auth' }, rows)
       }
 
@@ -4952,7 +5004,9 @@ window.__ModuleLoader__.load({
           const scopeLabel = t(scenario.scope === 'section' ? 'settings.scenarioScopeSection' : 'settings.scenarioScopeItem')
           const agentLabel = scenarioAgentHint(t, scenario, form.agents,
             form.defaultAgent === configValue(config, 'defaultAgent') ? panelDefaultTarget(config, form.agents) : form.defaultAgent)
-          const meta = [scopeLabel, agentLabel].filter((entry) => entry !== '').join(' · ')
+          const override = scenarioAgentValue(scenario) === 'default' ? '' :
+            t('settings.localOverride', { agent: targetLabel(t, scenario.agent, form.agents) })
+          const meta = [scopeLabel, config.supportsRunOn ? override : agentLabel].filter(Boolean).join(' · ')
           const body = isOpen
             ? h(
                 'div',
@@ -4990,7 +5044,9 @@ window.__ModuleLoader__.load({
                           h('option', { value: 'section' }, t('settings.scenarioScopeSection')),
                         ),
                   ),
-                  h(
+                  config.supportsRunOn ? (override && h('div', { className: 'adx-scenario-field' },
+                    h('span', null, override),
+                    outlineButton(t('settings.useMachineDefault'), () => updateScenario(index, { agent: 'default' })))) : h(
                     'label',
                     { className: 'adx-scenario-field' },
                     h('span', { className: 'adx-scenario-field-label' }, t('settings.scenarioAgent')),
@@ -5211,6 +5267,121 @@ window.__ModuleLoader__.load({
         )
       }
 
+      const hostList = configList(config, 'sshHosts')
+      const serverFor = (alias) => form.sshServers.find((row) => row.alias === alias)
+      const remoteCatalog = configList(config, 'sshAgents')
+      const changeServer = (alias, patch) => {
+        const server = serverFor(alias)
+        const rows = server ? form.sshServers.map((row) => row === server ? { ...row, ...patch } : row)
+          : [...form.sshServers, { _key: newAgentRowKey(), alias, agent: '',
+            folders: '', cwd: '', alternatives: [], ...patch }]
+        update({ sshServers: rows })
+      }
+      const forgetServer = (alias) => {
+        update({ sshServers: form.sshServers.filter((row) => row.alias !== alias) })
+        setMachine('')
+        setHostEdit(null)
+        if (folderMachine === alias) setFolderMachine('')
+      }
+      function renderHostPicker() {
+        const alias = hostEdit?.value.trim() || ''
+        const original = hostEdit?.original
+        const conflict = original && alias !== original && Boolean(serverFor(alias))
+        const canApply = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(alias) && !conflict && alias !== original
+        const selectMachine = (value) => {
+          setMachine(value)
+          setHostEdit(null)
+        }
+        const applyAlias = () => {
+          if (original) {
+            changeServer(original, { alias })
+            if (folderMachine === original) setFolderMachine(alias)
+          } else if (!serverFor(alias) && !hostList.includes(alias)) {
+            changeServer(alias, {})
+          }
+          selectMachine(alias)
+        }
+        return h('div', { className: 'adx-agents' },
+          h(RunOnPicker, { t, servers: form.sshServers, hosts: hostList, machine,
+            onChange: selectMachine, onAdd: () => setHostEdit({ value: '' }) }),
+          hostEdit && h('div', { className: 'adx-run-on-add' },
+            h('label', { className: 'adx-run-on' }, t('settings.ssh.alias'),
+              h('input', { className: 'adx-input', autoFocus: true, spellCheck: false, value: hostEdit.value,
+                'aria-invalid': Boolean(conflict), 'aria-describedby': conflict ? 'adx-ssh-alias-error' : undefined,
+                onChange: (event) => setHostEdit({ ...hostEdit, value: event.target.value }) })),
+            h('button', { type: 'button', className: 'adx-btn adx-btn--outline', disabled: !canApply,
+              onClick: applyAlias }, t(original ? 'settings.applyRename' : 'settings.useHost')),
+            outlineButton(t('settings.cancel'), () => setHostEdit(null)),
+            conflict && h('span', { id: 'adx-ssh-alias-error', role: 'status' }, t('settings.aliasInUse'))))
+      }
+
+      function renderRemoteDefault() {
+        const server = serverFor(machine)
+        const found = probe.result?.agents ?? (probe.result?.error ? remoteCatalog : [])
+        const preference = server?.agent || ''
+        const absent = preference && !found.some(({ id }) => id === preference)
+        const savedLabel = remoteCatalog.find(({ id }) => id === preference)?.label || preference
+        return h('div', { className: 'adx-agents' },
+          h('label', { className: 'adx-run-on' }, t('settings.defaultAgent'),
+            h('select', { className: 'adx-select', value: preference, disabled: !preference && !found.length,
+              onChange: (event) => changeServer(machine, { agent: event.target.value }) },
+              h('option', { value: '' }, t('settings.autoAgent')),
+              absent && h('option', { value: preference, disabled: true }, probe.result?.agents
+                ? savedLabel + ' · ' + t('launch.notInstalled') : savedLabel),
+              found.map(({ id, label }) => h('option', { key: id, value: id }, label)))),
+          h(RemoteScan, { t, probe }),
+          server && h('details', { className: 'adx-advanced' },
+            h('summary', { className: 'adx-advanced-summary' }, t('settings.ssh.alternatives')),
+            remoteCatalog.filter(({ id }) => id !== preference && (server.alternatives.includes(id) ||
+              found.some((agent) => agent.id === id))).map(({ id, label }) =>
+              h('label', { key: id, className: 'adx-alternative' }, h('input', {
+                type: 'checkbox', checked: server.alternatives.includes(id),
+                onChange: (event) => changeServer(machine, { alternatives: event.target.checked
+                  ? [...server.alternatives, id] : server.alternatives.filter((other) => other !== id) }),
+              }), label))),
+          server && !hostEdit && h('div', { className: 'adx-form-actions' },
+            outlineButton(t('settings.renameHost'), () => setHostEdit({ original: machine, value: machine })),
+            outlineButton(t(hostList.includes(machine) ? 'settings.forgetHost' : 'settings.sshRemove'), () => forgetServer(machine))))
+      }
+
+      function renderRepoOverrides() {
+        return h('details', { className: 'adx-advanced' },
+          h('summary', { className: 'adx-advanced-summary' }, t('settings.repoPaths') +
+            (form.repoPaths.length ? ' (' + form.repoPaths.length + ')' : '')),
+          h('div', { className: 'adx-agents adx-overrides' },
+            form.repoPaths.map((row) => h('div', { key: row._key, className: 'adx-override' },
+              h('label', { className: 'adx-run-on' }, t('settings.overrideRepo'),
+                h('input', { className: 'adx-input', spellCheck: false, placeholder: 'owner/repo', value: row.repo,
+                  onChange: ({ target: { value } }) => updateRepoPath(row._key, () => ({ repo: value })) })),
+              h('label', { className: 'adx-run-on' }, t('settings.overrideFolder'),
+                h('input', { className: 'adx-input', spellCheck: false, placeholder: '~/Projects/repo', value: row.path,
+                  onChange: ({ target: { value } }) => updateRepoPath(row._key, () => ({ path: value })) })),
+              h('div', { className: 'adx-form-actions' },
+                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', disabled: picking !== null,
+                  onClick: () => void pickPath(row) }, t(picking === row._key ? 'settings.picking' : 'settings.pickFolder')),
+                outlineButton(t('settings.removeRepoPath'), () => update((previous) => ({
+                  repoPaths: previous.repoPaths.filter((entry) => entry._key !== row._key),
+                })))))),
+            h('div', null, outlineButton(t('settings.addRepoPath'), () => {
+              const row = { _key: newAgentRowKey(), repo: '', path: '' }
+              update((previous) => ({ repoPaths: [...previous.repoPaths, row] }))
+            }))))
+      }
+
+      function renderRemoteFolders() {
+        const folders = serverFor(folderMachine)?.folders || ''
+        const saved = config.sshServers.some((row) => row.alias === folderMachine &&
+          sshFolders(row).join('\n') === folderLines(folders).join('\n'))
+        const error = folderError(t, folders)
+        return h('div', { className: 'adx-agents' },
+          h('label', { className: 'adx-run-on' }, t('settings.ssh.folders'),
+            h('textarea', { className: 'adx-textarea', value: folders, rows: 3, placeholder: '~/projects',
+              'aria-invalid': Boolean(error), 'aria-describedby': error ? 'adx-remote-folders-error' : undefined,
+              spellCheck: false, onChange: (event) => changeServer(folderMachine, { folders: event.target.value }) })),
+          error && h('span', { id: 'adx-remote-folders-error', role: 'alert' }, error),
+          h(RepositoryScan, { key: JSON.stringify([folderMachine, folders]), t, alias: folderMachine, disabled: !saved }))
+      }
+
       function renderSshServers() {
         if (!Array.isArray(config.sshServers)) return null
         const rows = form.sshServers
@@ -5402,10 +5573,118 @@ window.__ModuleLoader__.load({
               onAction: () => void store.loadConfig(),
             })
           : null,
+        h('details', { className: 'adx-advanced', open: showGithub },
+          h('summary', { className: 'adx-advanced-summary', onClick: (event) => {
+            event.preventDefault()
+            setGithubExpanded(!showGithub)
+          } }, t('settings.githubTitle'), !showGithub && (githubError
+            ? h('span', { className: 'adx-account-name', role: 'status' }, githubError)
+            : state.auth?.authenticated && state.auth.login && h('span', { className: 'adx-account-name' }, '@' + state.auth.login))),
+          renderAuth(),
+          h(
+            Field,
+            {
+              label: t('settings.orgs'),
+              htmlFor: 'adx-orgs',
+              hint: (sourcesLine ? sourcesLine + ' — ' : '') + t('settings.orgsHint'),
+            },
+            h('input', {
+              id: 'adx-orgs',
+              type: 'text',
+              className: 'adx-input',
+              value: form.orgs,
+              placeholder: t('settings.orgsPlaceholder'),
+              spellCheck: false,
+              autoComplete: 'off',
+              onChange: (event) => update({ orgs: event.target.value }),
+            }),
+          ),
+          h(
+            Field,
+            { label: t('settings.personal'), hint: t('settings.personalHint'), row: true, onToggle: () => update({ includePersonal: form.includePersonal !== true }) },
+            h(Switch, {
+              checked: form.includePersonal === true,
+              onChange: (value) => update({ includePersonal: value }),
+              label: t('settings.personal'),
+            }),
+          ),
+          h(
+            Field,
+            { label: t('settings.refresh'), hint: t('settings.refreshHint'), htmlFor: 'adx-refresh' },
+            h(
+              'div',
+              { className: 'adx-select-custom' },
+              h(
+                'select',
+                {
+                  id: 'adx-refresh',
+                  className: 'adx-select',
+                  value: refreshCustom ? 'custom' : form.refreshSeconds,
+                  onChange: (event) => {
+                    if (event.target.value === 'custom') {
+                      setRefreshCustom(true)
+                      return
+                    }
+                    setRefreshCustom(false)
+                    update({ refreshSeconds: event.target.value })
+                  },
+                },
+                REFRESH_PRESETS.map((seconds) =>
+                  h('option', { key: seconds, value: String(seconds) }, durationLabel(seconds)),
+                ),
+                h('option', { value: 'custom' }, t('settings.custom')),
+              ),
+              refreshCustom
+                ? h(
+                    'span',
+                    { className: 'adx-custom-wrap' },
+                    h('input', {
+                      type: 'number',
+                      className: 'adx-input adx-custom-number',
+                      min: 1,
+                      max: 60,
+                      step: 1,
+                      value: String(Number(form.refreshSeconds) / 60),
+                      'aria-label': t('settings.refresh'),
+                      onChange: (event) => {
+                        const minutes = Number(event.target.value)
+                        update({
+                          refreshSeconds: Number.isFinite(minutes) ? String(Math.round(minutes * 60)) : '',
+                        })
+                      },
+                    }),
+                    h('span', { className: 'adx-custom-unit' }, t('settings.minuteUnit')),
+                  )
+                : null,
+            ),
+          ),
+          h(
+            Field,
+            { label: t('settings.green'), hint: t('settings.greenHint'), row: true, onToggle: () => update({ requireGreenChecks: !(form.requireGreenChecks === true) }) },
+            h(Switch, {
+              checked: form.requireGreenChecks === true,
+              onChange: (value) => update({ requireGreenChecks: value }),
+              label: t('settings.green'),
+            }),
+          ),
+          h(
+            Field,
+            { label: t('settings.bots'), hint: t('settings.botsHint'), row: true, onToggle: () => update({ includeBotReviews: !(form.includeBotReviews === true) }) },
+            h(Switch, {
+              checked: form.includeBotReviews === true,
+              onChange: (value) => update({ includeBotReviews: value }),
+              label: t('settings.bots'),
+            }),
+          ),
+        ),
         h('details', { className: 'adx-advanced', open: true },
           h('summary', { className: 'adx-advanced-summary' }, t('settings.agentsSection')),
-          renderDefaultAgent(),
-          h('details', { className: 'adx-advanced' },
+          config.supportsRunOn && renderHostPicker(),
+          machine ? renderRemoteDefault() : renderDefaultAgent(),
+          !machine && config.supportsAgentDiscovery && h('div', { className: 'adx-run-on-status' },
+            h('button', { type: 'button', className: 'adx-btn adx-btn--outline', disabled: findingAgents, onClick: findAgents },
+              t(findingAgents ? 'settings.agentFinding' : 'settings.agentFind'))),
+          !machine && h('details', { className: 'adx-advanced' },
             h('summary', { className: 'adx-advanced-summary' }, t('settings.manageAgents')),
             h(
               'div',
@@ -5473,18 +5752,6 @@ window.__ModuleLoader__.load({
                   { type: 'button', className: 'adx-btn adx-btn--outline adx-agent-add', onClick: addAgent },
                   t('settings.agentAdd'),
                 ),
-                configValue(config, 'supportsAgentDiscovery') === true
-                  ? h(
-                      'button',
-                      {
-                        type: 'button',
-                        className: 'adx-btn adx-btn--outline',
-                        disabled: findingAgents,
-                        onClick: findAgents,
-                      },
-                      findingAgents ? t('settings.agentFinding') : t('settings.agentFind'),
-                    )
-                  : null,
                 h('span', { className: 'adx-spacer' }),
               ),
               h('p', { className: 'adx-form-note' }, t('settings.agentsHint')),
@@ -5495,162 +5762,48 @@ window.__ModuleLoader__.load({
             renderScenarios(),
           ),
         ),
-        renderAuth(),
-        h(
-          Field,
-          {
-            label: t('settings.orgs'),
-            htmlFor: 'adx-orgs',
-            hint: (sourcesLine ? sourcesLine + ' — ' : '') + t('settings.orgsHint'),
-          },
-          h('input', {
-            id: 'adx-orgs',
-            type: 'text',
-            className: 'adx-input',
-            value: form.orgs,
-            placeholder: t('settings.orgsPlaceholder'),
-            spellCheck: false,
-            autoComplete: 'off',
-            onChange: (event) => update({ orgs: event.target.value }),
-          }),
-        ),
-        h(
-          Field,
-          { label: t('settings.personal'), hint: t('settings.personalHint'), row: true, onToggle: () => update({ includePersonal: form.includePersonal !== true }) },
-          h(Switch, {
-            checked: form.includePersonal === true,
-            onChange: (value) => update({ includePersonal: value }),
-            label: t('settings.personal'),
-          }),
-        ),
-        h(
-          Field,
-          { label: t('settings.refresh'), hint: t('settings.refreshHint'), htmlFor: 'adx-refresh' },
-          h(
-            'div',
-            { className: 'adx-select-custom' },
-            h(
-              'select',
-              {
-                id: 'adx-refresh',
-                className: 'adx-select',
-                value: refreshCustom ? 'custom' : form.refreshSeconds,
-                onChange: (event) => {
-                  if (event.target.value === 'custom') {
-                    setRefreshCustom(true)
-                    return
-                  }
-                  setRefreshCustom(false)
-                  update({ refreshSeconds: event.target.value })
-                },
-              },
-              REFRESH_PRESETS.map((seconds) =>
-                h('option', { key: seconds, value: String(seconds) }, durationLabel(seconds)),
-              ),
-              h('option', { value: 'custom' }, t('settings.custom')),
-            ),
-            refreshCustom
-              ? h(
-                  'span',
-                  { className: 'adx-custom-wrap' },
-                  h('input', {
-                    type: 'number',
-                    className: 'adx-input adx-custom-number',
-                    min: 1,
-                    max: 60,
-                    step: 1,
-                    value: String(Number(form.refreshSeconds) / 60),
-                    'aria-label': t('settings.refresh'),
-                    onChange: (event) => {
-                      const minutes = Number(event.target.value)
-                      update({
-                        refreshSeconds: Number.isFinite(minutes) ? String(Math.round(minutes * 60)) : '',
-                      })
-                    },
-                  }),
-                  h('span', { className: 'adx-custom-unit' }, t('settings.minuteUnit')),
-                )
-              : null,
-          ),
-        ),
-        h(
-          Field,
-          { label: t('settings.green'), hint: t('settings.greenHint'), row: true, onToggle: () => update({ requireGreenChecks: !(form.requireGreenChecks === true) }) },
-          h(Switch, {
-            checked: form.requireGreenChecks === true,
-            onChange: (value) => update({ requireGreenChecks: value }),
-            label: t('settings.green'),
-          }),
-        ),
-        h(
-          Field,
-          { label: t('settings.bots'), hint: t('settings.botsHint'), row: true, onToggle: () => update({ includeBotReviews: !(form.includeBotReviews === true) }) },
-          h(Switch, {
-            checked: form.includeBotReviews === true,
-            onChange: (value) => update({ includeBotReviews: value }),
-            label: t('settings.bots'),
-          }),
-        ),
         h('p', { className: 'adx-form-note' }, t('settings.applyHint')),
         h('details', { className: 'adx-advanced' },
           h('summary', { className: 'adx-advanced-summary' }, t('settings.environments')),
-          h('h3', null, t('launch.local')),
+          !config.supportsRunOn && h('h3', null, t('launch.local')),
           renderTerminalChoice(),
           renderPromptDelivery(),
-        h(
-          Field,
-          {
-            label: t('settings.cloneDirs'),
-            htmlFor: 'adx-clone-dirs',
-            hint: t('settings.cloneDirsHint', {
-              list: configList(config, 'cloneDirsDefault').join(', '),
-            }),
-          },
-          h('div', { className: 'adx-path-edit' },
-            h('textarea', {
-              id: 'adx-clone-dirs',
-              className: 'adx-textarea',
-              rows: 3,
-              value: form.cloneDirs,
-              placeholder: t('settings.cloneDirsPlaceholder'),
-              spellCheck: false,
-              onChange: (event) => update({ cloneDirs: event.target.value }),
-            }),
-            h('div', { className: 'adx-path-actions' },
-              h('button', {
-                type: 'button',
-                className: 'adx-btn adx-btn--outline',
-                disabled: picking !== null,
-                onClick: () => void pickPath('dir'),
-              }, picking === 'dir' ? t('settings.picking') : t('settings.pickFolder')),
+          config.supportsRunOn && h(RunOnPicker, { t, servers: form.sshServers, hosts: hostList, machine: folderMachine,
+            label: 'settings.foldersOn', onChange: setFolderMachine }),
+          folderMachine ? renderRemoteFolders() : h('div', { className: 'adx-agents' },
+            h(
+              Field,
+              {
+                label: t('settings.cloneDirs'),
+                htmlFor: 'adx-clone-dirs',
+                hint: t('settings.cloneDirsHint', {
+                  list: configList(config, 'cloneDirsDefault').join(', '),
+                }),
+              },
+              h('div', { className: 'adx-path-edit' },
+                h('textarea', {
+                  id: 'adx-clone-dirs',
+                  className: 'adx-textarea',
+                  rows: 3,
+                  value: form.cloneDirs,
+                  placeholder: t('settings.cloneDirsPlaceholder'),
+                  spellCheck: false,
+                  onChange: (event) => update({ cloneDirs: event.target.value }),
+                }),
+                h('div', { className: 'adx-path-actions' },
+                  h('button', {
+                    type: 'button',
+                    className: 'adx-btn adx-btn--outline',
+                    disabled: picking !== null,
+                    onClick: () => void pickPath(),
+                  }, picking === 'dir' ? t('settings.picking') : t('settings.pickFolder')),
+                ),
+              ),
             ),
+            h(RepositoryScan, { t }),
+            renderRepoOverrides(),
           ),
-        ),
-        h(RepositoryScan, { t }),
-        h(
-          Field,
-          { label: t('settings.repoPaths'), htmlFor: 'adx-repo-paths', hint: t('settings.repoPathsHint') },
-          h('div', { className: 'adx-path-edit' },
-            h('textarea', {
-              id: 'adx-repo-paths',
-              className: 'adx-textarea',
-              rows: 2,
-              value: form.repoPaths,
-              placeholder: t('settings.repoPathsPlaceholder'),
-              spellCheck: false,
-              onChange: (event) => update({ repoPaths: event.target.value }),
-            }),
-            h('div', { className: 'adx-path-actions' },
-              h('button', {
-                type: 'button',
-                className: 'adx-btn adx-btn--outline',
-                disabled: picking !== null,
-                onClick: () => void pickPath('clone'),
-              }, picking === 'clone' ? t('settings.picking') : t('settings.pickClone')),
-            ),
-          ),
-        ),
-          renderSshServers(),
+          !config.supportsRunOn && renderSshServers(),
         ),
         h(
           'div',

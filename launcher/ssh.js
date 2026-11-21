@@ -42,7 +42,7 @@ export async function configuredSshHosts(home = os.homedir()) {
           if (SSH_ALIAS.test(value)) aliases.add(value)
         } else {
           const pattern = value.startsWith('~/') ? path.join(home, value.slice(2)) : path.resolve(directory, value)
-          if (!pattern.includes('*') && !pattern.includes('?')) await read(pattern)
+          if (!/[*?\[]/.test(pattern)) await read(pattern)
           else if (fs.glob) {
             try {
               for await (const match of fs.glob(pattern)) {
@@ -80,8 +80,8 @@ function sshServerError(server, previous) {
   if (!server || typeof server.alias !== 'string' || !SSH_ALIAS.test(server.alias)) {
     return 'SSH destinations need a literal host alias'
   }
-  if (previous.some((entry) => entry.alias.toLowerCase() === server.alias.toLowerCase())) return 'duplicate SSH alias'
-  if (!SSH_AGENTS.some((agent) => agent.id === server.agent)) return 'unknown remote agent'
+  if (previous.some((entry) => entry.alias === server.alias)) return 'duplicate SSH alias'
+  if (server.agent !== '' && !SSH_AGENTS.some((agent) => agent.id === server.agent)) return 'unknown remote agent'
   const folders = repositoryFolders(server)
   if (!Array.isArray(folders) || folders.length > 8 || folders.some((folder) =>
     typeof folder !== 'string' || !(folder.startsWith('/') || folder === '~' || folder.startsWith('~/')) || /[\x00-\x1f\x7f]/.test(folder) || folder.length > 1024)) {
@@ -125,7 +125,7 @@ export function buildSshScripts(server, prompt, platform, repo = '') {
   const candidates = [preset, ...alternatives]
   const native = candidates.filter((entry) => entry.draftFlag)
   const pasteAllowed = prompt === sanitizePastePrompt(prompt)
-  const choiceKey = createHash('sha256').update(JSON.stringify([server.alias.toLowerCase(), repo.toLowerCase()])).digest('hex')
+  const choiceKey = createHash('sha256').update(JSON.stringify([server.alias, repo.toLowerCase()])).digest('hex')
   const file = '.triage-desk-' + randomUUID() + '.sh'
   const remote = [
     'set -eu',

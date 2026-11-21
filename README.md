@@ -13,15 +13,15 @@ plugin that answers one question every morning: **what needs me right now?** It
 turns GitHub activity into a single inbox panel: reviews waiting on you, your
 merge-ready PRs, threads that need an answer, failing CI, and new or assigned
 issues. Copy a scenario prompt or open it as a draft in DSH, a local agent or
-a saved SSH destination. The inbox reads GitHub through the signed-in local CLI.
+a named SSH host. The inbox reads GitHub through the signed-in local CLI.
 
-<img src="docs/screenshots/inbox.png" width="900" alt="Triage inbox with re-review requests, feedback on my PRs, merge-ready PRs, and an assigned issue">
+<img src="docs/screenshots/inbox.png" width="900" alt="All sources in the triage inbox, grouped into re-review requests, feedback on my PRs, and merge-ready PRs">
 
 [简体中文](README.zh.md) · [Reference](docs/REFERENCE.md) · [Architecture](docs/ARCHITECTURE.md) · [Changelog](CHANGELOG.md)
 
 ## What it shows
 
-- **Reviews** shows whose turn it is on a PR. **Awaiting my review** lists direct or team requests for PRs you have yet to review. **Awaiting my re-review** offers a pass over changes and replies since your review when the author re-requests you (even on the same commit), pushes new commits, or replies to you. A pending team request follows the PR into re-review after new commits. **Feedback on my PRs** lets you reply to comments or open the changed files to address requested changes, including on drafts.
+- **Reviews** shows whose turn it is on a PR. **Awaiting my review** lists direct or team requests for PRs you have yet to review. **Awaiting my re-review** offers a pass over changes and replies since your review when the author re-requests you (even on the same commit), pushes new commits, or replies to you. A pending team request follows the PR into re-review after new commits. **Feedback on my PRs** lists comments and requested changes on your PRs, including drafts. Open the PR from its title or use the agent button to draft a reply. Requested changes also link to the changed files.
 - **Ready to merge** lists your mergeable PRs that have approval or need none. By default, checks must pass or be absent. A PR with failing checks appears under *CI is failing*. Once its checks pass, it enters *Ready to merge* on the next refresh if otherwise eligible.
 - **Needs your action**: merge conflicts, assigned issues, and unanswered mentions.
 - **CI is failing**: red checks on your PRs, on default branches you maintain, and on branches whose latest commit you authored in the last week.
@@ -32,7 +32,7 @@ a saved SSH destination. The inbox reads GitHub through the signed-in local CLI.
 - **Sources and languages**: personal repositories plus up to 10 organizations; the panel follows the DSH language (English or Chinese).
 - **Large organizations**: organizations as big as `llvm` load in a lighter mode instead of failing ([details](docs/REFERENCE.md#large-sources)).
 
-<img src="docs/screenshots/reviews.png" width="900" alt="Reviews tab showing a PR with new commits since my review and a Reply to feedback link on my own PR">
+<img src="docs/screenshots/reviews.png" width="900" alt="Reviews tab showing a PR with new commits since my review and feedback on my own PRs">
 
 The count next to *Triage* is what needs you; hover or focus it to see what it
 leaves out.
@@ -92,16 +92,19 @@ After editing the host half, quit and reopen DSH, then refresh the page; see
 Open the terminal button on a row or section. The **Prompt** field contains the
 configured template filled in for this task. First reviews, re-reviews and issues
 use their respective templates. Change reusable instructions in **Settings →
-Agents**. You can edit the draft for this launch without changing its template.
+Agents → Prompt templates**. You can edit the draft for this launch without changing its template.
 Choose the local computer or an SSH host, then an agent. Switching machines keeps
 your edits. **Open** delivers the draft without sending it. **Copy prompt** copies
 your edited text and the row's **Copy link** copies the URL. An inbox refresh keeps
 your open draft and its original items. Reopen the editor to use the updated list.
 
+<img src="docs/screenshots/group-prompt.png" width="400" alt="Codex on This computer with an editable prompt to draft replies to feedback on two PRs">
+
 Opening the first-review group includes its visible first reviews, even in **All**.
 Re-reviews have their own action. Their group prompt gives the reason for each
 PR and directs the agent to read author replies even when the diff is empty.
-**Feedback on my PRs** offers replies.
+In **Feedback on my PRs**, use the terminal button on a row to draft a reply for
+one PR, or the button in the group heading to prepare replies for several PRs.
 The count follows your source filter and search, skips snoozed items and counts
 each PR once. Rows marked **Optional review** are excluded by default. When a
 PR has new commits since your review, another reviewer's approval must cover
@@ -119,12 +122,37 @@ tagged `[P1]`–`[P3]`, and never approve. The fix and reply scenarios wait for 
 OK before pushing or posting; triage only reports back. None of them add AI
 attribution.
 
-**SSH destinations.** Under **Settings → Launch environments**, choose a host from
-your OpenSSH config or type its alias. **Check connection** tests the selected
-host and lists installed agents before saving. Set a preferred agent and enter
-one repository folder per line, such as `~/projects` or `/srv/git`. Home paths
-resolve on the server. Save the folders and use **Find repositories** to inspect
-the GitHub repositories found there.
+**GitHub settings.** Expand **GitHub** for the connection, organizations, personal
+repositories, polling interval and PR rules. A connected account starts collapsed
+and shows its login in the heading. If a connection check fails, the heading shows
+the error. Expand GitHub to retry. When sign-in is needed, GitHub starts expanded.
+
+**Run on.** In **Settings → Agents**, below GitHub, choose **This computer** or an
+SSH host. The same list is available when opening a draft. It includes saved
+destinations and named hosts from `~/.ssh/config`. Selecting a host checks its
+installed agents. Use **Scan again** after installing an agent, or **Retry** if
+the connection fails. Hosts requiring interactive SSH login also allow a manual
+agent choice. **Add SSH host…** lets you enter an alias manually.
+Triage Desk keeps the spelling and case of each alias. **Rename saved host…**
+moves its agent preferences and repository folders to the new alias in Triage Desk.
+If a scan finds no agents, you can still reset a saved default to **Automatic**.
+
+Each machine has its own default agent. Viewing a host in Settings only changes
+which preferences you edit. Prompt templates are shared across machines. For a
+template with an existing local agent override, **Use machine default** clears it.
+
+<img src="docs/screenshots/ssh-agents.png" width="680" alt="Agent settings for an SSH host with five detected agents and Claude Code selected as the default">
+
+For a local repository with several working copies, open **Launch environments**,
+select **This computer**, and expand **Repository overrides**. Add the repository
+and the local folder to use. Choosing a Git working copy with **Repository**
+empty fills in its GitHub name. Save one folder per repository. For example,
+`Acme/App` and `acme/app` refer to the same repository. The collapsed section
+shows the number of overrides.
+
+Under **Launch environments → Repository folders on**, select a host and enter one
+folder per line, such as `~/projects` or `/srv/git`. Home paths resolve on the
+server. Save the folders and use **Find repositories** to inspect its working copies.
 
 At launch, Git remotes identify the working copy, including forks with an
 `upstream` remote. When several copies match, choose one and optionally remember
@@ -150,6 +178,8 @@ and then paste into the remote agent. Time spent at a recognized folder-trust di
 Remote agents start with their own default permissions. You can use **Copy prompt**
 with any agent, including in an SSH session you already have open.
 
+<img src="docs/screenshots/launch-environments.png" width="700" alt="Launch environments with Ghostty, automatic prompt entry, and a local repository search folder selected">
+
 **Terminals.** Settings → *Launch environments* → **Open agents in** offers
 *Automatic* or one of this platform's terminals; terminals that are not installed
 are shown disabled.
@@ -171,7 +201,7 @@ install (a `.cmd` shim) is handled like the other agents, because `cmd.exe`
 would not pass the prompt intact. So is an `.exe` shim from Scoop, bun,
 Chocolatey, Volta, mise or proto, which can start a `.cmd`
 ([prompt delivery](docs/REFERENCE.md#prompt-delivery)). For every other agent,
-Settings → **Prompt delivery** offers:
+**Settings → Launch environments → Prompt delivery** offers these options.
 
 - **Type into the agent** (default, recommended): a small paste wrapper waits
   until the agent's input box is ready, then pastes the prompt into it without
@@ -215,7 +245,7 @@ available while you save. The most used fields:
 | `includePersonal` | `true` | Include your personal repositories |
 | `refreshSeconds` | `1200` | Auto-refresh interval, 15–3600 s |
 | `requireGreenChecks` | `true` | Turn off to allow otherwise eligible PRs with pending or failing checks in *Ready to merge*. PRs GitHub marks `BLOCKED` are excluded with either setting. |
-| `defaultAgent` | `dsh` | Target selected in the launch menu: `dsh` (a new DSH chat) or an agent id |
+| `defaultAgent` | `dsh` | Default for **This computer**. Choose `dsh` for a new DSH chat or a local agent ID. Each SSH host has its own preference. |
 | `defaultScenario` | empty | Choose by task, or save an applicable row scenario ID |
 | `sshServers` | `[]` | SSH alias, preferred `agent`, optional `alternatives` and ordered remote `folders` (absolute or `~/…`). An existing `cwd` is read as one folder. |
 | `terminal` | `auto` | Terminal for launches: `auto` or a terminal id |
