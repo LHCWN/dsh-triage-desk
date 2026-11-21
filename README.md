@@ -15,7 +15,7 @@ merge-ready PRs, threads that need an answer, failing CI, and new or assigned
 issues. Copy a scenario prompt or open it as a draft in DSH, a local agent or
 a named SSH host. The inbox reads GitHub through the signed-in local CLI.
 
-<img src="docs/screenshots/inbox.png" width="900" alt="Triage inbox with re-review requests, feedback on my PRs, merge-ready PRs, and an assigned issue">
+<img src="docs/screenshots/inbox.png" width="900" alt="All sources in the triage inbox, grouped into re-review requests, feedback on my PRs, and merge-ready PRs">
 
 [简体中文](README.zh.md) · [Reference](docs/REFERENCE.md) · [Architecture](docs/ARCHITECTURE.md) · [Changelog](CHANGELOG.md)
 
@@ -98,6 +98,8 @@ your edits. **Open** delivers the draft without sending it. **Copy prompt** copi
 your edited text and the row's **Copy link** copies the URL. An inbox refresh keeps
 your open draft and its original items. Reopen the editor to use the updated list.
 
+<img src="docs/screenshots/group-prompt.png" width="400" alt="Codex on This computer with an editable prompt to draft replies to feedback on two PRs">
+
 Opening the first-review group includes its visible first reviews, even in **All**.
 Re-reviews have their own action. Their group prompt gives the reason for each
 PR and directs the agent to read author replies even when the diff is empty.
@@ -138,6 +140,8 @@ Each machine has its own default agent. Viewing a host in Settings only changes
 which preferences you edit. Prompt templates are shared across machines. For a
 template with an existing local agent override, **Use machine default** clears it.
 
+<img src="docs/screenshots/ssh-agents.png" width="680" alt="Agent settings for an SSH host with five detected agents and Claude Code selected as the default">
+
 For a local repository with several working copies, open **Launch environments**,
 select **This computer**, and expand **Repository overrides**. Add the repository
 and the local folder to use. Choosing a Git working copy with **Repository**
@@ -170,6 +174,8 @@ doesn’t accept the draft within two minutes, choose **Copy prompt** in the pan
 and then paste into the remote agent. Time spent at a recognized folder-trust dialog is excluded.
 Remote agents start with their own default permissions. You can use **Copy prompt**
 with any agent, including in an SSH session you already have open.
+
+<img src="docs/screenshots/launch-environments.png" width="700" alt="Launch environments with Ghostty, automatic prompt entry, and a local repository search folder selected">
 
 **Terminals.** Settings → *Launch environments* → **Open agents in** offers
 *Automatic* or one of this platform's terminals; terminals that are not installed
