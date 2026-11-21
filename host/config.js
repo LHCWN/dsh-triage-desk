@@ -232,16 +232,18 @@ function sanitizeRepoPaths(input) {
     throw new BadRequest('repoPaths must be an object of "owner/repo" to absolute path')
   }
   const paths = {}
-  let count = 0
+  const seen = new Set()
   for (const key of Object.keys(input)) {
-    if (count >= MAX_REPO_PATHS) throw new BadRequest(`at most ${MAX_REPO_PATHS} manual clone paths are supported`)
+    if (seen.size >= MAX_REPO_PATHS) throw new BadRequest(`at most ${MAX_REPO_PATHS} manual clone paths are supported`)
     if (!REPO_PATTERN.test(key)) throw new BadRequest(`invalid repository key "${key}"`)
+    const normalized = key.toLowerCase()
+    if (seen.has(normalized)) throw new BadRequest(`duplicate repository override "${key}"`)
     const expanded = expandHome(typeof input[key] === 'string' ? input[key] : '')
     if (expanded === '') throw new BadRequest(`missing path for "${key}"`)
     if (!path.isAbsolute(expanded)) throw new BadRequest(`clone path must be absolute: "${input[key]}"`)
     if (/[\r\n\u0000]/.test(expanded) || expanded.length > 300) throw new BadRequest(`invalid clone path for "${key}"`)
     paths[key] = path.normalize(expanded)
-    count += 1
+    seen.add(normalized)
   }
   return paths
 }

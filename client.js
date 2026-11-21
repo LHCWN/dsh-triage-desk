@@ -4775,18 +4775,24 @@ window.__ModuleLoader__.load({
         }
         const agentsEdited = JSON.stringify(form.agents) !== JSON.stringify((baseline.current || {}).agents)
         const repoPaths = {}
-        for (const [index, row] of form.repoPaths.entries()) {
-          const repo = row.repo.trim()
-          const path = row.path.trim()
-          if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) || !path) {
-            setNotice({ tone: 'error', text: t('settings.invalidRepoPaths', { n: index + 1 }) })
-            return
+        const repoPathsEdited = JSON.stringify(form.repoPaths) !== JSON.stringify(baseline.current?.repoPaths)
+        if (repoPathsEdited) {
+          const seen = new Set()
+          for (const [index, row] of form.repoPaths.entries()) {
+            const repo = row.repo.trim()
+            const path = row.path.trim()
+            if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) || !path) {
+              setNotice({ tone: 'error', text: t('settings.invalidRepoPaths', { n: index + 1 }) })
+              return
+            }
+            const key = repo.toLowerCase()
+            if (seen.has(key)) {
+              setNotice({ tone: 'error', text: t('settings.duplicateRepoPath', { n: index + 1 }) })
+              return
+            }
+            seen.add(key)
+            repoPaths[repo] = path
           }
-          if (Object.hasOwn(repoPaths, repo)) {
-            setNotice({ tone: 'error', text: t('settings.duplicateRepoPath', { n: index + 1 }) })
-            return
-          }
-          repoPaths[repo] = path
         }
         store
           .saveConfig({
@@ -4823,7 +4829,7 @@ window.__ModuleLoader__.load({
               .split('\n')
               .map((entry) => entry.trim())
               .filter((entry) => entry.length > 0),
-            repoPaths,
+            ...(repoPathsEdited ? { repoPaths } : {}),
             scenarios: form.scenarios.map((scenario) => ({
               id: String(scenario.id || '').trim().toLowerCase(),
               label: String(scenario.label || '').trim(),

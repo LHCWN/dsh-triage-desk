@@ -2616,9 +2616,12 @@ for (const target of ['dsh', 'claude']) {
   assert.equal(repo()[1].props.value, 'owner/typed', 'respect edits while the picker is open')
   assert.equal(folder()[1].props.value, '/picked=clone')
 
-  harness.change(repo()[1], 'owner/old')
-  click('settings.save')
-  assert.equal(harness.pending.length, 0, 'a duplicate must not overwrite an existing mapping')
+  for (const duplicate of ['owner/old', 'Owner/OLD']) {
+    harness.change(repo()[1], duplicate)
+    click('settings.save')
+    assert.equal(harness.pending.length, 0, 'reject duplicate repository ' + duplicate)
+    assert.ok(harness.text().includes('settings.duplicateRepoPath:2'))
+  }
   harness.change(repo()[1], '')
   click('settings.save')
   assert.equal(harness.pending.length, 0, 'incomplete pairs cannot be saved')
@@ -2632,6 +2635,20 @@ for (const target of ['dsh', 'claude']) {
   click('settings.save')
   assert.deepEqual(harness.pending[0].body.repoPaths, { 'owner/detected': '/picked=clone' })
   assert.deepEqual(harness.pending[0].body.cloneDirs, ['/edited-root', '/picked-root'])
+  harness.reply(200, { ok: true })
+  await harness.flush()
+  harness.dispose()
+}
+
+{
+  const harness = settingsHarness({ configExtra: { repoPaths: { 'Owner/Repo': '/one', 'owner/repo': '/two' } } })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+  await harness.flush()
+  harness.change(harness.nodes().find((node) => node.props?.id === 'adx-clone-dirs'), '/new-root')
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('settings.save')))
+  assert.deepEqual(harness.pending[0].body.cloneDirs, ['/new-root'])
+  assert.equal(Object.hasOwn(harness.pending[0].body, 'repoPaths'), false, 'unrelated edits preserve legacy overrides')
   harness.reply(200, { ok: true })
   await harness.flush()
   harness.dispose()

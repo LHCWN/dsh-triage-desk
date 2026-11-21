@@ -823,6 +823,7 @@ await recordAsync('config POST rejects invalid scenarios', async () => {
     })
   }
   const cases = [
+    ['duplicate repository override', { repoPaths: { 'Owner/Repo': fixture, 'owner/repo': fixture } }],
     ['unsafe ssh alias', { sshServers: [{ alias: '-V', agent: 'claude', cwd: '/work' }] }],
     ['duplicate ssh alias', { sshServers: ['build', 'build'].map((alias) => ({ alias, agent: 'codex', cwd: '/work' })) }],
     ['invalid remote alternative', { sshServers: [{ alias: 'build', agent: 'claude', alternatives: ['unknown'] }] }],

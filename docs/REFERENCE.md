@@ -502,6 +502,7 @@ and the warning lists the rejected ones.
 - Under **Launch environments**, select **This computer** and expand **Repository
   overrides** to add, edit, or remove a repository and its local folder. The
   collapsed heading shows the number of overrides. Existing mappings appear here.
+  When editing overrides, enter each GitHub repository once, regardless of case.
 - **Choose folder…** opens the native picker. If the repository field is empty,
   choosing a working copy fills it from the GitHub remote (upstream, then
   origin, then another GitHub remote). You can also enter both fields by hand.
