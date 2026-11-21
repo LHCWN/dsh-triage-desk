@@ -102,6 +102,10 @@ list_remotes() {
         if (!viaSsh || host == "") exit
         next
       }
+      # OpenSSH matches Host before lowercasing the resolved destination.
+      # OpenSSH 10.5p1, with Host github-work and HostName github.com:
+      # ssh -G -F config github-work gives "hostname github.com";
+      # ssh -G -F config GitHub-Work gives "hostname github-work".
       $0 == host { print slug; exit }
     '
   done | sort -u | while IFS= read -r slug; do

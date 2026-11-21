@@ -42,7 +42,9 @@ The **Reviews** tab groups the three review queues. Select a group to filter fur
   reply alone is secondary: it stays in the same section, muted and at the
   bottom, with the exact reason in the row tooltip. Other reviewers' activity
   alone does not ask you for another pass. A pending team request stays with
-  the PR in this group when the head changes after your review.
+  the PR in this group when the head changes after your review. An approval
+  covering the new head can make the re-review optional when GitHub's review
+  requirements are satisfied.
 - **Feedback on my PRs** includes requested changes and new comments, including
   inline replies, on your PRs and drafts. Open the changed files to address a
   request or reply in the PR conversation. An approval alone creates no

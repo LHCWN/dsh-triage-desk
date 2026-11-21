@@ -296,17 +296,22 @@ await check('a pending team request follows the head after my submitted review',
     return pr
   }
   const changed = teamPull(8, 'old')
+  const approvedHead = teamPull(11, 'old')
+  const approval = { author: { login: 'colleague' }, state: 'APPROVED', submittedAt: '2026-01-01T11:00:00Z' }
   changed.reviewDecision = 'APPROVED'
-  changed.reviews.nodes.push({ author: { login: 'colleague' }, state: 'APPROVED', submittedAt: '2026-01-01T11:00:00Z' })
-  const prs = [changed, teamPull(9, null), teamPull(10, 'head')]
+  changed.reviews.nodes.push({ ...approval, commit: { oid: 'old' } })
+  approvedHead.reviewDecision = 'APPROVED'
+  approvedHead.reviews.nodes.push({ ...approval, commit: { oid: 'head' } })
+  const prs = [changed, teamPull(9, null), teamPull(10, 'head'), approvedHead]
   const { ctx } = fakeCtx({ search: () => ok(searchData({ owner: 'Organization', teams: ['platform'], prs })) })
   const snapshot = await buildSnapshot(ctx, settings({ includePersonal: false, orgs: ['acme'] }))
-  assert.deepEqual(ids(snapshot, 'rereview'), [8])
+  assert.deepEqual(ids(snapshot, 'rereview').sort((a, b) => a - b), [8, 11])
   assert.deepEqual(ids(snapshot, 'review'), [9])
   const item = find(snapshot, 'rereview', 8)
   assert.equal(item.rereviewCause, 'new-head')
   assert.equal(item.reason, 'changes-after-my-review')
-  assert.equal(item.optional, true)
+  assert.equal(item.optional, false, 'another approval on the old head leaves the new commits in the default review group')
+  assert.equal(find(snapshot, 'rereview', 11).optional, true, 'an approval on the current head can satisfy the request')
 })
 
 /* -------------------------------------------- merge readiness and replies */

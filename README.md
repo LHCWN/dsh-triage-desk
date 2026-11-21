@@ -107,7 +107,9 @@ Re-reviews have their own action. Their group prompt gives the reason for each
 PR and directs the agent to read author replies even when the diff is empty.
 **Feedback on my PRs** offers replies.
 The count follows your source filter and search, skips snoozed items and counts
-each PR once. Rows marked **Optional review** are excluded by default. To pick
+each PR once. Rows marked **Optional review** are excluded by default. When a
+PR has new commits since your review, another reviewer's approval must cover
+the current head for the re-review to be optional. To pick
 individual PRs, including optional ones, click **Select**, check the rows you
 want, then open that group's terminal button. Its count shows how many you
 picked in that group. If the prompt size limit drops any items, the draft and

@@ -22,6 +22,8 @@
 ### Fixed
 
 - Pending team requests move to re-review after you review and the head changes.
+  After new commits, an approval must cover the current head for the re-review
+  to be optional.
   Group re-review prompts distinguish new commits, re-requests and author replies.
 - Unanswered reviewer feedback appears on draft PRs.
 - Settings offers only the scenario bindings the running host accepts.

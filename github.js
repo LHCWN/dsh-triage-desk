@@ -1380,8 +1380,9 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
     const shortHead = headOid !== null ? headOid.slice(0, 7) : null
 
     // Another reviewer's approval can satisfy either a first or repeat request.
+    const otherApprovals = otherReviews.filter((review) => review.state === 'APPROVED')
     const optional = requestedFromMe && base.reviewDecision !== 'REVIEW_REQUIRED' &&
-      base.reviewDecision !== 'CHANGES_REQUESTED' && otherReviews.some((review) => review.state === 'APPROVED')
+      base.reviewDecision !== 'CHANGES_REQUESTED' && otherApprovals.length > 0
     const optionalDetail = 'already approved by someone else; your review is optional'
     // Direct requests clear on submission. Team requests can outlive a member's review.
     const reRequested = directRequest && myLastReview !== null
@@ -1414,7 +1415,13 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
         const details = []
         if (newHead) details.push(shortHead !== null ? `new head ${shortHead} committed ${headAt}` : `new head committed ${headAt}`)
         if (reRequested) details.push('the author re-requested your review')
-        const optionalReReview = optional && (reRequested || newHead)
+        // GitHub may keep an old approval after a push. Count approvals of
+        // the new head for this re-review, using dates only if an OID is missing.
+        const optionalReReview = optional && (reRequested || newHead) && (!newHead || otherApprovals.some((approval) => {
+          const approvalOid = approval.commit?.oid
+          if (headOid !== null && typeof approvalOid === 'string') return approvalOid === headOid
+          return headAt !== null && time(approval.submittedAt) >= time(headAt)
+        }))
         if (optionalReReview) details.push(optionalDetail)
         if (authorReplied) details.push(`author replied to you at ${authorLastReplyToMeAt}`)
         if (myLastActionAt !== null) details.push(`your last action was ${myLastActionAt}`)
