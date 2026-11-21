@@ -158,7 +158,6 @@ window.__ModuleLoader__.load({
       'section.rereview': 'Awaiting my re-review',
       'section.feedback': 'Feedback on my PRs',
       'action.addressChanges': 'Address requested changes',
-      'action.reply': 'Reply to feedback',
       'section.merge': 'Ready to merge',
       'section.respond': 'Needs your action',
       'section.ci': 'CI is failing',
@@ -531,7 +530,6 @@ window.__ModuleLoader__.load({
       'section.rereview': '等待我复审',
       'section.feedback': '我的 PR 收到的反馈',
       'action.addressChanges': '处理修改请求',
-      'action.reply': '回复反馈',
       'section.merge': '可以合并',
       'section.respond': '需要你处理',
       'section.ci': 'CI 失败',
@@ -3632,12 +3630,12 @@ window.__ModuleLoader__.load({
                 rowTitle,
               ),
           h('span', { className: 'adx-row-meta' }, meta),
-          section === 'feedback' && !selectMode && hasUrl ? h('a', {
+          section === 'feedback' && addressChanges && !selectMode && hasUrl ? h('a', {
             className: 'adx-link adx-feedback-action',
-            href: item.url + (addressChanges ? '/files' : '#issuecomment-new'),
+            href: item.url + '/files',
             target: '_blank',
             rel: 'noreferrer noopener',
-          }, t(addressChanges ? 'action.addressChanges' : 'action.reply')) : null,
+          }, t('action.addressChanges')) : null,
         ),
         h(
           'span',

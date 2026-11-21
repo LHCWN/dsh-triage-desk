@@ -46,8 +46,8 @@ The **Reviews** tab groups the three review queues. Select a group to filter fur
   covering the new head can make the re-review optional when GitHub's review
   requirements are satisfied.
 - **Feedback on my PRs** includes requested changes and new comments, including
-  inline replies, on your PRs and drafts. Open the changed files to address a
-  request or reply in the PR conversation. An approval alone creates no
+  inline replies, on your PRs and drafts. Open the PR conversation from its title or use
+  the agent button to draft a reply. Requested changes also link to the files. An approval alone creates no
   feedback task.
 - **Ready to merge**: your non-draft PRs that are approved, mergeable, and (by
   default) green. PRs GitHub marks `BLOCKED` are excluded even when approval and

@@ -21,7 +21,7 @@ a named SSH host. The inbox reads GitHub through the signed-in local CLI.
 
 ## What it shows
 
-- **Reviews** shows whose turn it is on a PR. **Awaiting my review** lists direct or team requests for PRs you have yet to review. **Awaiting my re-review** offers a pass over changes and replies since your review when the author re-requests you (even on the same commit), pushes new commits, or replies to you. A pending team request follows the PR into re-review after new commits. **Feedback on my PRs** lets you reply to comments or open the changed files to address requested changes, including on drafts.
+- **Reviews** shows whose turn it is on a PR. **Awaiting my review** lists direct or team requests for PRs you have yet to review. **Awaiting my re-review** offers a pass over changes and replies since your review when the author re-requests you (even on the same commit), pushes new commits, or replies to you. A pending team request follows the PR into re-review after new commits. **Feedback on my PRs** lists comments and requested changes on your PRs, including drafts. Open the PR from its title or use the agent button to draft a reply. Requested changes also link to the changed files.
 - **Ready to merge** lists your mergeable PRs that have approval or need none. By default, checks must pass or be absent. A PR with failing checks appears under *CI is failing*. Once its checks pass, it enters *Ready to merge* on the next refresh if otherwise eligible.
 - **Needs your action**: merge conflicts, assigned issues, and unanswered mentions.
 - **CI is failing**: red checks on your PRs, on default branches you maintain, and on branches whose latest commit you authored in the last week.
@@ -32,7 +32,7 @@ a named SSH host. The inbox reads GitHub through the signed-in local CLI.
 - **Sources and languages**: personal repositories plus up to 10 organizations; the panel follows the DSH language (English or Chinese).
 - **Large organizations**: organizations as big as `llvm` load in a lighter mode instead of failing ([details](docs/REFERENCE.md#large-sources)).
 
-<img src="docs/screenshots/reviews.png" width="900" alt="Reviews tab showing a PR with new commits since my review and a Reply to feedback link on my own PR">
+<img src="docs/screenshots/reviews.png" width="900" alt="Reviews tab showing a PR with new commits since my review and feedback on my own PRs">
 
 The count next to *Triage* is what needs you; hover or focus it to see what it
 leaves out.
