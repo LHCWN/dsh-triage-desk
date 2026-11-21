@@ -65,28 +65,52 @@ export function buildSshScripts(server, prompt, platform) {
   const stage = 'set -eu\numask 077\nprintf %s ' + shellQuote(remote.join('\n') + '\n') + ' > ' + file + '\nexit 0\n'
   const upload = 'ssh -T -- ' + server.alias + ' sh -s'
   const connect = 'ssh -tt -- ' + server.alias + ' sh ' + file
+  // Cleanup runs without stdin or authentication prompts, including on exit
+  // from the retry dialog. Restrict deletion to this launch's random name.
+  const cleanup = 'ssh -nT -o BatchMode=yes -o ConnectTimeout=5 -- ' + server.alias + ' rm -f ' + file
+  const retained = 'Cleanup could not be confirmed. Check ' + server.alias + ':~/' + file
   const retry = 'SSH launch failed. Retry the same draft? [y/N]'
   const local = platform === 'win32'
     ? [
         "$ErrorActionPreference = 'Stop'",
         "$stage = Join-Path $PSScriptRoot 'stage.sh'",
         'Push-Location -LiteralPath $PSScriptRoot',
+        '$remotePending = $true',
         'try {', '  do {',
         // cmd's file redirection passes the UTF-8 file directly to ssh.
         // Both the alias and the relative filename are plain command words.
         "    cmd.exe /d /c '" + upload + " < stage.sh'",
         '    if ($LASTEXITCODE -eq 0) { ' + connect + ' }',
-        '    if ($LASTEXITCODE -eq 0) { break }',
+        '    if ($LASTEXITCODE -eq 0) { $remotePending = $false; break }',
         "  } while ((Read-Host '" + retry + "') -eq 'y')",
         '} finally {',
-        '  Pop-Location',
-        '  Remove-Item -LiteralPath $stage, $PSCommandPath -Force',
-        '  [System.IO.Directory]::Delete($PSScriptRoot)',
+        '  try {',
+        '    if ($remotePending) {',
+        '      ' + cleanup,
+        "      if ($LASTEXITCODE -ne 0) { Write-Warning '" + retained + "' }",
+        '    }',
+        '  } finally {',
+        '    Pop-Location',
+        '    Remove-Item -LiteralPath $stage, $PSCommandPath -Force',
+        '    [System.IO.Directory]::Delete($PSScriptRoot)',
+        '  }',
         '}',
       ].join('\r\n')
     : [
-        '#!/bin/sh', 'stage="$(dirname "$0")/stage.sh"', 'trap \'rm -f "$stage" "$0"; rmdir "$(dirname "$0")" 2>/dev/null || :\' EXIT',
-        'while ! ( ' + upload + ' < "$stage" && ' + connect + ' ); do',
+        '#!/bin/sh',
+        'stage="$(dirname "$0")/stage.sh"',
+        'remote_pending=yes',
+        'cleanup() {',
+        '  if [ "$remote_pending" = yes ]; then',
+        '    ' + cleanup + ' || printf "%s\\n" ' + shellQuote(retained) + ' >&2',
+        '  fi',
+        '  rm -f "$stage" "$0"',
+        '  rmdir "$(dirname "$0")" 2>/dev/null || :',
+        '}',
+        'trap cleanup EXIT',
+        "trap 'exit 1' HUP INT TERM",
+        'while :; do',
+        '  if ' + upload + ' < "$stage" && ' + connect + '; then remote_pending=no; break; fi',
         "  printf '%s ' '" + retry + "'", '  IFS= read -r answer || break',
         '  case "$answer" in y|Y) ;; *) break ;; esac', 'done',
       ].join('\n')

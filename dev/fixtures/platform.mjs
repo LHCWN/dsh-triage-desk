@@ -16,6 +16,22 @@ import path from 'node:path'
 export const POSIX_SHELL = process.platform !== 'win32' && spawnSync('/bin/sh', ['-c', 'exit 0']).status === 0
 
 /**
+ * A Python 3 with `pty`, or null. On macOS `/usr/bin/python3` is only an
+ * installer stub until the Command Line Tools exist, and running it opens a
+ * dialog, so it is skipped then (as the host does); every probe has a timeout.
+ */
+export function pythonWithPty(candidates = ['python3', 'python']) {
+  const stubOnly = process.platform === 'darwin' && spawnSync('/usr/bin/xcode-select', ['-p'], { timeout: 5000 }).status !== 0
+  for (const candidate of candidates) {
+    const located = spawnSync('/bin/sh', ['-c', 'command -v "$0"', candidate], { encoding: 'utf8', timeout: 5000 }).stdout.trim()
+    if (located === '' || (stubOnly && located === '/usr/bin/' + candidate)) continue
+    const probe = spawnSync(located, ['-I', '-c', 'import pty, sys; print(sys.version_info[0])'], { encoding: 'utf8', timeout: 10_000 })
+    if (probe.status === 0 && probe.stdout.trim() === '3') return located
+  }
+  return null
+}
+
+/**
  * Runs the part of a check that executes generated shell code, or logs a skip
  * when there is no POSIX shell (Windows). Every such skip goes through here so
  * it is visible in the output.

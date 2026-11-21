@@ -111,6 +111,11 @@ add the alias you use with OpenSSH, an absolute folder on the server and the
 installed agent. Pick that destination in the launch menu. The terminal uses
 your SSH configuration and shows the alias, agent and resolved working folder.
 A failed connection offers a retry in the same terminal with the same draft.
+If you leave before the agent starts, the launcher tries to delete its private
+staging file over SSH. If the server is unreachable or requires another
+password prompt, the terminal prints the filename so you can remove it after
+reconnecting. A force-closed launcher can also leave a staging file named
+`.triage-desk-<uuid>.sh` in your remote home directory.
 
 The local machine needs OpenSSH. The server needs a POSIX shell, a writable home
 directory and the agent on its SSH command PATH. Claude Code uses its native

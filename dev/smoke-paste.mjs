@@ -18,7 +18,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PASTE_WRAPPER_CS, PASTE_WRAPPER_PY, sanitizePastePrompt } from '../launcher.js'
 import { assertUnsentPaste } from './fixtures/paste.mjs'
-import { removeOnExit } from './fixtures/platform.mjs'
+import { pythonWithPty, removeOnExit } from './fixtures/platform.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const fakeAgent = path.join(here, 'fixtures', 'fake-agent.mjs')
@@ -31,22 +31,6 @@ const PROMPT = sanitizePastePrompt(
 )
 assert.ok(!PROMPT.includes('\x1b'), 'ESC is removed before pasting')
 assert.ok(!PROMPT.includes('\r'), 'CRLF becomes LF')
-
-/**
- * A Python 3 with `pty`, or null. On macOS `/usr/bin/python3` is only an
- * installer stub until the Command Line Tools exist, and running it opens a
- * dialog, so it is skipped then (as the host does); every probe has a timeout.
- */
-function python() {
-  const stubOnly = process.platform === 'darwin' && spawnSync('/usr/bin/xcode-select', ['-p'], { timeout: 5000 }).status !== 0
-  for (const candidate of ['python3', 'python']) {
-    const located = spawnSync('/bin/sh', ['-c', 'command -v "$0"', candidate], { encoding: 'utf8', timeout: 5000 }).stdout.trim()
-    if (located === '' || (stubOnly && located === '/usr/bin/' + candidate)) continue
-    const probe = spawnSync(located, ['-I', '-c', 'import pty, sys; print(sys.version_info[0])'], { encoding: 'utf8', timeout: 10_000 })
-    if (probe.status === 0 && probe.stdout.trim() === '3') return located
-  }
-  return null
-}
 
 let wrapperCommand
 if (windows) {
@@ -68,7 +52,7 @@ if (windows) {
     ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', runner, promptFile, mode, result],
   ]
 } else {
-  const py = python()
+  const py = pythonWithPty()
   if (py === null) {
     console.log('paste smoke SKIPPED (no Python 3 with pty on this machine)')
     process.exit(0)
