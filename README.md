@@ -114,7 +114,12 @@ A failed connection offers a retry in the same terminal with the same draft.
 
 The local machine needs OpenSSH. The server needs a POSIX shell, a writable home
 directory and the agent on its SSH command PATH. Claude Code uses its native
-`--prefill` flag. Other remote agents need Python 3 and bracketed paste support.
+`--prefill` flag, which puts the prompt in its command-line arguments. On a
+shared server, users who can inspect that process can read the draft. To keep
+it out of the process list, open Claude yourself and use **Copy prompt**.
+Other remote agents need Python 3 and bracketed paste support. If an agent
+doesn’t accept the draft within two minutes, use **Copy prompt** to paste it
+manually. Time spent at a recognized folder-trust dialog is excluded.
 Remote agents start with their own default permissions. You can use **Copy prompt**
 with any agent, including in an SSH session you already have open.
 

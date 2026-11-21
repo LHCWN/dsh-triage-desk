@@ -75,6 +75,21 @@ if (windows) {
   }
   const wrapperFile = path.join(work, 'paste-wrapper.py')
   await fs.writeFile(wrapperFile, PASTE_WRAPPER_PY, 'utf8')
+  // Shorten only the clock for the no-bracketed-paste case. The agent exits
+  // successfully in both cases; the draft must remain recoverable.
+  const shortWrapper = path.join(work, 'short-paste-wrapper.py')
+  await fs.writeFile(shortWrapper, PASTE_WRAPPER_PY.replace(/^DEADLINE = .+$/m, 'DEADLINE = 0.1'))
+  for (const [agentScript, status, message] of [
+    ['import time; time.sleep(0.5)', 0, 'did not accept the draft'],
+    ['pass', 1, 'closed before accepting the draft'],
+  ]) {
+    const promptFile = path.join(work, 'remote-prompt.txt')
+    await fs.writeFile(promptFile, PROMPT)
+    const outcome = spawnSync(py, ['-I', shortWrapper, '--remote', promptFile, py, '-c', agentScript],
+      { encoding: 'utf8', timeout: 5000 })
+    assert.equal(outcome.status, status, outcome.stderr)
+    assert.ok(outcome.stderr.includes(message) && outcome.stderr.includes('Copy prompt'), outcome.stderr)
+  }
   wrapperCommand = (promptFile, mode, result) => [py, ['-I', wrapperFile, promptFile, process.execPath, fakeAgent, mode, result]]
 }
 

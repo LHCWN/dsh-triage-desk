@@ -97,9 +97,8 @@ def write_all(fd, data):
 
 
 def main():
-    # A remote launch has no clipboard fallback during a long trust dialog.
-    wait_for_agent = sys.argv[1] == "--wait-for-agent"
-    args = sys.argv[2:] if wait_for_agent else sys.argv[1:]
+    remote = sys.argv[1] == "--remote"
+    args = sys.argv[2:] if remote else sys.argv[1:]
     prompt = read_prompt(args[0])
     argv = args[1:]
     stdin_tty = os.isatty(0)
@@ -168,12 +167,16 @@ def main():
                 else:
                     write_all(master, data)
                     if not pasted and (b"\r" in data or b"\n" in data):
+                        if remote and waiting_for_user:
+                            start = now
                         waiting_for_user = False
                         screen = ""
                         last_output = now
                         ready_since = now
             if not pasted:
-                if not wait_for_agent and now - start > DEADLINE:
+                if now - start > DEADLINE and not (remote and waiting_for_user):
+                    if remote:
+                        write_all(2, b"\r\nTriage Desk: the agent did not accept the draft. Use Copy prompt in the panel and paste it here.\r\n")
                     pasted = True
                 elif paste_mode and not waiting_for_user and (
                     now - last_output >= QUIET or now - ready_since >= SETTLE
@@ -187,6 +190,10 @@ def main():
         if saved is not None:
             termios.tcsetattr(0, termios.TCSAFLUSH, saved)
     _, status = os.waitpid(pid, 0)
+    if remote and not pasted:
+        sys.stderr.write("Triage Desk: the agent closed before accepting the draft. Use Copy prompt in the panel or retry.\n")
+        if status == 0:
+            return 1
     if os.WIFEXITED(status):
         return os.WEXITSTATUS(status)
     if os.WIFSIGNALED(status):

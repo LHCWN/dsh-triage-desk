@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { AGENT_PRESETS } from './agents.js'
-import { shellQuote } from './agent-command.js'
+import { agentExecutable, shellQuote } from './agent-command.js'
 import { PASTE_WRAPPER_PY, sanitizePastePrompt } from './paste-wrapper.js'
 
 // Remote presets run the installed program by name, independent of any local
@@ -40,6 +40,9 @@ export function normalizeSshServers(input, strict = false) {
  * command line, including PowerShell 5.1's native argument conversion.
  */
 export function buildSshScripts(server, prompt, platform) {
+  const preset = AGENT_PRESETS.find((entry) => entry.id === server.agent)
+  if (!preset) throw new Error('unknown remote agent')
+  const executable = shellQuote(agentExecutable(preset.command, 'linux'))
   const file = '.triage-desk-' + randomUUID() + '.sh'
   const remote = [
     'set -eu',
@@ -47,14 +50,14 @@ export function buildSshScripts(server, prompt, platform) {
     'cd ' + shellQuote(server.cwd),
     'printf "SSH %s · %s · %s\\n" ' + shellQuote(server.alias) + ' ' + shellQuote(server.agent) + ' "$(pwd -P)"',
   ]
-  const mode = server.agent === 'claude' ? 'draft' : 'paste'
+  const mode = preset.draftFlag ? 'draft' : 'paste'
   if (mode === 'draft') {
-    remote.push('exec claude --prefill ' + shellQuote(prompt))
+    remote.push(['exec', executable, shellQuote(preset.draftFlag), shellQuote(prompt)].join(' '))
   } else {
     if (prompt !== sanitizePastePrompt(prompt)) throw new Error('remote paste cannot represent control characters in this prompt')
     remote.push('umask 077', 'prompt_file=$(mktemp)', 'trap \'rm -f "$prompt_file"\' EXIT',
       'printf %s ' + shellQuote(prompt) + ' > "$prompt_file"',
-      'python3 -I -c ' + shellQuote(PASTE_WRAPPER_PY) + ' --wait-for-agent "$prompt_file" ' + shellQuote(server.agent))
+      'python3 -I -c ' + shellQuote(PASTE_WRAPPER_PY) + ' --remote "$prompt_file" ' + executable)
   }
   // The staging shell reads the prompt as quoted data. An interrupted
   // transfer cannot execute the incomplete payload. The random name belongs
