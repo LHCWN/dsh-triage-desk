@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Row and group launchers can copy the exact scenario draft. The row launcher preselects review, re-review or issue triage when applicable and respects saved scenario defaults.
+- Save SSH aliases with a remote working directory and preferred agent, and open an unsent draft on that server. Connection failures offer a retry in the terminal.
+
 ## [0.1.4](https://github.com/LHCWN/dsh-triage-desk/releases/tag/v0.1.4) — 2026-11-20
 
 ### Changed

@@ -4,11 +4,12 @@
  * scenarios, the default scenario, the terminal app, and prompt delivery.
  */
 
+import { normalizeSshServers } from './ssh.js'
 import path from 'node:path'
 import { asObject, expandHome } from './common.js'
 import { REPO_PATTERN } from './repo-urls.js'
 import { AGENTS_VERSION, DISCOVERABLE_AGENTS, DSH_TARGET, normalizeAgentConfig } from './agents.js'
-import { DEFAULT_SCENARIO_ID, normalizeScenarios } from './scenarios.js'
+import { normalizeScenarios } from './scenarios.js'
 import { normalizeTerminalChoice } from './terminals.js'
 
 export const MAX_CLONE_DIRS = 8
@@ -79,12 +80,13 @@ export function normalizeLauncherConfig(config) {
   const scenarios = normalizeScenarios(input.scenarios).map((scenario) =>
     scenario.agent === DSH_TARGET && legacy !== undefined ? { ...scenario, agent: legacy } : scenario)
   const requestedDefault = typeof input.defaultScenario === 'string' ? input.defaultScenario.trim() : ''
-  const defaultScenario = scenarios.some((entry) => entry.id === requestedDefault && entry.scope === 'item')
+  const defaultScenario = scenarios.some((entry) => entry.id === requestedDefault && entry.scope === 'item' && entry.enabled)
     ? requestedDefault
-    : DEFAULT_SCENARIO_ID
+    : ''
   return {
     agents,
     agentsAuto,
+    sshServers: normalizeSshServers(input.sshServers),
     invalidAgents,
     defaultAgent,
     cloneDirs: normalizePathList(input.cloneDirs),

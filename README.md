@@ -89,20 +89,36 @@ After editing the host half, quit and reopen DSH, then refresh the page; see
 
 ## Launching agents
 
-The terminal button on a row (or a section header) opens the launch menu: pick a
-target (**DSH — this app** or an installed agent), then a scenario. A row
-scenario opens the agent in the repository's local clone; a section scenario
-launches one agent with the list of every visible row. The prompt is always
-prepared but **not sent**. A line under the agent picker says where it opens and
-how the prompt arrives, for example *Opens in Ghostty · prompt typed into the
-input box, unsent*.
+Open the terminal button on a row or section header. The scenario picker starts
+on **Review this PR** for a first review, **Re-review after changes** for a repeat
+review, or **Triage this issue** for a new or assigned issue. A saved, enabled
+default takes priority on rows where it applies, including **Just the link**.
+You can change the scenario before choosing either action.
+
+- **Copy prompt** copies the rendered text for use in an existing session.
+  It includes your edited instructions and the same links, order and size limit
+  as a launch. If the clipboard is unavailable, copy the selected text in the
+  menu. The row's **Copy link** button still copies just its URL.
+- **Prepare draft** opens the selected scenario in DSH, a local agent or a
+  saved SSH destination. Group scenarios use the visible, unsnoozed rows from
+  their configured sections. You decide when to send the draft.
 
 Once you send it, the review scenarios post one GitHub review of inline comments
 tagged `[P1]`–`[P3]`, and never approve. The fix and reply scenarios wait for your
 OK before pushing or posting; triage only reports back. None of them add AI
 attribution.
 
-<img src="docs/screenshots/launch-menu.png" width="300" alt="The launch menu on a row: the agent picker set to DSH — this app, and the scenarios Just the link and Review this PR">
+**SSH destinations.** Under **Settings → Terminal and agents → SSH destinations**,
+add the alias you use with OpenSSH, an absolute folder on the server and the
+installed agent. Pick that destination in the launch menu. The terminal uses
+your SSH configuration and shows the alias, agent and resolved working folder.
+A failed connection offers a retry in the same terminal with the same draft.
+
+The local machine needs OpenSSH. The server needs a POSIX shell, a writable home
+directory and the agent on its SSH command PATH. Claude Code uses its native
+`--prefill` flag. Other remote agents need Python 3 and bracketed paste support.
+Remote agents start with their own default permissions. You can use **Copy prompt**
+with any agent, including in an SSH session you already have open.
 
 **Terminals.** Settings → *Terminal and agents* → **Open agents in** offers
 *Automatic* or one of this platform's terminals; terminals that are not installed
@@ -168,6 +184,8 @@ available while you save. The most used fields:
 | `refreshSeconds` | `1200` | Auto-refresh interval, 15–3600 s |
 | `requireGreenChecks` | `true` | *Ready to merge* only with green or no checks |
 | `defaultAgent` | `dsh` | Target selected in the launch menu: `dsh` (a new DSH chat) or an agent id |
+| `defaultScenario` | empty | Choose by task, or save an applicable row scenario ID |
+| `sshServers` | `[]` | Saved SSH destinations with `alias`, `agent` and absolute remote `cwd` |
 | `terminal` | `auto` | Terminal for launches: `auto` or a terminal id |
 | `promptDelivery` | `paste` | `paste` (type into the agent) or `clipboard` |
 

@@ -455,7 +455,7 @@ export function createProcesses({ ctx, settings, platform }) {
    * new window when the tab plan fails. Focus is best-effort: any failure just
    * proceeds to open a fresh tab/window.
    */
-  const openTerminal = async (scriptPath, title, signal, choice = TERMINAL_AUTO) => {
+  const openTerminal = async (scriptPath, title, signal, choice = TERMINAL_AUTO, reuse = true) => {
     const resolved = await resolveTerminal(choice)
     const capabilities = { scriptPath, title, ...resolved.capabilities }
     if (platform === 'linux') {
@@ -464,7 +464,7 @@ export function createProcesses({ ctx, settings, platform }) {
       capabilities.xdotool = raiser.xdotool
     }
 
-    const focusPlan = focusTerminalPlan(platform, capabilities)
+    const focusPlan = reuse ? focusTerminalPlan(platform, capabilities) : null
     if (focusPlan !== null && !(signal !== undefined && signal.aborted === true)) {
       try {
         const focused = await runProcess(focusPlan.argv, {

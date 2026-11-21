@@ -230,6 +230,7 @@ const ctx = {
 }
 
 apply(ctx, {
+  sshServers: [{ alias: 'builder', agent: 'claude', cwd: '/work/remote' }],
   agents: [
     claude,
     codex,
@@ -324,6 +325,17 @@ await recordAsync('config GET exposes launcher settings, scenarios, and detectio
   assert.equal(payload.limits.scenarios, MAX_SCENARIOS)
   assert.equal(payload.limits.scenarioTemplate, MAX_SCENARIO_TEMPLATE)
   assert.equal(payload.limits.prompt, 16_000)
+})
+
+await recordAsync('SSH launches resolve only saved destinations and use the remote folder and agent', async () => {
+  const body = { url: PR_URL, scenario: 'custom-review', sshAlias: 'builder' }
+  const result = await json(await callHandler('/triage-desk/launch', 'POST', body))
+  assert.equal(result.cwdMode, 'ssh')
+  assert.equal(result.cwd, '/work/remote')
+  assert.equal(result.agent.id, 'claude')
+  const unknown = await json(await callHandler('/triage-desk/launch', 'POST', { ...body, sshAlias: 'unknown' }))
+  assert.equal(unknown.error.code, 'bad-destination')
+  await cleanupLaunches()
 })
 
 await recordAsync('launch without a scenario uses the link scenario', async () => {

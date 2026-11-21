@@ -129,3 +129,5 @@ export {
   normalizeTerminalChoice,
   terminalCatalog,
 } from './launcher/terminals.js'
+
+export { buildSshScripts, normalizeSshServers, SSH_AGENTS } from './launcher/ssh.js'
