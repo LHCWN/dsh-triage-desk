@@ -31,14 +31,12 @@ import {
   normalizeLauncherConfig,
   readSshHostAliases,
   sshRepositoryScan,
-  sshAgentProbe,
   configuredSshHosts,
-  SSH_AGENTS,
   SSH_ALIAS,
   REPO_PATTERN,
   scenarioTitle,
 } from './launcher.js'
-import { createAgents } from './host/agents.js'
+import { createAgents, probeRemoteAgents } from './host/agents.js'
 import { createClones } from './host/clones.js'
 import { publicConfig, sanitizePatch } from './host/config.js'
 import { BadRequest, LaunchError, errorMessage, launchErrorStatus } from './host/errors.js'
@@ -459,10 +457,7 @@ export function apply(ctx, config = {}) {
       return sendJson(res, 400, { ok: false, error: { message: 'Enter a literal SSH host alias' } })
     }
     try {
-      const result = await runProcess(sshAgentProbe(body.alias), { timeoutMs: 15000 })
-      if (result.code !== 0 || result.timedOut) throw new Error(result.stderr?.trim() || 'SSH connection failed')
-      const lines = new Set(result.stdout.split(/\r?\n/))
-      sendJson(res, 200, { ok: true, agents: SSH_AGENTS.filter(({ id }) => lines.has('__td_agent__' + id)) })
+      sendJson(res, 200, { ok: true, agents: await probeRemoteAgents(body.alias, runProcess) })
     } catch (error) {
       sendJson(res, 502, { ok: false, error: { message: errorMessage(error).slice(0, 500) } })
     }

@@ -154,7 +154,11 @@ async function checkRemoteChoices() {
     await fs.rename(path.join(privateBin, 'actual-claude'), path.join(bin, 'claude'))
     env.SHELL = originalShell
   }
+  await fs.mkdir(path.join(remote, '.ssh', 'conf.d'))
+  await fs.writeFile(path.join(remote, '.ssh', 'conf.d', 'build1.conf'), 'Host build-included\n')
+  await fs.appendFile(sshConfig, 'Include conf.d/build[12].conf\n')
   const hosts = await configuredSshHosts(remote)
+  assert.ok(hosts.includes('build-included'))
   assert.ok(hosts.includes('github-work') && !hosts.includes('wildcard-*'))
   const menu = launch({}, '2\ny\n')
   for (const dir of actual) assert.ok(menu.includes(dir))

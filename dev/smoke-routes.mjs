@@ -125,6 +125,7 @@ function fakeHandle(exitCode, stdout, stderr) {
 function fakeSpawn(spec) {
   const argv = spec.argv
   if (argv[0] === 'ssh' && argv.includes('ConnectTimeout=8')) {
+    if (argv.at(-2) === 'folders-only') return fakeHandle(0, '__td_agent__codex\n', '')
     assert.equal(argv.at(-2), 'unsaved-host')
     return fakeHandle(0, 'login banner\n__td_agent__claude\n__td_agent__codex\n', '')
   }
@@ -253,6 +254,7 @@ const ctx = {
 apply(ctx, {
   sshServers: [
     { alias: 'builder', agent: 'claude', cwd: '/work/remote' },
+    { alias: 'folders-only', agent: '', folders: ['/projects'] },
     ...(posix ? [{ alias: 'draft-fixture', agent: 'claude', cwd: remoteRoot }] : []),
   ],
   agents: [
@@ -363,6 +365,10 @@ await recordAsync('a named OpenSSH host launches with the selected remote agent 
     assert.equal(result.sshAlias, 'staging-ci')
     assert.equal(result.agent.id, 'codex')
     assert.equal(result.cwdMode, 'ssh')
+    const foldersOnly = await json(await callHandler('/triage-desk/launch', 'POST', { url: PR_URL, sshAlias: 'folders-only' }))
+    assert.equal(foldersOnly.agent?.id, 'codex', 'a folders-only host uses an installed agent')
+    const missing = await json(await callHandler('/triage-desk/launch', 'POST', { ...body, sshAlias: 'unknown' }))
+    assert.equal(missing.error.code, 'bad-destination')
     await cleanupLaunches()
   })
 })
@@ -373,8 +379,6 @@ await recordAsync('SSH launches resolve saved destinations and use the remote fo
   assert.equal(result.cwdMode, 'ssh')
   assert.equal(result.cwd, null, 'the SSH terminal resolves the actual directory')
   assert.equal(result.agent.id, 'claude')
-  const unknown = await json(await callHandler('/triage-desk/launch', 'POST', { ...body, sshAlias: 'unknown' }))
-  assert.equal(unknown.error.code, 'bad-destination')
   await cleanupLaunches()
 })
 

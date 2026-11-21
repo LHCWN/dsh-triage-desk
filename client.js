@@ -271,6 +271,8 @@ window.__ModuleLoader__.load({
       'settings.forgetHost': 'Remove saved host settings',
       'settings.scanAgain': 'Scan again',
       'settings.foundAgents': 'Agents found: {n}',
+      'settings.autoAgent': 'Automatic (first detected agent)',
+      'settings.manualSshAgent': 'Could not check installed agents: {error}. Choose an agent manually or retry.',
       'launch.machine': 'Run on',
       'launch.local': 'This computer',
       'settings.environments': 'Launch environments',
@@ -637,6 +639,8 @@ window.__ModuleLoader__.load({
       'settings.forgetHost': '清除此主机的已保存设置',
       'settings.scanAgain': '重新扫描',
       'settings.foundAgents': '找到的智能体：{n}',
+      'settings.autoAgent': '自动（首个检测到的智能体）',
+      'settings.manualSshAgent': '未能检查已安装的智能体：{error}。请手动选择或重试。',
       'launch.machine': '运行位置',
       'launch.local': '本机',
       'settings.environments': '启动环境',
@@ -1188,8 +1192,7 @@ window.__ModuleLoader__.load({
         .adx-scenario-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
       }
       .adx-auth { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
-      .adx-auth-head, .adx-auth > .adx-form-note { flex-basis: 100%; }
-      .adx-auth > .adx-form-note { order: 1; }
+      .adx-auth > .adx-form-note { flex-basis: 100%; order: 1; }
       .adx-auth-line { flex: 1 1 16em; margin: 0; }
       .adx-auth-actions { display: flex; flex-wrap: wrap; gap: 6px; }
       .adx-draft, .adx-draft label, .adx-ssh-fields, .adx-ssh-fields .adx-launch-agent { display: grid; gap: 6px; }
@@ -1203,6 +1206,11 @@ window.__ModuleLoader__.load({
       .adx-ssh-fields fieldset label { display: inline-flex; margin-right: 12px; }
       .adx-ssh-fields [role=status]:empty { display: none; }
       .adx-form { display: flex; flex-direction: column; gap: 18px; max-width: 620px; padding-top: 6px; }
+      .adx-form > .adx-advanced { padding-bottom: 14px; border-bottom: 1px solid var(--adx-hairline-soft); }
+      .adx-advanced-summary { cursor: pointer; }
+      .adx-form > .adx-advanced > summary { font-size: 15px; font-weight: 600; }
+      .adx-form > .adx-advanced[open] > * + * { margin-block-start: 12px; }
+      .adx-account-name { margin-inline-start: 8px; font-size: 13px; font-weight: 400; color: var(--adx-ink-3); }
       .adx-form-head { display: flex; align-items: center; gap: 8px; }
       .adx-form-head h2 { margin: 0; font-size: 16px; line-height: 24px; font-weight: 500; }
       .adx-form-back { font-size: 13px; line-height: 20px; color: var(--adx-ink-2); }
@@ -3159,7 +3167,7 @@ window.__ModuleLoader__.load({
     function RemoteScan({ t, probe }) {
       const { result, scan } = probe
       return h('div', { className: 'adx-run-on-status' },
-        h('span', { role: 'status' }, result?.error || (result
+        h('span', { role: 'status' }, result?.error ? t('settings.manualSshAgent', { error: result.error }) : (result
           ? t('settings.foundAgents', { n: result.agents.length }) : t('settings.connectionChecking'))),
         result && outlineButton(t(result.error ? 'launch.retry' : 'settings.scanAgain'), scan))
     }
@@ -3193,7 +3201,8 @@ window.__ModuleLoader__.load({
       const server = targets.servers.find(({ alias }) => alias === machine)
       // Batch-mode probing can fail on a host that permits interactive login.
       const configured = new Set([choice, server?.agent, ...(server?.alternatives || [])])
-      const remoteAgents = probe.result?.agents ?? configList(config, 'sshAgents').filter(({ id }) => configured.has(id))
+      const catalog = configList(config, 'sshAgents')
+      const remoteAgents = probe.result?.agents ?? (probe.result?.error ? catalog : catalog.filter(({ id }) => configured.has(id)))
       const template = configList(config, 'scenarios').find(({ id }) => id === draft?.scenario.id)
       const pinned = template && scenarioPinnedAgent(template, targets.agents)
       const preferred = machine ? server?.agent : pinned?.id || targets.selected
@@ -3202,7 +3211,8 @@ window.__ModuleLoader__.load({
           ...agentOptions(t, targets.ordered, targets.detected)]
       const offered = machine ? remoteAgents.map(({ id }) => id) :
         [...(targets.dsh ? [DSH_TARGET] : []), ...targets.ordered.map(({ id }) => id)]
-      const selected = [choice, preferred].find((id) => offered.includes(id)) || (machine && server ? '' : offered[0]) || ''
+      const automatic = !machine || (!preferred && probe.result?.agents)
+      const selected = [choice, preferred].find((id) => offered.includes(id)) || (automatic ? offered[0] : '') || ''
       const busy = actions.busy
       const tooLong = draft && Array.from(draft.prompt).length > 16000
       const ready = draft?.identity === identity && draft.prompt.trim() && !tooLong && count !== 0
@@ -4385,6 +4395,7 @@ window.__ModuleLoader__.load({
       const [refreshCustom, setRefreshCustom] = useState(initial === null ? false : initial.refreshCustom)
       const [picking, setPicking] = useState(null)
       const [openScenario, setOpenScenario] = useState(null)
+      const [githubExpanded, setGithubExpanded] = useState(null)
       const [machine, setMachine] = useState('')
       const [folderMachine, setFolderMachine] = useState('')
       const [newHost, setNewHost] = useState(null)
@@ -4900,16 +4911,10 @@ window.__ModuleLoader__.load({
       const startLogin = () => {
         void store.loginGithub().catch(() => undefined)
       }
+      const showGithub = githubExpanded ?? !state.auth?.authenticated
       const renderAuth = () => {
         const auth = state.auth
         const rows = []
-        rows.push(
-          h(
-            'div',
-            { className: 'adx-auth-head', key: 'head' },
-            h('span', { className: 'adx-auth-title' }, t('settings.githubTitle')),
-          ),
-        )
         if (state.authStatus === 'loading' && auth === null) {
           rows.push(h('p', { className: 'adx-form-note', key: 'loading' }, t('settings.connectionChecking')))
         }
@@ -5273,7 +5278,7 @@ window.__ModuleLoader__.load({
       const changeServer = (alias, patch) => {
         const server = serverFor(alias)
         const rows = server ? form.sshServers.map((row) => row === server ? { ...row, ...patch } : row)
-          : [...form.sshServers, { _key: newAgentRowKey(), alias, agent: remoteCatalog[0].id,
+          : [...form.sshServers, { _key: newAgentRowKey(), alias, agent: '',
             folders: '', cwd: '', alternatives: [], ...patch }]
         update({ sshServers: rows })
       }
@@ -5304,7 +5309,7 @@ window.__ModuleLoader__.load({
 
       function renderRemoteDefault() {
         const server = serverFor(machine)
-        const found = probe.result?.agents || []
+        const found = probe.result?.agents ?? (probe.result?.error ? remoteCatalog : [])
         const preference = server?.agent || ''
         const absent = preference && !found.some(({ id }) => id === preference)
         const savedLabel = remoteCatalog.find(({ id }) => id === preference)?.label || preference
@@ -5312,7 +5317,7 @@ window.__ModuleLoader__.load({
           h('label', { className: 'adx-run-on' }, t('settings.defaultAgent'),
             h('select', { className: 'adx-select', value: preference, disabled: !found.length,
               onChange: (event) => changeServer(machine, { agent: event.target.value }) },
-              !preference && h('option', { value: '', disabled: true }, t('launch.chooseAgent')),
+              h('option', { value: '' }, t('settings.autoAgent')),
               absent && h('option', { value: preference, disabled: true }, probe.result?.agents
                 ? savedLabel + ' · ' + t('launch.notInstalled') : savedLabel),
               found.map(({ id, label }) => h('option', { key: id, value: id }, label)))),
@@ -5535,7 +5540,109 @@ window.__ModuleLoader__.load({
               onAction: () => void store.loadConfig(),
             })
           : null,
-        renderAuth(),
+        h('details', { className: 'adx-advanced', open: showGithub },
+          h('summary', { className: 'adx-advanced-summary', onClick: (event) => {
+            event.preventDefault()
+            setGithubExpanded(!showGithub)
+          } }, t('settings.githubTitle'), !showGithub && state.auth?.authenticated && state.auth.login &&
+            h('span', { className: 'adx-account-name' }, '@' + state.auth.login)),
+          renderAuth(),
+          h(
+            Field,
+            {
+              label: t('settings.orgs'),
+              htmlFor: 'adx-orgs',
+              hint: (sourcesLine ? sourcesLine + ' — ' : '') + t('settings.orgsHint'),
+            },
+            h('input', {
+              id: 'adx-orgs',
+              type: 'text',
+              className: 'adx-input',
+              value: form.orgs,
+              placeholder: t('settings.orgsPlaceholder'),
+              spellCheck: false,
+              autoComplete: 'off',
+              onChange: (event) => update({ orgs: event.target.value }),
+            }),
+          ),
+          h(
+            Field,
+            { label: t('settings.personal'), hint: t('settings.personalHint'), row: true, onToggle: () => update({ includePersonal: form.includePersonal !== true }) },
+            h(Switch, {
+              checked: form.includePersonal === true,
+              onChange: (value) => update({ includePersonal: value }),
+              label: t('settings.personal'),
+            }),
+          ),
+          h(
+            Field,
+            { label: t('settings.refresh'), hint: t('settings.refreshHint'), htmlFor: 'adx-refresh' },
+            h(
+              'div',
+              { className: 'adx-select-custom' },
+              h(
+                'select',
+                {
+                  id: 'adx-refresh',
+                  className: 'adx-select',
+                  value: refreshCustom ? 'custom' : form.refreshSeconds,
+                  onChange: (event) => {
+                    if (event.target.value === 'custom') {
+                      setRefreshCustom(true)
+                      return
+                    }
+                    setRefreshCustom(false)
+                    update({ refreshSeconds: event.target.value })
+                  },
+                },
+                REFRESH_PRESETS.map((seconds) =>
+                  h('option', { key: seconds, value: String(seconds) }, durationLabel(seconds)),
+                ),
+                h('option', { value: 'custom' }, t('settings.custom')),
+              ),
+              refreshCustom
+                ? h(
+                    'span',
+                    { className: 'adx-custom-wrap' },
+                    h('input', {
+                      type: 'number',
+                      className: 'adx-input adx-custom-number',
+                      min: 1,
+                      max: 60,
+                      step: 1,
+                      value: String(Number(form.refreshSeconds) / 60),
+                      'aria-label': t('settings.refresh'),
+                      onChange: (event) => {
+                        const minutes = Number(event.target.value)
+                        update({
+                          refreshSeconds: Number.isFinite(minutes) ? String(Math.round(minutes * 60)) : '',
+                        })
+                      },
+                    }),
+                    h('span', { className: 'adx-custom-unit' }, t('settings.minuteUnit')),
+                  )
+                : null,
+            ),
+          ),
+          h(
+            Field,
+            { label: t('settings.green'), hint: t('settings.greenHint'), row: true, onToggle: () => update({ requireGreenChecks: !(form.requireGreenChecks === true) }) },
+            h(Switch, {
+              checked: form.requireGreenChecks === true,
+              onChange: (value) => update({ requireGreenChecks: value }),
+              label: t('settings.green'),
+            }),
+          ),
+          h(
+            Field,
+            { label: t('settings.bots'), hint: t('settings.botsHint'), row: true, onToggle: () => update({ includeBotReviews: !(form.includeBotReviews === true) }) },
+            h(Switch, {
+              checked: form.includeBotReviews === true,
+              onChange: (value) => update({ includeBotReviews: value }),
+              label: t('settings.bots'),
+            }),
+          ),
+        ),
         h('details', { className: 'adx-advanced', open: true },
           h('summary', { className: 'adx-advanced-summary' }, t('settings.agentsSection')),
           config.supportsRunOn && renderHostPicker(),
@@ -5620,101 +5727,6 @@ window.__ModuleLoader__.load({
             h('summary', { className: 'adx-advanced-summary' }, t('settings.scenarios')),
             renderScenarios(),
           ),
-        ),
-        h(
-          Field,
-          {
-            label: t('settings.orgs'),
-            htmlFor: 'adx-orgs',
-            hint: (sourcesLine ? sourcesLine + ' — ' : '') + t('settings.orgsHint'),
-          },
-          h('input', {
-            id: 'adx-orgs',
-            type: 'text',
-            className: 'adx-input',
-            value: form.orgs,
-            placeholder: t('settings.orgsPlaceholder'),
-            spellCheck: false,
-            autoComplete: 'off',
-            onChange: (event) => update({ orgs: event.target.value }),
-          }),
-        ),
-        h(
-          Field,
-          { label: t('settings.personal'), hint: t('settings.personalHint'), row: true, onToggle: () => update({ includePersonal: form.includePersonal !== true }) },
-          h(Switch, {
-            checked: form.includePersonal === true,
-            onChange: (value) => update({ includePersonal: value }),
-            label: t('settings.personal'),
-          }),
-        ),
-        h(
-          Field,
-          { label: t('settings.refresh'), hint: t('settings.refreshHint'), htmlFor: 'adx-refresh' },
-          h(
-            'div',
-            { className: 'adx-select-custom' },
-            h(
-              'select',
-              {
-                id: 'adx-refresh',
-                className: 'adx-select',
-                value: refreshCustom ? 'custom' : form.refreshSeconds,
-                onChange: (event) => {
-                  if (event.target.value === 'custom') {
-                    setRefreshCustom(true)
-                    return
-                  }
-                  setRefreshCustom(false)
-                  update({ refreshSeconds: event.target.value })
-                },
-              },
-              REFRESH_PRESETS.map((seconds) =>
-                h('option', { key: seconds, value: String(seconds) }, durationLabel(seconds)),
-              ),
-              h('option', { value: 'custom' }, t('settings.custom')),
-            ),
-            refreshCustom
-              ? h(
-                  'span',
-                  { className: 'adx-custom-wrap' },
-                  h('input', {
-                    type: 'number',
-                    className: 'adx-input adx-custom-number',
-                    min: 1,
-                    max: 60,
-                    step: 1,
-                    value: String(Number(form.refreshSeconds) / 60),
-                    'aria-label': t('settings.refresh'),
-                    onChange: (event) => {
-                      const minutes = Number(event.target.value)
-                      update({
-                        refreshSeconds: Number.isFinite(minutes) ? String(Math.round(minutes * 60)) : '',
-                      })
-                    },
-                  }),
-                  h('span', { className: 'adx-custom-unit' }, t('settings.minuteUnit')),
-                )
-              : null,
-          ),
-        ),
-        h(
-          Field,
-          { label: t('settings.green'), hint: t('settings.greenHint'), row: true, onToggle: () => update({ requireGreenChecks: !(form.requireGreenChecks === true) }) },
-          h(Switch, {
-            checked: form.requireGreenChecks === true,
-            onChange: (value) => update({ requireGreenChecks: value }),
-            label: t('settings.green'),
-          }),
-        ),
-        h(
-          Field,
-          { label: t('settings.bots'), hint: t('settings.botsHint'), row: true, onToggle: () => update({ includeBotReviews: !(form.includeBotReviews === true) }) },
-          h(Switch, {
-            checked: form.includeBotReviews === true,
-            onChange: (value) => update({ includeBotReviews: value }),
-            label: t('settings.bots'),
-          }),
         ),
         h('p', { className: 'adx-form-note' }, t('settings.applyHint')),
         h('details', { className: 'adx-advanced' },

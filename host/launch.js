@@ -36,6 +36,7 @@ import {
   scenarioTitle,
   withAgentExecutable,
 } from '../launcher.js'
+import { probeRemoteAgents } from './agents.js'
 import { LaunchError } from './errors.js'
 
 export function createLaunch({
@@ -226,7 +227,9 @@ export function createLaunch({
       if (!known) throw new LaunchError('bad-destination', 'choose a saved destination or a named OpenSSH host')
       server = { alias: known, folders: [] }
     }
-    const agent = SSH_AGENTS.find((entry) => entry.id === (requestedAgent || server.agent))
+    const preferred = requestedAgent || server.agent
+    const agent = preferred ? SSH_AGENTS.find((entry) => entry.id === preferred)
+      : (await probeRemoteAgents(server.alias, runProcess))[0]
     if (!agent) throw new LaunchError('unknown-agent', 'choose a supported SSH agent')
     const title = `SSH ${server.alias} · ${agent.label} · ${scenarioTitle(rendered.scenario)}`
     void cleanupStaleTempDirs()

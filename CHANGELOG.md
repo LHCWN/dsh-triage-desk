@@ -5,7 +5,7 @@
 ### Added
 
 - Preview and edit the task prompt before opening a local or remote agent. Select the machine and agent separately. Copy the exact draft or the row URL.
-- Settings places GitHub before Agents. The Run on picker lists this computer and named SSH hosts in both Settings and drafts. Selecting a host checks its agents. Machines have separate default agents and share prompt templates. Terminal and repository folders are configured in Launch environments.
+- The GitHub section groups account, sources, refresh and PR rules above Agents. It collapses when signed in. The Run on picker lists this computer and named SSH hosts in both Settings and drafts. Selecting a host checks its agents. Machines have separate default agents and share prompt templates. Terminal and repository folders are configured in Launch environments.
 - SSH folders accept `~/projects`. When a checkout is missing, choose a folder before opening the agent. Remote detection uses the interactive shell PATH.
 
 ### Changed

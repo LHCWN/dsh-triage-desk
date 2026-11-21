@@ -4,10 +4,17 @@
  */
 
 import path from 'node:path'
-import { DISCOVERABLE_AGENTS, agentExecutable, isWindowsShim } from '../launcher.js'
+import { DISCOVERABLE_AGENTS, SSH_AGENTS, sshAgentProbe, agentExecutable, isWindowsShim } from '../launcher.js'
 import { LaunchError } from './errors.js'
 
 const DETECTION_CACHE_MS = 120_000
+
+export async function probeRemoteAgents(alias, runProcess) {
+  const result = await runProcess(sshAgentProbe(alias), { timeoutMs: 15000 })
+  if (result.code !== 0 || result.timedOut) throw new LaunchError('scan-failed', result.stderr?.trim() || 'SSH connection failed')
+  const lines = new Set(result.stdout.split(/\r?\n/))
+  return SSH_AGENTS.filter(({ id }) => lines.has('__td_agent__' + id))
+}
 
 export function createAgents({ launcherSettings, platform, locateExecutables, isExecutableFile }) {
   /**

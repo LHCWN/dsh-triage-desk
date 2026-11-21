@@ -1434,6 +1434,9 @@ const runOnConfig = { supportsRunOn: true, supportsTaskDefault: true, defaultSce
   harness.change(machine, 'staging')
   await harness.flush()
   assert.ok(harness.text().includes('Connection refused'))
+  assert.ok(flattenTree(labeledControl(harness, 'launch.agent').props.children).some((node) => node.props?.value === 'codex'),
+    'an interactive-only host permits a manual agent choice')
+  assert.equal(labeledControl(harness, 'launch.agent').props.value, '')
   harness.host.sshError = ''
   harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('launch.retry')))
   await harness.flush()
@@ -1453,8 +1456,27 @@ const runOnConfig = { supportsRunOn: true, supportsTaskDefault: true, defaultSce
   harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
   await harness.flush()
   const text = harness.text()
-  assert.ok(text.indexOf('settings.githubTitle') < text.indexOf('settings.agentsSection'))
+  const groups = harness.nodes().filter((node) => node.type === 'details')
+  const github = groups.find((group) => group.props.children[0]?.props.children.includes('settings.githubTitle'))
+  assert.ok(github, 'GitHub connection and inbox settings share a single section')
+  assert.equal(github.props.open, false, 'connected accounts start collapsed')
+  harness.click(github.props.children[0])
+  assert.ok(harness.nodes().some((node) => node.type === 'details' && node.props.open &&
+    node.props.children[0]?.props.children.includes('settings.githubTitle')))
+  const fields = flattenTree(github.props.children)
+  for (const key of ['settings.orgs', 'settings.personal', 'settings.refresh', 'settings.green', 'settings.bots']) {
+    assert.ok(fields.includes(key), key + ' stays in GitHub')
+  }
+  assert.ok(text.indexOf('settings.bots') < text.indexOf('settings.agentsSection'))
   const pick = () => labeledControl(harness, 'launch.machine')
+  harness.change(labeledControl(harness, 'settings.foldersOn'), 'staging')
+  harness.change(labeledControl(harness, 'settings.ssh.folders', 'textarea'), '~/projects')
+  harness.host.sshError = 'Authentication requires a terminal'
+  harness.change(pick(), 'staging')
+  await harness.flush()
+  assert.equal(labeledControl(harness, 'settings.defaultAgent').props.value, '', 'folder edits do not assign an agent')
+  assert.equal(labeledControl(harness, 'settings.defaultAgent').props.disabled, false)
+  harness.host.sshError = ''
   harness.change(pick(), 'builder')
   await harness.flush()
   assert.equal(labeledControl(harness, 'settings.defaultAgent').props.value, 'codex', 'retain a missing preferred agent')

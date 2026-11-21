@@ -93,7 +93,8 @@ Other panel features:
   sources could not be read, and tells an empty inbox apart from requested
   sections that are empty while others are not.
 - **Settings in the panel**: organizations, personal repositories, auto-refresh
-  interval, green-CI merge rule, bot-review handling, terminal, prompt delivery,
+  interval, green-CI merge rule and bot-review handling are grouped under **GitHub**.
+  Below it are terminal, prompt delivery,
   agents, launch scenarios, and clone search. Terminal settings are grouped under
   *Launch environments* alongside clone search. The
   auto-refresh select accepts **Custom…** in minutes (1–60).
@@ -567,7 +568,7 @@ Fields:
 | `repoPaths` | `{}` | Optional `owner/repo` → absolute clone path exceptions, up to 50, matched case-insensitively (under *Launch environments*) |
 | `scenarios` | built-in set | Named launch scenarios: `{ id, label?, scope: 'item' \| 'section', sections, prompt, agent: 'default' \| <agent id>, enabled }`; array order resolves competing templates; an empty `prompt` on a built-in scenario means its current default |
 | `defaultScenario` | empty string | Task-based preselection, or an enabled row scenario ID where applicable |
-| `sshServers` | `[]` | Remote destinations. Each entry has a literal OpenSSH `alias`, built-in `agent` ID, optional built-in `alternatives` and ordered remote `folders` (absolute or `~/…`) (up to eight). A legacy `cwd` supplies one folder |
+| `sshServers` | `[]` | Remote destinations. Each entry has a literal OpenSSH `alias`, preferred built-in `agent` ID (empty uses the first detected agent), optional built-in `alternatives` and ordered remote `folders` (absolute or `~/…`) (up to eight). A legacy `cwd` supplies one folder |
 | `ghCommand` | `gh` | Path to the GitHub CLI |
 | `timeoutMs` | `30000` | Timeout of one `gh` invocation |
 | `meLogins` | `[]` | Extra self logins: decide ownership, direct review requests, your activity, and recent branch authors on the items the signed-in account's searches find. PRs that involve only an alias are not found; aliases add no sources or team memberships |

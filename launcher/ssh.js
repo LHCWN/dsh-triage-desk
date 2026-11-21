@@ -42,7 +42,7 @@ export async function configuredSshHosts(home = os.homedir()) {
           if (SSH_ALIAS.test(value)) aliases.add(value)
         } else {
           const pattern = value.startsWith('~/') ? path.join(home, value.slice(2)) : path.resolve(directory, value)
-          if (!pattern.includes('*') && !pattern.includes('?')) await read(pattern)
+          if (!/[*?\[]/.test(pattern)) await read(pattern)
           else if (fs.glob) {
             try {
               for await (const match of fs.glob(pattern)) {
@@ -81,7 +81,7 @@ function sshServerError(server, previous) {
     return 'SSH destinations need a literal host alias'
   }
   if (previous.some((entry) => entry.alias.toLowerCase() === server.alias.toLowerCase())) return 'duplicate SSH alias'
-  if (!SSH_AGENTS.some((agent) => agent.id === server.agent)) return 'unknown remote agent'
+  if (server.agent !== '' && !SSH_AGENTS.some((agent) => agent.id === server.agent)) return 'unknown remote agent'
   const folders = repositoryFolders(server)
   if (!Array.isArray(folders) || folders.length > 8 || folders.some((folder) =>
     typeof folder !== 'string' || !(folder.startsWith('/') || folder === '~' || folder.startsWith('~/')) || /[\x00-\x1f\x7f]/.test(folder) || folder.length > 1024)) {

@@ -119,11 +119,16 @@ tagged `[P1]`–`[P3]`, and never approve. The fix and reply scenarios wait for 
 OK before pushing or posting; triage only reports back. None of them add AI
 attribution.
 
+**GitHub settings.** Expand **GitHub** for the connection, organizations, personal
+repositories, polling interval and PR rules. A connected account starts collapsed
+and shows its login in the heading. When sign-in is needed, GitHub starts expanded.
+
 **Run on.** In **Settings → Agents**, below GitHub, choose **This computer** or an
 SSH host. The same list is available when opening a draft. It includes saved
 destinations and named hosts from `~/.ssh/config`. Selecting a host checks its
 installed agents. Use **Scan again** after installing an agent, or **Retry** if
-the connection fails. **Add SSH host…** lets you enter an alias manually.
+the connection fails. Hosts requiring interactive SSH login also allow a manual
+agent choice. **Add SSH host…** lets you enter an alias manually.
 Each machine has its own default agent. Viewing a host in Settings only changes
 which preferences you edit. Prompt templates are shared across machines. For a
 template with an existing local agent override, **Use machine default** clears it.
