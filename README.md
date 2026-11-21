@@ -3,6 +3,7 @@
 [![check](https://github.com/LHCWN/dsh-triage-desk/actions/workflows/check.yml/badge.svg)](https://github.com/LHCWN/dsh-triage-desk/actions/workflows/check.yml)
 [![npm version](https://img.shields.io/npm/v/dsh-triage-desk.svg)](https://www.npmjs.com/package/dsh-triage-desk)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 [![Listed on DSH 1024Store](https://img.shields.io/badge/DSH_1024Store-listed-0969da.svg)](https://deepseek1024.com/plugins/LHCWN/dsh-triage-desk)
 [![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/lhcwn/dsh-triage-desk)
 [![Open Plugin Market](https://img.shields.io/endpoint?url=https%3A%2F%2Fdshopen.org%2Fbadge%2Fdsh-triage-desk.json%3Flang%3Den)](https://dshopen.org/plugins/dsh-triage-desk/)
