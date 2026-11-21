@@ -30,26 +30,27 @@ error notice has a **Sign in to GitHub** action; Settings also shows whether
 `gh` is installed and which account is connected, and its **Sign in to GitHub**
 button opens an interactive `gh auth login` in a terminal.
 
-Sections:
+The **Reviews** tab groups the three review queues. Select a group to filter further.
 
-- **Waiting for your review**: open PRs where your review is requested directly
-  or through a team, and you have not reviewed the current head yet.
-- **Re-review needed**: PRs you already reviewed whose head commit is no longer
+- **Awaiting my review** lists direct requests on PRs you have never reviewed
+  and team requests on a head you have yet to review.
+- **Awaiting my re-review**: PRs you already reviewed whose head commit is no longer
   the one you reviewed (new commits, a rebase, or a force-push; matched by commit
   id, not by commit date), PRs where the author clicked **Re-request review** for
-  you, or PRs where the author replied **to you** after your last action (a
+  you on the same or a changed head, or PRs where the author replied **to you** after your last action (a
   threaded reply to your review comment or an explicit @-mention). An author
   reply alone is secondary: it stays in the same section, muted and at the
   bottom, with the exact reason in the row tooltip. Other reviewers' activity
   alone does not ask you for another pass.
+- **Feedback on my PRs** includes requested changes and new comments on your PRs,
+  including inline replies. Open the changed files to address a request or
+  reply in the PR conversation. An approval alone creates no feedback task.
 - **Ready to merge**: your PRs that are approved, mergeable, and (by default)
   green. PRs GitHub marks `BLOCKED` are excluded even when approval and checks
   pass.
-- **Needs your action**: your PRs with requested changes, conflicts, or new
-  reviewer comments (including inline review threads) that expect fixes, plus
-  issues assigned to you and issues/PRs where you were mentioned and have not
-  replied, including ones you authored. A newer approval is not treated as
-  "needs a reply": it moves the PR toward *Ready to merge* instead.
+- **Needs your action** includes PRs with a merge conflict alone, issues assigned
+  to you, and unanswered mentions. When a PR has both feedback and a conflict,
+  its feedback row also shows the conflict.
 - **CI is failing**: red checks on your PRs and on branches, in personal and
   organization repositories: a red default branch of a repository you administer
   or maintain, and any red branch (the default one included) whose latest commit
@@ -65,8 +66,8 @@ Other panel features:
 
 - **Copy a link**: each row has one copy-link action; the toolbar and section
   headers do not duplicate it.
-- **Counters**: the sidebar badge counts each item once (a PR in both *Needs your
-  action* and *CI is failing* is one item), leaves out review requests that are
+- **Counters**: the sidebar badge counts each item once (a PR in both *Feedback on my
+  PRs* and *CI is failing* is one item), leaves out review requests that are
   optional because someone else's approval already satisfies the PR, and leaves
   out snoozed items and new unassigned issues. Section chips (and *Snoozed*)
   count the rows the list shows under the current source filter and search; the
@@ -138,7 +139,9 @@ its own agent: the badge identifies the pinned local agent. An explicit DSH or S
 
 All scenarios are editable in Settings: name, scope (row or section), bound
 sections, prompt, preferred agent, order, and an enabled toggle. *Just the link*
-cannot be removed and must contain `{url}`.
+cannot be removed and must contain `{url}`. Existing scenarios bound to *Needs
+your action* also apply to *Feedback on my PRs* after upgrading. You can edit
+the two bindings independently.
 
 **What the built-in prompts ask for.** They use `gh` and work with any agent.
 The review scenarios (*Review this PR*, *Re-review after changes*, *Review
@@ -148,7 +151,7 @@ fixing, then post **one** `COMMENT` review through
 changed line, tagged `[P1]` blocking, `[P2]` should fix, or `[P3]` minor; a
 `suggestion` block is used only when it fully fixes the issue. They don't change
 code, never approve or request changes, and post nothing when there is nothing
-new to say. A re-review looks only at changes since your last review's commit.
+new to say. A re-review covers changes and replies since your last review.
 *Fix* scenarios check out the branch, fix the first real error with the smallest
 change without skipping hooks, wait for your OK before pushing, and never merge.
 *Reply* scenarios draft as you and post after you approve. *Triage* scenarios

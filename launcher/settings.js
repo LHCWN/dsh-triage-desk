@@ -9,7 +9,7 @@ import path from 'node:path'
 import { asObject, expandHome } from './common.js'
 import { REPO_PATTERN } from './repo-urls.js'
 import { AGENTS_VERSION, DISCOVERABLE_AGENTS, DSH_TARGET, normalizeAgentConfig } from './agents.js'
-import { normalizeScenarios } from './scenarios.js'
+import { normalizeScenarios, SCENARIOS_VERSION } from './scenarios.js'
 import { normalizeTerminalChoice } from './terminals.js'
 
 export const MAX_CLONE_DIRS = 8
@@ -77,7 +77,7 @@ export function normalizeLauncherConfig(config) {
   // A new profile, an unknown id or "dsh": launches open a DSH chat.
   const savedDefault = follow(input.defaultAgent)
   const defaultAgent = typeof savedDefault === 'string' && ids.has(savedDefault) ? savedDefault : DSH_TARGET
-  const scenarios = normalizeScenarios(input.scenarios).map((scenario) =>
+  const scenarios = normalizeScenarios(input.scenarios, { upgradeFeedback: !(input.scenariosVersion >= SCENARIOS_VERSION) }).map((scenario) =>
     scenario.agent === DSH_TARGET && legacy !== undefined ? { ...scenario, agent: legacy } : scenario)
   const requestedDefault = typeof input.defaultScenario === 'string' ? input.defaultScenario.trim() : ''
   const defaultScenario = scenarios.some((entry) => entry.id === requestedDefault && entry.scope === 'item' && entry.enabled)

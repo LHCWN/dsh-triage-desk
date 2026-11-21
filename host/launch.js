@@ -148,7 +148,8 @@ export function createLaunch({
   }
 
   /** Item context for a section launch; invalid and duplicate URLs are dropped. */
-  const sectionLaunchItems = (section, urls) => {
+  const sectionLaunchItems = (section, urls, boundSections) => {
+    const preferredSections = [section, ...boundSections.filter((id) => id !== section)]
     const items = []
     const seen = new Set()
     for (const raw of urls) {
@@ -156,7 +157,7 @@ export function createLaunch({
       const url = raw.trim()
       if (url === '' || seen.has(url) || parseRepoUrl(url) === null) continue
       seen.add(url)
-      const snapshotEntry = findSnapshotEntry(url)
+      const snapshotEntry = findSnapshotEntry(url, preferredSections)
       if (snapshotEntry !== null) items.push({ ...snapshotEntry.item, url, section: snapshotEntry.section })
       else items.push({ url, section })
     }
@@ -180,7 +181,7 @@ export function createLaunch({
         throw new LaunchError('bad-scenario', 'a section scenario needs a valid section')
       }
       if (!Array.isArray(body.urls)) throw new LaunchError('bad-scenario', 'a section scenario needs a list of URLs')
-      const items = sectionLaunchItems(section, body.urls)
+      const items = sectionLaunchItems(section, body.urls, scenario.sections)
       if (items.length === 0) throw new LaunchError('bad-url', 'no GitHub URLs were provided')
       const built = renderPrompt(scenario, { items, section })
       return { scenario, scope: 'section', items, prompt: built.prompt, trimmed: built.trimmed, count: items.length }
