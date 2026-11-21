@@ -6,6 +6,7 @@
 [![Listed on DSH 1024Store](https://img.shields.io/badge/DSH_1024Store-listed-0969da.svg)](https://deepseek1024.com/plugins/LHCWN/dsh-triage-desk)
 [![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/lhcwn/dsh-triage-desk)
 [![Open Plugin Market](https://img.shields.io/endpoint?url=https%3A%2F%2Fdshopen.org%2Fbadge%2Fdsh-triage-desk.json%3Flang%3Den)](https://dshopen.org/plugins/dsh-triage-desk/)
+[![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com/p/LHCWN/dsh-triage-desk/)
 
 A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH)
 plugin that answers one question every morning: **what needs me right now?** It
