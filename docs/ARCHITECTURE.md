@@ -35,9 +35,9 @@ import the launcher layer only through `launcher.js` and the data layer through
   - `config.js` — `EDITABLE_FIELDS`, `sanitizePatch`, `publicConfig` (adds
     `detectedAgents[id].draft` from `draftCommandForStatus`);
   - `processes.js` — `createProcesses`: `runProcess`, executable lookup,
-    clipboard, `openTerminal(scriptPath, title, signal, choice)` (resolves the
+    clipboard, `openTerminal(scriptPath, title, signal, choice, reuse?)` (resolves the
     saved terminal choice, falling back to Automatic when it is not installed;
-    focus-or-reuse an existing tab, else open a tab in the shared window with a
+    focus-or-reuse an existing tab for individual items, else open a tab in the shared window with a
     window fallback; the result carries `terminal: { id, label, fallback }`),
     `startLinuxTerminal` (acknowledges an emulator still running after 500 ms
     instead of waiting for it), `detectTerminals` (the platform catalog with
@@ -259,7 +259,9 @@ whole file.
   Row and section terminal buttons render scenario menus (`launch.*`
   dictionaries); per-row menu/copy state is keyed by `rowStateKey(section,
   item)`, so a PR listed in two sections has independent rows. The section menu
-  counts the union of its bound sections' visible, non-snoozed items. The row
+  uses the same group-local URL list for its label and request. It deduplicates
+  visible, non-snoozed rows by id, skips optional reviews by default, and uses
+  the checked rows in Select mode. The row
   snooze popover reuses the launch-menu look and `useLaunchMenu`;
 - `SettingsView` for the settings form, the launch-scenario editor
   (`renderScenarios`) with a live prompt preview (`scenarioPreviewText`), the
@@ -296,7 +298,7 @@ prompt, agent, enabled) plus `defaultScenario` (empty selects by task). `agent` 
 configured agent id; the row and section menus pick the actual agent per launch
 (an explicit `agent` in the launch body wins, a pinned scenario agent is used
 otherwise). The client sends `POST /triage-desk/launch` with `scenario` and
-either one row (`url`, row fields) or a section union (`section`, `urls`); the
+either one row (`url`, row fields) or one group (`section`, `urls`); the
 host renders the prompt from the snapshot and returns `scenario`, `count`,
 `trimmed`, `cwdMode` alongside the base launch fields.
 

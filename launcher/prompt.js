@@ -197,13 +197,12 @@ export function buildScenarioPrompt(scenario, context) {
   const total = items.length
   const hasLinks = template.includes('{links}')
   const vars = {
-    count: String(total),
     section: scenarioSectionLabel(input, items),
     date: todayStamp(),
   }
   const render = (shown) => {
     const block = itemsBlock(items, shown)
-    let text = renderScenarioTemplate(template, { ...vars, links: block.text }).trim()
+    let text = renderScenarioTemplate(template, { ...vars, count: String(shown), links: block.text }).trim()
     if (!hasLinks) text = text === '' ? block.text : text + '\n\n' + block.text
     if (shown < total) {
       const omitted = total - shown
@@ -219,7 +218,6 @@ export function buildScenarioPrompt(scenario, context) {
     if (codePointLength(text) <= MAX_RENDERED_PROMPT) {
       return { prompt: text, trimmed: shown < total ? { shown, total } : null }
     }
-    if (shown === 1) return { prompt: truncatePrompt(text), trimmed: { shown: 1, total } }
   }
-  return { prompt: truncatePrompt(render(0)), trimmed: null }
+  throw new Error('No items fit within the prompt limit. Shorten the scenario template or include {links} only once.')
 }
