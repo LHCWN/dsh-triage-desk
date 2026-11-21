@@ -494,18 +494,17 @@ and the warning lists the rejected ones.
 
 ## Clone discovery
 
-- Manual `owner/repo = /path` overrides (`repoPaths`) win; the repository name is
+- Manual repository folder overrides (`repoPaths`) win; the repository name is
   matched case-insensitively. Then the configured clone directories
   (`cloneDirs`) are searched. Without configured directories the plugin
   searches the typical folders that exist (`~/Projects`, `~/Developer`,
   `~/Documents/GitHub`, …) together with project roots detected in your home.
-- Clone folders can be added with the native system folder picker. For manual
-  paths, pick a clone folder and the plugin derives its `owner/repo` (from
-  `upstream`, then `origin`, then the first other GitHub remote). Picker results
-  preserve edits made while the dialog is open.
-- Each nonempty manual mapping line needs `owner/repo = /absolute/path`; missing
-  separators, repositories, or paths block saving with a line-specific error,
-  keeping the text for correction.
+- Under **Launch environments**, select **This computer** and expand **Repository
+  overrides** to add, edit, or remove a repository and its local folder. The
+  collapsed heading shows the number of overrides. Existing mappings appear here.
+- **Choose folder…** opens the native picker. If the repository field is empty,
+  choosing a working copy fills it from the GitHub remote (upstream, then
+  origin, then another GitHub remote). You can also enter both fields by hand.
 - Each saved SSH destination searches its own folders, including each folder itself
   and three levels of visible subdirectories (up to 1,500 directories per root).
   Nested directory symlinks are skipped. Discovery reads GitHub fetch URLs

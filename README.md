@@ -138,6 +138,11 @@ Each machine has its own default agent. Viewing a host in Settings only changes
 which preferences you edit. Prompt templates are shared across machines. For a
 template with an existing local agent override, **Use machine default** clears it.
 
+For a local repository with several working copies, open **Launch environments**,
+select **This computer**, and expand **Repository overrides**. Add the repository
+and the local folder to use. Choosing a Git working copy with **Repository**
+empty fills in its GitHub name. The collapsed section shows the number of overrides.
+
 Under **Launch environments → Repository folders on**, select a host and enter one
 folder per line, such as `~/projects` or `/srv/git`. Home paths resolve on the
 server. Save the folders and use **Find repositories** to inspect its working copies.

@@ -2584,59 +2584,56 @@ for (const target of ['dsh', 'claude']) {
   harness.dispose()
 }
 
-for (const mode of ['dir', 'clone']) {
-  const harness = settingsHarness()
+{
+  const harness = settingsHarness({ configExtra: { repoPaths: { 'owner/old': '/old-clone' } } })
   await harness.flush()
   harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
   await harness.flush()
-  const button = (key) => harness.nodes().find((node) => node.type === 'button' && node.props.children.includes(key))
-  const field = (id) => harness.nodes().find((node) => node.props?.id === id)
-  const id = mode === 'dir' ? 'adx-clone-dirs' : 'adx-repo-paths'
-  harness.change(field(id), mode === 'dir' ? '/old-root' : 'owner/old = /old-clone')
-  harness.click(button(mode === 'dir' ? 'settings.pickFolder' : 'settings.pickClone'))
-  assert.equal(harness.pendingPickers.length, 1, 'opening a native picker sends one request')
-  harness.change(field(id), mode === 'dir' ? '/edited-root\n/picked-root' : 'owner/new = /edited-clone\nowner/picked \t = /old-picked-clone')
-  harness.pendingPickers.shift().resolve({
-    status: 200, ok: true,
-    json: async () => mode === 'dir'
-      ? { ok: true, path: '/picked-root' }
-      : { ok: true, repo: 'owner/picked', path: '/picked-clone' },
-  })
-  await harness.flush()
-  const expected = mode === 'dir' ? '/edited-root\n/picked-root' : 'owner/new = /edited-clone\nowner/picked = /picked-clone'
-  assert.equal(field(id).props.value, expected, mode + ': picker merges into current edits without resurrecting deleted paths')
-  harness.click(button('settings.save'))
-  assert.deepEqual(harness.pending[0].body[mode === 'dir' ? 'cloneDirs' : 'repoPaths'], mode === 'dir'
-    ? ['/edited-root', '/picked-root']
-    : { 'owner/new': '/edited-clone', 'owner/picked': '/picked-clone' })
-  harness.reply(200, { ok: true })
-  await harness.flush()
-  harness.dispose()
-}
+  const buttons = (key) => harness.nodes().filter((node) => node.type === 'button' && node.props.children.includes(key))
+  const click = (key, index = 0) => harness.click(buttons(key)[index])
+  const inputs = (placeholder) => harness.nodes().filter((node) => node.type === 'input' && node.props.placeholder === placeholder)
+  const repo = () => inputs('owner/repo')
+  const folder = () => inputs('~/Projects/repo')
+  const pickerReply = async (payload) => {
+    harness.pendingPickers.shift().resolve({ status: 200, ok: true, json: async () => ({ ok: true, ...payload }) })
+    await harness.flush()
+  }
+  assert.ok(harness.text().includes('settings.repoPaths (1)'), 'the disclosure counts existing overrides')
+  assert.equal(repo()[0].props.value, 'owner/old')
+  assert.equal(folder()[0].props.value, '/old-clone')
 
-for (const invalid of ['owner/broken /missing-equals', ' = /missing-repository', 'owner/broken = ']) {
-  const harness = settingsHarness()
-  await harness.flush()
-  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
-  await harness.flush()
-  const button = (key) => harness.nodes().find((node) => node.type === 'button' && node.props.children.includes(key))
-  const field = () => harness.nodes().find((node) => node.props?.id === 'adx-repo-paths')
-  const text = 'owner/valid = /valid-clone\n \t\n' + invalid
-  harness.change(field(), text)
-  harness.click(button('settings.save'))
-  assert.equal(harness.pending.length, 0, 'malformed mapping must block persistence instead of silently deleting it: ' + invalid)
-  assert.ok(harness.text().includes('settings.invalidRepoPaths:3'), 'validation identifies the invalid line, counting blank lines')
-  assert.equal(field().props.value, text, 'failed validation preserves all mapping text for repair')
-  assert.ok(!button('settings.save').props.disabled, 'invalid mapping remains dirty and repairable')
-  harness.change(field(), 'owner/valid = /valid-clone\n \t\nowner/repaired = /path/with=equals')
-  harness.click(button('settings.save'))
-  assert.equal(harness.pending.length, 1, 'repairing the line allows saving')
-  assert.deepEqual(harness.pending[0].body.repoPaths, {
-    'owner/valid': '/valid-clone', 'owner/repaired': '/path/with=equals',
-  }, 'valid mappings and equals characters inside paths survive the repair')
+  const roots = () => harness.nodes().find((node) => node.props?.id === 'adx-clone-dirs')
+  click('settings.pickFolder')
+  harness.change(roots(), '/edited-root\n/picked-root')
+  await pickerReply({ path: '/picked-root' })
+  assert.equal(roots().props.value, '/edited-root\n/picked-root')
+
+  click('settings.addRepoPath')
+  click('settings.pickFolder', 2)
+  assert.equal(harness.pendingPickers[0].url, '/triage-desk/pick-clone')
+  harness.change(repo()[1], 'owner/typed')
+  await pickerReply({ repo: 'owner/detected', path: '/picked=clone' })
+  assert.equal(repo()[1].props.value, 'owner/typed', 'respect edits while the picker is open')
+  assert.equal(folder()[1].props.value, '/picked=clone')
+
+  harness.change(repo()[1], 'owner/old')
+  click('settings.save')
+  assert.equal(harness.pending.length, 0, 'a duplicate must not overwrite an existing mapping')
+  harness.change(repo()[1], '')
+  click('settings.save')
+  assert.equal(harness.pending.length, 0, 'incomplete pairs cannot be saved')
+  click('settings.pickFolder', 2)
+  await pickerReply({ repo: 'owner/detected', path: '/picked=clone' })
+  assert.equal(repo()[1].props.value, 'owner/detected')
+  click('settings.pickFolder', 1)
+  assert.equal(harness.pendingPickers[0].url, '/triage-desk/pick-directory')
+  click('settings.removeRepoPath')
+  await pickerReply({ path: '/obsolete' })
+  click('settings.save')
+  assert.deepEqual(harness.pending[0].body.repoPaths, { 'owner/detected': '/picked=clone' })
+  assert.deepEqual(harness.pending[0].body.cloneDirs, ['/edited-root', '/picked-root'])
   harness.reply(200, { ok: true })
   await harness.flush()
-  assert.ok(harness.text().includes('settings.saved'), 'repaired mappings can be confirmed saved')
   harness.dispose()
 }
 

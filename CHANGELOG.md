@@ -10,6 +10,7 @@
 
 ### Changed
 
+- Local repository overrides are grouped in a collapsed section with a count. Each override has separate repository and folder fields.
 - Group actions show the number of visible items they will send, including in
   All. First reviews and re-reviews launch separately. Use Select to choose
   specific PRs or include optional reviews. Trimmed drafts report how many fit. If none fit,

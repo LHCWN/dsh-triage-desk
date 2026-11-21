@@ -335,13 +335,15 @@ window.__ModuleLoader__.load({
       'settings.cloneDirs': 'Repository folders',
       'settings.cloneDirsHint': 'The plugin searches for Git working copies. One path per line; empty auto-detects project roots in your home, then falls back to: {list}.',
       'settings.cloneDirsPlaceholder': '~/Projects',
-      'settings.repoPaths': 'Exact paths for individual repositories',
-      'settings.repoPathsHint': 'Exceptions only: use when a clone lives elsewhere or has a different name. One "owner/repo = /absolute/path" per line; wins over folder search.',
-      'settings.repoPathsPlaceholder': 'owner/repo = ~/Projects/repo',
-      'settings.invalidRepoPaths': 'Line {line}: enter a repository and path separated by "=" (owner/repo = /path).',
+      'settings.repoPaths': 'Repository overrides',
+      'settings.overrideRepo': 'Repository',
+      'settings.overrideFolder': 'Local folder',
+      'settings.addRepoPath': 'Add override',
+      'settings.removeRepoPath': 'Remove override',
+      'settings.invalidRepoPaths': 'Override {n}: enter a repository (owner/repo) and a local folder.',
+      'settings.duplicateRepoPath': 'Override {n}: this repository already has an override.',
       'settings.scan': 'Find repositories',
       'settings.pickFolder': 'Choose folder…',
-      'settings.pickClone': 'Choose clone…',
       'settings.picking': 'Choosing…',
       'settings.pickFailed': 'Could not open the system folder picker.',
       'settings.scanning': 'Scanning…',
@@ -706,13 +708,15 @@ window.__ModuleLoader__.load({
       'settings.cloneDirs': '仓库文件夹',
       'settings.cloneDirsHint': '插件会搜索 Git 工作副本。每行一个路径；留空会自动发现主目录中的项目根目录，然后使用默认目录：{list}。',
       'settings.cloneDirsPlaceholder': '~/Projects',
-      'settings.repoPaths': '单个仓库的精确路径',
-      'settings.repoPathsHint': '仅用于例外：当克隆在其他位置或目录名不同。每行 owner/repo = /绝对/路径；优先于文件夹搜索。',
-      'settings.repoPathsPlaceholder': 'owner/repo = ~/Projects/repo',
-      'settings.invalidRepoPaths': '第 {line} 行：请输入用“=”分隔的仓库和路径（owner/repo = /路径）。',
+      'settings.repoPaths': '仓库路径例外',
+      'settings.overrideRepo': '仓库',
+      'settings.overrideFolder': '本机文件夹',
+      'settings.addRepoPath': '添加例外',
+      'settings.removeRepoPath': '移除例外',
+      'settings.invalidRepoPaths': '第 {n} 项：请输入仓库（owner/repo）及本机文件夹。',
+      'settings.duplicateRepoPath': '第 {n} 项：此仓库已有路径例外。',
       'settings.scan': '查找仓库',
       'settings.pickFolder': '选择文件夹…',
-      'settings.pickClone': '选择克隆…',
       'settings.picking': '选择中…',
       'settings.pickFailed': '无法打开系统文件夹选择器。',
       'settings.scanning': '正在扫描…',
@@ -1316,6 +1320,8 @@ window.__ModuleLoader__.load({
         box-shadow: 0 0 0 2px color-mix(in srgb, var(--adx-info) 25%, transparent);
       }
       .adx-agents { display: flex; flex-direction: column; gap: 8px; }
+      .adx-overrides { padding-top: 8px; }
+      .adx-override { display: grid; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--adx-hairline-soft); }
       .adx-agent-row { display: grid; grid-template-columns: minmax(110px, 0.7fr) minmax(180px, 1.6fr) 28px; gap: 8px; align-items: center; }
       .adx-agent-row .adx-input { height: 32px; font-size: 13px; }
       .adx-agent-add { align-self: flex-start; }
@@ -1936,21 +1942,6 @@ window.__ModuleLoader__.load({
           left.length > 0 ? h('span', { className: 'adx-tooltip-quiet' }, t('count.excluded', { list: left.join(' · ') })) : null,
         ),
       )
-    }
-
-    function parseRepoPathsText(text) {
-      const result = {}
-      const lines = String(text || '').split('\n')
-      for (let index = 0; index < lines.length; index += 1) {
-        const trimmed = lines[index].trim()
-        if (trimmed === '') continue
-        const equals = trimmed.indexOf('=')
-        const key = equals === -1 ? '' : trimmed.slice(0, equals).trim()
-        const value = equals === -1 ? '' : trimmed.slice(equals + 1).trim()
-        if (key === '' || value === '') return { paths: null, invalidLine: index + 1 }
-        result[key] = value
-      }
-      return { paths: result, invalidLine: null }
     }
 
     /* ------------------------------------------------- scenario helpers */
@@ -4297,12 +4288,7 @@ window.__ModuleLoader__.load({
         terminal: typeof config.terminal === 'string' ? config.terminal : 'auto',
         promptDelivery: config.promptDelivery === 'clipboard' ? 'clipboard' : 'paste',
         cloneDirs: Array.isArray(config.cloneDirs) ? config.cloneDirs.join('\n') : '',
-        repoPaths:
-          config.repoPaths !== null && typeof config.repoPaths === 'object' && !Array.isArray(config.repoPaths)
-            ? Object.keys(config.repoPaths)
-                .map((key) => key + ' = ' + config.repoPaths[key])
-                .join('\n')
-            : '',
+        repoPaths: Object.entries(config.repoPaths || {}).map(([repo, path]) => ({ _key: newAgentRowKey(), repo, path })),
         scenarios: Array.isArray(config.scenarios)
           ? config.scenarios.map((scenario) => ({
               _key: newAgentRowKey(),
@@ -4475,26 +4461,23 @@ window.__ModuleLoader__.load({
         })
       }
 
-      const addRepoPath = (repo, path) => {
-        update((previous) => {
-          const lines = String(previous.repoPaths || '')
-            .split('\n')
-            .map((line) => line.trim())
-            .filter(Boolean)
-            .filter((line) => line.indexOf('=') === -1 || line.slice(0, line.indexOf('=')).trim() !== repo)
-          lines.push(repo + ' = ' + path)
-          return { repoPaths: lines.join('\n') }
-        })
-      }
+      const updateRepoPath = (key, patch) => update((previous) => ({
+        repoPaths: previous.repoPaths.map((row) => row._key === key ? { ...row, ...patch(row) } : row),
+      }))
 
-      const pickPath = async (mode) => {
+      const pickPath = async (row) => {
         if (picking !== null) return
-        setPicking(mode)
+        setPicking(row ? row._key : 'dir')
         try {
-          const payload = await postJson(mode === 'dir' ? '/triage-desk/pick-directory' : '/triage-desk/pick-clone', {})
-          if (payload.path === null || payload.path === undefined) return
-          if (mode === 'dir') addCloneDir(payload.path)
-          else addRepoPath(payload.repo, payload.path)
+          const detectRepo = row && !row.repo.trim()
+          const payload = await postJson(detectRepo ? '/triage-desk/pick-clone' : '/triage-desk/pick-directory', {})
+          if (!payload.path) return
+          if (row) {
+            updateRepoPath(row._key, (current) => ({
+              repo: current.repo || payload.repo || '',
+              path: current.path === row.path ? payload.path : current.path,
+            }))
+          } else addCloneDir(payload.path)
         } catch (error) {
           setNotice({
             tone: 'error',
@@ -4791,10 +4774,19 @@ window.__ModuleLoader__.load({
           return
         }
         const agentsEdited = JSON.stringify(form.agents) !== JSON.stringify((baseline.current || {}).agents)
-        const parsedRepoPaths = parseRepoPathsText(form.repoPaths)
-        if (parsedRepoPaths.invalidLine !== null) {
-          setNotice({ tone: 'error', text: t('settings.invalidRepoPaths', { line: parsedRepoPaths.invalidLine }) })
-          return
+        const repoPaths = {}
+        for (const [index, row] of form.repoPaths.entries()) {
+          const repo = row.repo.trim()
+          const path = row.path.trim()
+          if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) || !path) {
+            setNotice({ tone: 'error', text: t('settings.invalidRepoPaths', { n: index + 1 }) })
+            return
+          }
+          if (Object.hasOwn(repoPaths, repo)) {
+            setNotice({ tone: 'error', text: t('settings.duplicateRepoPath', { n: index + 1 }) })
+            return
+          }
+          repoPaths[repo] = path
         }
         store
           .saveConfig({
@@ -4831,7 +4823,7 @@ window.__ModuleLoader__.load({
               .split('\n')
               .map((entry) => entry.trim())
               .filter((entry) => entry.length > 0),
-            repoPaths: parsedRepoPaths.paths,
+            repoPaths,
             scenarios: form.scenarios.map((scenario) => ({
               id: String(scenario.id || '').trim().toLowerCase(),
               label: String(scenario.label || '').trim(),
@@ -5348,6 +5340,30 @@ window.__ModuleLoader__.load({
             outlineButton(t(hostList.includes(machine) ? 'settings.forgetHost' : 'settings.sshRemove'), () => forgetServer(machine))))
       }
 
+      function renderRepoOverrides() {
+        return h('details', { className: 'adx-advanced' },
+          h('summary', { className: 'adx-advanced-summary' }, t('settings.repoPaths') +
+            (form.repoPaths.length ? ' (' + form.repoPaths.length + ')' : '')),
+          h('div', { className: 'adx-agents adx-overrides' },
+            form.repoPaths.map((row) => h('div', { key: row._key, className: 'adx-override' },
+              h('label', { className: 'adx-run-on' }, t('settings.overrideRepo'),
+                h('input', { className: 'adx-input', spellCheck: false, placeholder: 'owner/repo', value: row.repo,
+                  onChange: ({ target: { value } }) => updateRepoPath(row._key, () => ({ repo: value })) })),
+              h('label', { className: 'adx-run-on' }, t('settings.overrideFolder'),
+                h('input', { className: 'adx-input', spellCheck: false, placeholder: '~/Projects/repo', value: row.path,
+                  onChange: ({ target: { value } }) => updateRepoPath(row._key, () => ({ path: value })) })),
+              h('div', { className: 'adx-form-actions' },
+                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', disabled: picking !== null,
+                  onClick: () => void pickPath(row) }, t(picking === row._key ? 'settings.picking' : 'settings.pickFolder')),
+                outlineButton(t('settings.removeRepoPath'), () => update((previous) => ({
+                  repoPaths: previous.repoPaths.filter((entry) => entry._key !== row._key),
+                })))))),
+            h('div', null, outlineButton(t('settings.addRepoPath'), () => {
+              const row = { _key: newAgentRowKey(), repo: '', path: '' }
+              update((previous) => ({ repoPaths: [...previous.repoPaths, row] }))
+            }))))
+      }
+
       function renderRemoteFolders() {
         const folders = serverFor(folderMachine)?.folders || ''
         const saved = config.sshServers.some((row) => row.alias === folderMachine &&
@@ -5775,35 +5791,13 @@ window.__ModuleLoader__.load({
                     type: 'button',
                     className: 'adx-btn adx-btn--outline',
                     disabled: picking !== null,
-                    onClick: () => void pickPath('dir'),
+                    onClick: () => void pickPath(),
                   }, picking === 'dir' ? t('settings.picking') : t('settings.pickFolder')),
                 ),
               ),
             ),
             h(RepositoryScan, { t }),
-            h(
-              Field,
-              { label: t('settings.repoPaths'), htmlFor: 'adx-repo-paths', hint: t('settings.repoPathsHint') },
-              h('div', { className: 'adx-path-edit' },
-                h('textarea', {
-                  id: 'adx-repo-paths',
-                  className: 'adx-textarea',
-                  rows: 2,
-                  value: form.repoPaths,
-                  placeholder: t('settings.repoPathsPlaceholder'),
-                  spellCheck: false,
-                  onChange: (event) => update({ repoPaths: event.target.value }),
-                }),
-                h('div', { className: 'adx-path-actions' },
-                  h('button', {
-                    type: 'button',
-                    className: 'adx-btn adx-btn--outline',
-                    disabled: picking !== null,
-                    onClick: () => void pickPath('clone'),
-                  }, picking === 'clone' ? t('settings.picking') : t('settings.pickClone')),
-                ),
-              ),
-            ),
+            renderRepoOverrides(),
           ),
           !config.supportsRunOn && renderSshServers(),
         ),
