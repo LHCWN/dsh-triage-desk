@@ -5827,7 +5827,7 @@ window.__ModuleLoader__.load({
       // Every count is the number of rows the list shows: the source filter,
       // the search and snoozing apply to the section chips as well. Snoozed
       // items only appear in the Snoozed view (`filter: 'snoozed'`).
-      const listing = useMemo(() => {
+      const latestListing = useMemo(() => {
         const snoozedIds = new Set()
         const anySnoozed = new Set()
         const normal = []
@@ -5852,6 +5852,18 @@ window.__ModuleLoader__.load({
         }
         return { normal, snoozedList, snoozedCount: snoozedIds.size, snoozedTotal: anySnoozed.size }
       }, [sections, activeSource, query, snoozed, now])
+      // The draft is mounted inside its row or group. Keep that listing until
+      // the popover closes, even if polling moves its last item to another group.
+      const [draftInbox, setDraftInbox] = useState(null)
+      const menuId = state.openMenu
+      useLayoutEffect(() => {
+        if (draftInbox && draftInbox.menuId === menuId) return
+        const editing = menuId && state.config?.supportsEditablePrompt && latestListing.normal.some(
+          ({ id }) => menuId === 'section:' + id || menuId.startsWith(id + ':'),
+        )
+        setDraftInbox(editing ? { menuId, listing: latestListing } : null)
+      }, [menuId, state.config, latestListing, draftInbox])
+      const listing = draftInbox && draftInbox.menuId === menuId ? draftInbox.listing : latestListing
       const snoozedView = activeFilter === 'snoozed'
       const snoozedCount = listing.snoozedCount
       const sectionCounts = {}

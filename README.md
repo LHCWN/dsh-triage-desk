@@ -95,7 +95,8 @@ use their respective templates. Change reusable instructions in **Settings →
 Agents**. You can edit the draft for this launch without changing its template.
 Choose the local computer or an SSH host, then an agent. Switching machines keeps
 your edits. **Open** delivers the draft without sending it. **Copy prompt** copies
-your edited text and the row's **Copy link** copies the URL.
+your edited text and the row's **Copy link** copies the URL. An inbox refresh keeps
+your open draft and its original items. Reopen the editor to use the updated list.
 
 Opening the first-review group includes its visible first reviews, even in **All**.
 Re-reviews have their own action. Their group prompt gives the reason for each

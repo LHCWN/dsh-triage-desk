@@ -1340,9 +1340,9 @@ for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-
     node.props.children.includes(name)).props.children).find((node) => node.type === tag)
   assert.equal(field('launch.prompt', 'textarea').props.value, 'Review this pull request')
   harness.change(field('launch.prompt', 'textarea'), 'Review only the schema migration')
-  harness.host.snapshot = { ...snapshot, sections: snapshot.sections.map((section) => ({
-    ...section, items: section.items.map((item) => ({ ...item, title: 'Updated title during editing' })),
-  })) }
+  const original = snapshot.sections[0].items[0]
+  harness.host.snapshot = { ...snapshot, sections: snapshot.sections.slice(1).map((section) => section.id === 'rereview'
+    ? { ...section, items: [...section.items, { ...original, section: section.id }] } : section) }
   await harness.store.load(true)
   await harness.flush()
   assert.equal(field('launch.prompt', 'textarea').props.value, 'Review only the schema migration')
@@ -1356,6 +1356,8 @@ for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-
   assert.equal(request.body.sshAlias, 'build')
   assert.equal(request.body.agent, 'claude')
   assert.equal(request.body.draft, 'Review only the schema migration')
+  assert.equal(request.body.url, original.url)
+  assert.equal(request.body.section, 'review')
   harness.dispose()
 }
 
@@ -1368,6 +1370,37 @@ for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-
   assert.equal(harness.launches[0].body.urls.length, 1)
   assert.ok(harness.nodes().some((node) => node.type === 'textarea' && !node.props.disabled))
   assert.ok(harness.text().includes('(1)'))
+  harness.dispose()
+}
+
+{
+  const harness = settingsHarness({ snapshotPayload: snapshot, configExtra: { supportsEditablePrompt: true } })
+  const openGroup = () => harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'launch.sectionTitle'))
+  await harness.flush()
+  openGroup()
+  await harness.flush()
+  const prompt = () => harness.nodes().find((node) => node.type === 'textarea')
+  const original = harness.launches[0].body.urls
+  harness.change(prompt(), 'Review the original group')
+  const added = { ...snapshot.sections[1].items[0], section: 'review', reason: 'review-requested' }
+  harness.host.snapshot = { ...snapshot, sections: snapshot.sections.map((section) => section.id === 'review'
+    ? { ...section, items: [...section.items, added] } : section) }
+  await harness.store.load(true)
+  await harness.flush()
+  assert.equal(prompt().props.value, 'Review the original group')
+  assert.ok(harness.text().includes('(1)'), 'the open draft still targets one item')
+  assert.equal(harness.launches.length, 1)
+  const agent = harness.nodes().find((node) => node.type === 'label' && node.props.children.includes('launch.agent'))
+  harness.change(flattenTree(agent.props.children).find((node) => node.type === 'select'), state.config.agents[0].id)
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('launch.open')))
+  await harness.flush()
+  const launched = harness.launches.at(-1)
+  assert.equal(launched.url, '/triage-desk/launch')
+  assert.deepEqual(launched.body.urls, original)
+  assert.equal(launched.body.draft, 'Review the original group')
+  openGroup()
+  await harness.flush()
+  assert.deepEqual(harness.launches.at(-1).body.urls, [...original, added.url])
   harness.dispose()
 }
 
