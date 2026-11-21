@@ -202,7 +202,7 @@ window.__ModuleLoader__.load({
       'settings.title': 'Settings',
       'settings.subtitle': 'Organization, refresh cadence, section rules, and terminal agents.',
       'settings.githubTitle': 'GitHub',
-      'settings.githubChecking': 'Checking the connection…',
+      'settings.connectionChecking': 'Checking the connection…',
       'settings.githubConnected': 'Connected as @{login}',
       'settings.githubNotLoggedIn': 'Not signed in to GitHub',
       'settings.githubGhMissing': 'GitHub CLI (gh) is not installed',
@@ -212,7 +212,7 @@ window.__ModuleLoader__.load({
       'settings.githubWaiting': 'Finish signing in in the browser or terminal, then press "Check connection".',
       'settings.githubLoginFailed': 'Could not start sign-in: {message}',
       'settings.githubAuthError': 'Could not check authorization: {message}',
-      'settings.githubCheck': 'Check connection',
+      'settings.connectionCheck': 'Check connection',
       'settings.orgs': 'Organizations',
       'settings.orgsPlaceholder': 'my-org, another-org',
       'settings.orgsHint': 'Comma-separated, up to 10; empty auto-detects up to 10 organizations for the account.',
@@ -560,7 +560,7 @@ window.__ModuleLoader__.load({
       'settings.title': '设置',
       'settings.subtitle': '组织、刷新频率、分类规则与终端智能体。',
       'settings.githubTitle': 'GitHub',
-      'settings.githubChecking': '正在检查连接…',
+      'settings.connectionChecking': '正在检查连接…',
       'settings.githubConnected': '已连接为 @{login}',
       'settings.githubNotLoggedIn': '尚未登录 GitHub',
       'settings.githubGhMissing': '未安装 GitHub CLI（gh）',
@@ -570,7 +570,7 @@ window.__ModuleLoader__.load({
       'settings.githubWaiting': '请在浏览器或终端中完成登录，然后点击“检查连接”。',
       'settings.githubLoginFailed': '无法开始登录：{message}',
       'settings.githubAuthError': '无法检查授权：{message}',
-      'settings.githubCheck': '检查连接',
+      'settings.connectionCheck': '检查连接',
       'settings.orgs': '组织',
       'settings.orgsPlaceholder': 'my-org, another-org',
       'settings.orgsHint': '以逗号分隔，最多 10 个；留空会自动检测账号所属的最多 10 个组织。',
@@ -4292,7 +4292,7 @@ window.__ModuleLoader__.load({
       }
       return h('div', { className: 'adx-scan' },
         h('button', { className: 'adx-btn adx-btn--outline', type: 'button', onClick: check,
-          disabled: !alias || result?.loading }, t(result?.loading ? 'settings.githubChecking' : 'settings.githubCheck')),
+          disabled: !alias || result?.loading }, t(result?.loading ? 'settings.connectionChecking' : 'settings.connectionCheck')),
         result?.text && h('span', { role: 'status' }, result.text))
     }
 
@@ -4700,7 +4700,7 @@ window.__ModuleLoader__.load({
           if (
             !SCENARIO_ID_PATTERN.test(id) ||
             scenarioIds.has(id) ||
-            (label === '' && !builtinIds.has(id)) ||
+            (label === '' && id !== 'link' && !builtinIds.has(id)) ||
             label.length > MAX_SCENARIO_LABEL ||
             (scenario.scope !== 'item' && scenario.scope !== 'section') ||
             sections.length === 0 ||
@@ -4859,7 +4859,7 @@ window.__ModuleLoader__.load({
           ),
         )
         if (state.authStatus === 'loading' && auth === null) {
-          rows.push(h('p', { className: 'adx-form-note', key: 'loading' }, t('settings.githubChecking')))
+          rows.push(h('p', { className: 'adx-form-note', key: 'loading' }, t('settings.connectionChecking')))
         }
         if (state.authError !== null) {
           rows.push(
@@ -4887,7 +4887,7 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 { className: 'adx-auth-actions', key: 'missing-actions' },
-                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t(state.authError ? 'launch.retry' : 'settings.githubCheck')),
+                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t(state.authError ? 'launch.retry' : 'settings.connectionCheck')),
               ),
             )
           } else if (auth.authenticated === true) {
@@ -4902,7 +4902,7 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 { className: 'adx-auth-actions', key: 'actions' },
-                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t(state.authError ? 'launch.retry' : 'settings.githubCheck')),
+                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t(state.authError ? 'launch.retry' : 'settings.connectionCheck')),
               ),
             )
           } else {
@@ -4921,7 +4921,7 @@ window.__ModuleLoader__.load({
                   },
                   state.loginStatus === 'launching' ? t('settings.githubOpening') : t('settings.githubLogin'),
                 ),
-                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t(state.authError ? 'launch.retry' : 'settings.githubCheck')),
+                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t(state.authError ? 'launch.retry' : 'settings.connectionCheck')),
               ),
             )
             if (state.loginStatus === 'launched') {
@@ -4967,7 +4967,7 @@ window.__ModuleLoader__.load({
                     h('input', {
                       className: 'adx-input',
                       value: scenario.label,
-                      placeholder: isBuiltin ? t('scenario.' + scenario.id + '.name') : t('settings.agentName'),
+                      placeholder: isBuiltin || scenario.id === 'link' ? t('scenario.' + scenario.id + '.name') : t('settings.agentName'),
                       spellCheck: false,
                       autoComplete: 'off',
                       onChange: (event) => updateScenario(index, { label: event.target.value }),

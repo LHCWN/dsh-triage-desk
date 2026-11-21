@@ -270,10 +270,9 @@ export function normalizeScenarios(input, { upgradeFeedback = false } = {}) {
       if (!SCENARIO_ID_PATTERN.test(id) || seen.has(id)) continue
       seen.add(id)
       const builtin = BUILTIN_SCENARIO_MAP.get(id)
-      const savedLabel = typeof raw.label === 'string' ? raw.label.trim().slice(0, MAX_SCENARIO_LABEL) : ''
-      const legacyLink = id === DEFAULT_SCENARIO_ID && !savedLabel
-      const label = legacyLink ? 'Custom prompt' : savedLabel
-      if (builtin === undefined && label === '') continue
+      const label = typeof raw.label === 'string' ? raw.label.trim().slice(0, MAX_SCENARIO_LABEL) : ''
+      const legacyLink = id === DEFAULT_SCENARIO_ID
+      if (!legacyLink && builtin === undefined && label === '') continue
       const scope = raw.scope === 'section' ? 'section' : 'item'
       const sections = []
       if (Array.isArray(raw.sections)) {
@@ -290,7 +289,7 @@ export function normalizeScenarios(input, { upgradeFeedback = false } = {}) {
       // available on those PRs until the user edits their section bindings.
       if (upgradeFeedback && sections.includes('respond') && !sections.includes('feedback')) sections.push('feedback')
       let prompt = typeof raw.prompt === 'string' ? normalizePromptText(raw.prompt) : ''
-      if (id === DEFAULT_SCENARIO_ID && prompt === '') prompt = '{url}'
+      if (legacyLink && prompt === '') prompt = '{url}'
       if (prompt === '' || prompt.length > MAX_SCENARIO_TEMPLATE) {
         if (builtin === undefined) continue
         prompt = builtin.prompt
@@ -307,7 +306,7 @@ export function normalizeScenarios(input, { upgradeFeedback = false } = {}) {
       const enabled = typeof raw.enabled === 'boolean' ? raw.enabled : true
       // An empty saved prompt meant “use the built-in {url}”. Keep it as a
       // custom template when any other normalized setting differs from stock.
-      if (legacyLink && prompt === '{url}' && scope === 'item' && agent === AGENT_ID_PLACEHOLDER &&
+      if (legacyLink && !label && prompt === '{url}' && scope === 'item' && agent === AGENT_ID_PLACEHOLDER &&
         enabled && sections.length === SCENARIO_SECTION_IDS.length) continue
       scenarios.push({ id, label, scope, sections, prompt, agent, enabled })
       if (scenarios.length >= MAX_SCENARIOS) break
@@ -343,7 +342,7 @@ export function validateScenario(scenario, agents) {
   if (label.length > MAX_SCENARIO_LABEL) {
     return { ok: false, error: `scenario "${id}": label must be up to ${MAX_SCENARIO_LABEL} characters` }
   }
-  if (!builtin && label === '') return { ok: false, error: `scenario "${id}": a custom scenario needs a label` }
+  if (!builtin && id !== DEFAULT_SCENARIO_ID && label === '') return { ok: false, error: `scenario "${id}": a custom scenario needs a label` }
   if (input.scope !== 'item' && input.scope !== 'section') {
     return { ok: false, error: `scenario "${id}": scope must be "item" or "section"` }
   }

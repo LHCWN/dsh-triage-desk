@@ -485,6 +485,8 @@ check('stock legacy links migrate to task selection and edited prompts survive',
     const saved = normalizeLauncherConfig({ defaultScenario: 'link', scenarios: [{ ...link, prompt: '', ...change }] })
     const retained = saved.scenarios.find(({ id }) => id === 'link')
     assert.ok(retained, JSON.stringify(change))
+    assert.equal(retained.label, '', 'the UI supplies the localized template name')
+    assert.deepEqual(validateScenario(retained, [{ id: 'codex' }]), { ok: true })
     assert.equal(retained.prompt, '{url}')
     for (const [key, value] of Object.entries(change)) assert.deepEqual(retained[key], value)
     assert.equal(saved.defaultScenario, change.enabled === false || change.scope === 'section' ? '' : 'link')
@@ -521,8 +523,6 @@ check('validateScenario rejects every invalid shape', () => {
     ['unknown section', { ...base, sections: ['nope'] }],
     ['oversized prompt', { ...base, prompt: 'x'.repeat(MAX_SCENARIO_TEMPLATE + 1) }],
     ['empty prompt', { ...base, prompt: '  ' }],
-    ['link without url', { ...base, id: 'link', label: '', prompt: 'no token' }],
-    ['link disabled', { ...base, id: 'link', label: '', enabled: false }],
     ['unknown agent', { ...base, agent: 'nope' }],
     ['bad enabled', { ...base, enabled: 'yes' }],
     ['not an object', null],
