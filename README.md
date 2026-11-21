@@ -20,13 +20,13 @@ a saved SSH destination. The inbox reads GitHub through the signed-in local CLI.
 
 ## What it shows
 
-- **Reviews** shows whose turn it is on a PR. **Awaiting my review** lists direct or team requests. **Awaiting my re-review** offers a pass over changes and replies since your review when the author re-requests you (even on the same commit), pushes new commits, or replies to you. **Feedback on my PRs** lets you reply to comments or open the changed files to address requested changes.
+- **Reviews** shows whose turn it is on a PR. **Awaiting my review** lists direct or team requests for PRs you have yet to review. **Awaiting my re-review** offers a pass over changes and replies since your review when the author re-requests you (even on the same commit), pushes new commits, or replies to you. A pending team request follows the PR into re-review after new commits. **Feedback on my PRs** lets you reply to comments or open the changed files to address requested changes, including on drafts.
 - **Ready to merge** lists your mergeable PRs that have approval or need none. By default, checks must pass or be absent. A PR with failing checks appears under *CI is failing*. Once its checks pass, it enters *Ready to merge* on the next refresh if otherwise eligible.
 - **Needs your action**: merge conflicts, assigned issues, and unanswered mentions.
 - **CI is failing**: red checks on your PRs, on default branches you maintain, and on branches whose latest commit you authored in the last week.
 - **New in your repositories**: unassigned issues from the last 30 days, kept out of the attention counter.
 - **Snooze**: per row, per section, or a selection, until new activity, tomorrow, or next week.
-- **Launch scenarios**: editable prompts for individual rows or groups. On upgrade, saved scenarios for **Needs your action** also apply to **Feedback on my PRs**. You can edit either binding in Settings.
+- **Launch scenarios**: editable prompts for individual rows or groups. After you upgrade and restart the DSH host, saved scenarios for **Needs your action** also apply to **Feedback on my PRs**. You can edit either binding in Settings.
 - **Agent tool**: `triage_desk` gives a DSH agent the same snapshot and can open a terminal on request.
 - **Sources and languages**: personal repositories plus up to 10 organizations; the panel follows the DSH language (English or Chinese).
 - **Large organizations**: organizations as big as `llvm` load in a lighter mode instead of failing ([details](docs/REFERENCE.md#large-sources)).
@@ -104,15 +104,20 @@ An upgraded profile keeps its saved default and scenario bindings. To enable tas
 
 When the picker shows **Review 3 PRs**, copying or preparing the prompt includes
 those three first reviews, even in **All**.
-Re-reviews have their own action, and **Feedback on my PRs** offers replies.
+Re-reviews have their own action. Their group prompt gives the reason for each
+PR and directs the agent to read author replies even when the diff is empty.
+**Feedback on my PRs** offers replies.
 The count follows your source filter and search, skips snoozed items and counts
-each PR once. Rows marked **Optional review** are excluded by default. To pick
+each PR once. Rows marked **Optional review** are excluded by default. When a
+PR has new commits since your review, another reviewer's approval must cover
+the current head for the re-review to be optional. To pick
 individual PRs, including optional ones, click **Select**, check the rows you
 want, then open that group's terminal button. Its count shows how many you
 picked in that group. If the prompt size limit drops any items, the draft and
 notification show how many fit. If even the first item exceeds the limit, the
 panel shows an error before opening a draft. Each terminal batch opens a fresh
-tab or window.
+tab or window. If the included PRs all belong to one repository, the launcher
+looks for a matching working copy, locally or on the selected SSH server.
 
 Once you send it, the review scenarios post one GitHub review of inline comments
 tagged `[P1]`–`[P3]`, and never approve. The fix and reply scenarios wait for your
@@ -126,8 +131,9 @@ line. Save, then use **Find repositories** to see GitHub repository names and
 paths. This optional search uses non-interactive SSH. Local repository folders
 have their own search and keep their existing settings.
 
-At launch, the terminal matches the review’s `owner/repo` against Git remotes
-in those folders, including a fork’s `upstream`. If several working copies
+At launch, the terminal matches the included PRs’ `owner/repo` against Git
+remotes in those folders, including a fork’s `upstream` and literal GitHub host
+aliases in the server’s SSH config. If several working copies
 match, choose a path and optionally remember it for this repository and alias.
 Each launch checks the remembered path against the current matches. With no match,
 or for a review spanning repositories, the terminal explains the fallback and
@@ -152,8 +158,8 @@ directory and Git for repository discovery. Agent lookup uses the SSH command PA
 shared server, users who can inspect that process can read the draft. To keep
 it out of the process list, open Claude yourself and use **Copy prompt**.
 Other remote agents need Python 3 and bracketed paste support. If an agent
-doesn’t accept the draft within two minutes, use **Copy prompt** to paste it
-manually. Time spent at a recognized folder-trust dialog is excluded.
+doesn’t accept the draft within two minutes, choose **Copy prompt** in the panel
+and then paste into the remote agent. Time spent at a recognized folder-trust dialog is excluded.
 Remote agents start with their own default permissions. You can use **Copy prompt**
 with any agent, including in an SSH session you already have open.
 
@@ -169,7 +175,8 @@ are shown disabled.
 
 iTerm2, Ghostty (macOS), GNOME Terminal, Konsole, Xfce Terminal, and Windows
 Terminal open a tab; the others open a window per launch. A saved terminal that
-is not installed falls back to Automatic, and the launch toast says so.
+is not installed falls back to Automatic. The toast reports this for both local
+and SSH launches.
 
 **Prompt delivery.** Claude Code opens with the prompt as its native
 `--prefill` draft. On Windows that needs Claude Code as an `.exe`: an npm
@@ -183,7 +190,8 @@ Settings → **Prompt delivery** offers:
   until the agent's input box is ready, then pastes the prompt into it without
   pressing Enter. Needs Python 3 on macOS (`xcode-select --install`) and Linux,
   or Windows 10 1809 or later; without it, launches use the clipboard and
-  Settings and the toast say how to fix it.
+  Settings and the toast say how to fix it. For a local launch that times out,
+  paste the prompt from the clipboard.
 - **Copy to clipboard**: the agent opens empty and you paste the prompt
   (⌘V on macOS, Ctrl+Shift+V in Linux terminals, Ctrl+V on Windows).
 

@@ -1380,12 +1380,13 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
     const shortHead = headOid !== null ? headOid.slice(0, 7) : null
 
     // Another reviewer's approval can satisfy either a first or repeat request.
+    const otherApprovals = otherReviews.filter((review) => review.state === 'APPROVED')
     const optional = requestedFromMe && base.reviewDecision !== 'REVIEW_REQUIRED' &&
-      base.reviewDecision !== 'CHANGES_REQUESTED' && otherReviews.some((review) => review.state === 'APPROVED')
+      base.reviewDecision !== 'CHANGES_REQUESTED' && otherApprovals.length > 0
     const optionalDetail = 'already approved by someone else; your review is optional'
     // Direct requests clear on submission. Team requests can outlive a member's review.
     const reRequested = directRequest && myLastReview !== null
-    if (!base.draft && !isMine && requestedFromMe && !reviewedHead && !reRequested) {
+    if (!base.draft && !isMine && requestedFromMe && myLastReview === null) {
       const details = [directRequest ? 'direct review request' : `team ${teamRequest} request (you are a member)`]
       if (firstPassDetail !== null) details.push(firstPassDetail)
       if (optional) details.push(optionalDetail)
@@ -1414,17 +1415,24 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
         const details = []
         if (newHead) details.push(shortHead !== null ? `new head ${shortHead} committed ${headAt}` : `new head committed ${headAt}`)
         if (reRequested) details.push('the author re-requested your review')
-        if (reRequested && optional) details.push(optionalDetail)
+        // GitHub may keep an old approval after a push. Count approvals of
+        // the new head for this re-review, using dates only if an OID is missing.
+        const optionalReReview = optional && (reRequested || newHead) && (!newHead || otherApprovals.some((approval) => {
+          const approvalOid = approval.commit?.oid
+          if (headOid !== null && typeof approvalOid === 'string') return approvalOid === headOid
+          return headAt !== null && time(approval.submittedAt) >= time(headAt)
+        }))
+        if (optionalReReview) details.push(optionalDetail)
         if (authorReplied) details.push(`author replied to you at ${authorLastReplyToMeAt}`)
         if (myLastActionAt !== null) details.push(`your last action was ${myLastActionAt}`)
         sections.rereview.push({
           ...base,
           section: 'rereview',
-          optional: reRequested && optional,
+          optional: optionalReReview,
           // New commits and explicit re-requests are the main triggers; an
           // author reply alone is secondary and rendered quieter.
           rereviewCause: reRequested ? 're-requested' : newHead ? 'new-head' : 'author-reply',
-          reason: reRequested ? 're-review-requested' : 'changes-after-my-review',
+          reason: reRequested ? 're-review-requested' : newHead ? 'changes-after-my-review' : 'author-replied',
           reasonDetail: details.join('; '),
         })
       }
@@ -1445,7 +1453,7 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
       }
     }
 
-    if (isMine && !base.draft) {
+    if (isMine) {
       const reasons = []
       if (base.reviewDecision === 'CHANGES_REQUESTED') reasons.push('changes-requested')
       const feedbackAt = maxIso([otherLastCommentAt, ...otherReviews
@@ -1453,7 +1461,7 @@ async function buildSnapshot(ctx, settings, { signal, profiles = new Map() } = {
         .map((review) => review.submittedAt)])
       if (feedbackAt !== null && time(feedbackAt) > time(myLastActionAt)) reasons.push('review-feedback')
       const section = reasons.length > 0 ? 'feedback' : 'respond'
-      if (base.mergeable === 'CONFLICTING') reasons.push('conflict')
+      if (base.mergeable === 'CONFLICTING' && (!base.draft || section === 'feedback')) reasons.push('conflict')
       if (reasons.length > 0) {
         sections[section].push({
           ...base,

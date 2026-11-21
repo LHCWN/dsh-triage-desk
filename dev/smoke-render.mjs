@@ -15,7 +15,7 @@ import vm from 'node:vm'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { snapshot } from './fixtures/snapshot.mjs'
-import { defaultScenarios } from '../launcher.js'
+import { defaultScenarios, SCENARIO_SECTION_LABELS } from '../launcher.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const registry = []
@@ -416,6 +416,7 @@ function shallowEqualProps(previous, next) {
 function settingsHarness({
   agents = state.config.agents, invalidAgents, scenarios, snapshotPayload = null, clock = null, layout = {}, configExtra = {},
   storage, withPanel = false, clipboard, workspace = fakeCtx.get('uiWorkspace'), prompt = 'rendered', trimmed = null,
+  terminal = { id: 'iterm', label: 'iTerm2', fallback: false },
 } = {}) {
   const instances = new Map()
   let current
@@ -623,10 +624,11 @@ function settingsHarness({
               ok: true,
               mode: 'draft',
               cwd: '/work',
-              count: body.urls ? body.urls.length : 1,
+              count: trimmed?.shown ?? (body.urls ? body.urls.length : 1),
               trimmed,
+              sshAlias: body.sshAlias,
               agent: { id: 'claude', label: 'Claude Code' },
-              terminal: { id: 'iterm', label: 'iTerm2', fallback: false },
+              terminal,
               delivery: { mode: 'draft', pasteBlocked: null, platform: 'darwin' },
             }
           : { ok: true, prompt, trimmed }))
@@ -1335,6 +1337,44 @@ function menuAction(harness, label) {
 }
 
 {
+  const { feedback: feedbackLabel, ...legacySections } = SCENARIO_SECTION_LABELS
+  for (const advertisedSections of [legacySections, undefined, { ...legacySections, feedback: feedbackLabel }]) {
+    const supportsFeedback = Boolean(advertisedSections?.feedback)
+    const hostSections = advertisedSections || legacySections
+    const scenarios = defaultScenarios().map((scenario) => ({
+      ...scenario,
+      sections: scenario.sections.filter((section) => Object.hasOwn(hostSections, section)),
+    })).filter((scenario) => scenario.sections.length > 0)
+    const harness = settingsHarness({ scenarios, configExtra: {
+      labels: advertisedSections && { sections: advertisedSections },
+      scenarioDefaults: scenarios,
+    } })
+    await harness.flush()
+    harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+    await harness.flush()
+    harness.change(harness.nodes().find((node) => node.props?.placeholder === 'settings.orgsPlaceholder'), 'edited-org')
+    harness.click(harness.nodes().find((node) => node.props?.className === 'adx-scenario-toggle'
+      && flattenTree(node.props.children).includes('review-pr')))
+    const button = (label) => harness.nodes().find((node) => node.type === 'button' && node.props.children.includes(label))
+    assert.ok(button('section.review'), 'the scenario editor offers the existing Review binding')
+    const feedback = button('section.feedback')
+    assert.equal(Boolean(feedback), supportsFeedback, 'Feedback requires an advertised host binding')
+    if (supportsFeedback) harness.click(feedback)
+    harness.click(button('settings.save'))
+    assert.deepEqual(harness.pending[0].body.orgs, ['edited-org'])
+    const savedScenarios = harness.pending[0].body.scenarios
+    assert.ok(savedScenarios.every((scenario) => scenario.sections.every((section) => Object.hasOwn(hostSections, section))),
+      'the settings save only sends bindings accepted by this host')
+    assert.deepEqual(savedScenarios.find((scenario) => scenario.id === 'review-pr').sections,
+      supportsFeedback ? ['review', 'feedback'] : ['review'])
+    harness.reply(200, { ok: true })
+    await harness.flush()
+    assert.ok(harness.text().includes('settings.saved'))
+    harness.dispose()
+  }
+}
+
+{
   const harness = settingsHarness({ agents: [], configExtra: { defaultAgent: 'dsh', defaultScenario: '',
     supportsSshRepositoryFolders: true, supportsTaskDefault: true, sshServers: [{ alias: 'old', cwd: '/original', agent: 'claude' }],
     sshAgents: [{ id: 'claude', label: 'Claude' }, { id: 'codex', label: 'Codex' }] } })
@@ -1447,6 +1487,30 @@ function menuAction(harness, label) {
   assert.equal(harness.launches[0].body.sshAlias, 'second')
   assert.equal(harness.launches[0].body.scenario, 'review-pr')
   assert.equal(scenarioPicker(harness).props.value, 'review-pr')
+  assert.equal(harness.store.get().toast.text, 'launch.sshConnecting:second,Claude Code')
+  harness.dispose()
+}
+
+for (const trimmed of [null, { shown: 1, total: 2 }]) {
+  const sections = snapshot.sections.map((section) => {
+    if (section.id !== 'review') return section
+    const item = section.items[0]
+    return { ...section, items: [item, { ...item, id: 'pull:99', url: 'https://github.com/tester/example/pull/99' }] }
+  })
+  const harness = settingsHarness({
+    snapshotPayload: { ...snapshot, sections }, trimmed,
+    terminal: { id: 'terminal', label: 'Terminal', fallback: true },
+    configExtra: { sshServers: [{ alias: 'build', folders: ['/work'], agent: 'claude' }] },
+  })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'launch.sectionTitle'))
+  harness.change(harness.nodes().find((node) => node.props?.className?.includes('adx-launch-agent-select')), 'ssh:build')
+  harness.click(menuAction(harness, 'launch.prepare'))
+  await harness.flush()
+  assert.equal(harness.launches[0].body.urls.length, 2)
+  assert.equal(harness.store.get().toast.text,
+    'launch.sshConnecting:build,Claude Code' + 'launch.terminalFallback' + (trimmed ? 'launch.trimmed:1,2' : ''),
+    'SSH confirmation names the destination, flags the terminal fallback and keeps the trimmed count')
   harness.dispose()
 }
 
@@ -1676,7 +1740,7 @@ const rowButton = (harness, title, label, nth = 0) => {
 {
   const harness = settingsHarness({ snapshotPayload: inbox({
     rereview: [pull('rereview', 8, { reason: 're-review-requested' }), pull('rereview', 9, { optional: true })],
-    feedback: [pull('feedback', 4, { reason: 'changes-requested' }), pull('feedback', 6, { reason: 'review-feedback' })],
+    feedback: [pull('feedback', 4, { reason: 'changes-requested' }), pull('feedback', 6, { draft: true, reason: 'review-feedback' })],
     respond: [pull('respond', 7, { reason: 'conflict' })],
   }), scenarios: defaultScenarios(), configExtra: { defaultScenario: '' }, withPanel: true })
   await harness.flush()
@@ -2069,17 +2133,27 @@ const barText = (harness) => flattenTree(selectionBar(harness).props.children.fi
 const allRows = (harness) => harness.nodes().filter((node) => node.props?.className === 'adx-row')
 
 {
+  const copied = []
+  const prepared = []
+  const prompt = '- PR 8, reason: new commits since my review\n- PR 10, reason: author replied to me'
   const harness = settingsHarness({
     snapshotPayload: inbox({
       review: [
         null, pull('review', 1), pull('review', 1), undefined,
         pull('review', 2, { optional: true }), pull('review', 3, { source: acme }),
       ],
-      rereview: [pull('rereview', 8), pull('rereview', 9, { optional: true })],
+      rereview: [
+        pull('rereview', 8, { rereviewCause: 'new-head', reason: 'changes-after-my-review' }),
+        pull('rereview', 10, { rereviewCause: 'author-reply', reason: 'author-replied' }),
+        pull('rereview', 9, { optional: true }),
+      ],
       feedback: [pull('feedback', 6)],
     }),
+    prompt,
+    clipboard: { writeText: async (text) => { copied.push(text) } },
+    workspace: { startSession: (_id, draft) => { prepared.push(draft.prompt) } },
     scenarios: defaultScenarios(),
-    configExtra: { defaultTarget: 'dsh' },
+    configExtra: { defaultTarget: 'dsh', defaultScenario: '' },
   })
   await harness.flush()
   const draft = async (group, label, numbers) => {
@@ -2092,8 +2166,22 @@ const allRows = (harness) => harness.nodes().filter((node) => node.props?.classN
     assert.deepEqual(harness.launches.at(-1).body.urls, numbers.map((n) => 'https://github.com/acme/app/pull/' + n))
   }
   assert.ok(flattenTree(rowNodes(harness, 'PR 2')[0].props.children).includes('meta.optionalReview'))
+  harness.click(rowButton(harness, 'PR 8', 'launch.title'))
+  assert.equal(scenarioPicker(harness).props.value, 'rereview-pr')
+  harness.click(menuAction(harness, 'launch.prepare'))
+  await harness.flush()
+  assert.equal(harness.launches.at(-1).body.reason, 'changes-after-my-review')
   await draft('review', 'launch.review:2', [1, 3])
-  await draft('rereview', 'launch.rereviewOne:1', [8])
+  await draft('rereview', 'launch.rereview:2', [8, 10])
+  const prepare = harness.launches.at(-1)
+  assert.equal(prepare.body.scenario, 'review-all')
+  sectionMenuItem(harness, 'rereview', 'launch.rereview:2')
+  harness.click(menuAction(harness, 'launch.copyPrompt'))
+  await harness.flush()
+  assert.deepEqual(harness.launches.at(-1), prepare, 'both re-review actions request the same group draft')
+  assert.equal(copied.at(-1), prepared.at(-1))
+  assert.equal(copied.at(-1), prompt)
+  harness.dispatch('keydown', null, { key: 'Escape' })
   await draft('feedback', 'launch.replyFeedbackOne:1', [6])
   harness.store.set({ sourceFilter: 'user:tester' })
   await harness.flush()

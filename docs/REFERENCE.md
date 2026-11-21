@@ -32,8 +32,8 @@ button opens an interactive `gh auth login` in a terminal.
 
 The **Reviews** tab groups the three review queues. Select a group to filter further.
 
-- **Awaiting my review** lists direct requests on PRs you have never reviewed
-  and team requests on a head you have yet to review.
+- **Awaiting my review** lists direct and team requests on PRs you have never
+  reviewed.
 - **Awaiting my re-review**: PRs you already reviewed whose head commit is no longer
   the one you reviewed (new commits, a rebase, or a force-push; matched by commit
   id, not by commit date), PRs where the author clicked **Re-request review** for
@@ -41,13 +41,17 @@ The **Reviews** tab groups the three review queues. Select a group to filter fur
   threaded reply to your review comment or an explicit @-mention). An author
   reply alone is secondary: it stays in the same section, muted and at the
   bottom, with the exact reason in the row tooltip. Other reviewers' activity
-  alone does not ask you for another pass.
-- **Feedback on my PRs** includes requested changes and new comments on your PRs,
-  including inline replies. Open the changed files to address a request or
-  reply in the PR conversation. An approval alone creates no feedback task.
-- **Ready to merge**: your PRs that are approved, mergeable, and (by default)
-  green. PRs GitHub marks `BLOCKED` are excluded even when approval and checks
-  pass.
+  alone does not ask you for another pass. A pending team request stays with
+  the PR in this group when the head changes after your review. An approval
+  covering the new head can make the re-review optional when GitHub's review
+  requirements are satisfied.
+- **Feedback on my PRs** includes requested changes and new comments, including
+  inline replies, on your PRs and drafts. Open the changed files to address a
+  request or reply in the PR conversation. An approval alone creates no
+  feedback task.
+- **Ready to merge**: your non-draft PRs that are approved, mergeable, and (by
+  default) green. PRs GitHub marks `BLOCKED` are excluded even when approval and
+  checks pass.
 - **Needs your action** includes PRs with a merge conflict alone, issues assigned
   to you, and unanswered mentions. When a PR has both feedback and a conflict,
   its feedback row also shows the conflict.
@@ -140,8 +144,9 @@ its own agent: the badge identifies the pinned local agent. An explicit DSH or S
 All scenarios are editable in Settings: name, scope (row or section), bound
 sections, prompt, preferred agent, order, and an enabled toggle. *Just the link*
 cannot be removed and must contain `{url}`. Existing scenarios bound to *Needs
-your action* also apply to *Feedback on my PRs* after upgrading. You can edit
-the two bindings independently.
+your action* also apply to *Feedback on my PRs* after upgrading and restarting
+the host. Settings offers the bindings supported by the running host. You can
+edit the two bindings independently.
 
 **What the built-in prompts ask for.** They use `gh` and work with any agent.
 The review scenarios (*Review this PR*, *Re-review after changes*, *Review
@@ -152,6 +157,8 @@ changed line, tagged `[P1]` blocking, `[P2]` should fix, or `[P3]` minor; a
 `suggestion` block is used only when it fully fixes the issue. They don't change
 code, never approve or request changes, and post nothing when there is nothing
 new to say. A re-review covers changes and replies since your last review.
+Group prompts list each PR's re-review reason and ask the agent to read author
+replies even when the diff is empty.
 *Fix* scenarios check out the branch, fix the first real error with the smallest
 change without skipping hooks, wait for your OK before pushing, and never merge.
 *Reply* scenarios draft as you and post after you approve. *Triage* scenarios
@@ -161,10 +168,10 @@ attribution in comments and commits, and treats PR, issue, and CI log text as
 data, not instructions.
 
 **Prompt upgrades.** An unedited built-in prompt is saved empty, so it follows
-the default when a release changes it. A profile saved before 0.1.4 holds full
-copies: a built-in scenario whose prompt and scope still equal an earlier default
-is upgraded on load. A prompt you edited, or a scenario moved to the other scope,
-is kept; **Reset scenario** takes the current default.
+the default when a release changes it. A saved copy whose prompt and scope match
+an earlier built-in default, including the 0.1.4 group review prompt, is upgraded
+on load. A prompt you edited, or a scenario moved to the other scope, is kept.
+**Reset scenario** takes the current default.
 
 **DSH target.** The host renders the same scenario prompt and opens it as a new
 DSH session draft through the `uiWorkspace.startSession` client service; when the
@@ -181,11 +188,11 @@ you want, then use the group's terminal button to act on that selection.
 The prompt asks the agent to delegate each item to a separate sub-agent where
 that makes sense.
 
-For a single repository, a local agent opens in the matching clone and SSH
-looks for a working copy by its Git remotes. If a working copy is missing or
-the group spans repositories, a local agent opens in the workspace. SSH uses
-the first accessible repository folder configured for that server, falling back
-to the remote user's home directory.
+When all items that fit in the draft belong to one repository, a local agent
+opens in the matching clone and SSH looks for a working copy by its Git remotes.
+If a working copy is missing or the included items span repositories, a local
+agent opens in the workspace. SSH uses the first accessible repository folder
+configured for that server, falling back to the remote user's home directory.
 
 **Placeholders** use single braces. Row scenarios: `{url}`, `{repo}`, `{owner}`,
 `{name}`, `{number}`, `{title}`, `{branch}`, `{kind}`, `{ref}`, `{author}`,
@@ -337,9 +344,9 @@ For every other agent, Settings → **Prompt delivery** (config key
      exits with the agent's exit status. When the agent is not ready within
      2 minutes, nothing is pasted.
 
-  The prompt is also copied to the clipboard as a fallback. Verified with Claude
-  Code, Codex, opencode, and Antigravity (`agy`); the wrapper works with any
-  agent whose TUI supports bracketed paste.
+  Local launches also copy the prompt to the clipboard as a fallback. The
+  wrapper works with any agent whose TUI supports bracketed paste, including
+  Claude Code, Codex, opencode, and Antigravity (`agy`).
 - **Copy to clipboard** (`clipboard`): the agent opens empty with the prompt on
   the clipboard and a hint printed above it. Paste it with ⌘V on macOS,
   Ctrl+Shift+V in Linux terminals, or Ctrl+V on Windows; the toast and Settings
@@ -511,7 +518,8 @@ and the warning lists the rejected ones.
 - Each saved SSH destination searches its own folders, including each folder itself
   and three levels of visible subdirectories (up to 1,500 directories per root).
   Nested directory symlinks are skipped. Discovery reads GitHub fetch URLs
-  from Git on the server. Selecting **Find repositories** for a saved server needs
+  from Git on the server and resolves literal GitHub SSH aliases from the
+  server's `~/.ssh/config`. Selecting **Find repositories** for a saved server needs
   non-interactive SSH authentication. Interactive launches can prompt for login.
   When several paths match, the terminal can save your choice under
   `~/.triage-desk/working-copies/` on the server and uses it only while it matches.
@@ -519,11 +527,14 @@ and the warning lists the rejected ones.
 - The local search goes three levels deep, with an independent 400-directory budget per
   root, and skips hidden and heavy directories. Symlinked directories are
   followed, each real directory once.
-- For local discovery, all Git remotes that point to GitHub count, so a fork with `origin` and
+- All Git remotes that point to GitHub count, so a fork with `origin` and
   `upstream` serves either repository. HTTPS, `ssh://`, and scp-style remotes
   (with or without `git@`) are recognized, as are SSH host aliases from
-  `~/.ssh/config` whose `HostName` is `github.com` or `ssh.github.com` (literal
-  `Host` names only; wildcard blocks, `Match`, and `Include` are not evaluated).
+  `~/.ssh/config` whose `HostName` is `github.com` or `ssh.github.com`. Both
+  searches read literal `Host` names from the configuration on their own machine.
+  Local discovery reads literal patterns only. The remote lookup also checks
+  applicable wildcard patterns when choosing a literal alias's `HostName`.
+  `Match` and `Include` are outside both lookups.
 - Worktrees and submodules are found when their git config can be read;
   otherwise add a `repoPaths` override.
 
@@ -739,9 +750,11 @@ separate `Limits:` line. Warning codes: `source-degraded`,
   with `wmctrl` or `xdotool` on Linux (X11); Windows opens another tab in the
   shared window.
 - **Paste wrapper**: it needs an agent TUI that turns on bracketed paste; an
-  agent that never does, or is not ready within 2 minutes, gets no paste and the
-  prompt stays on the clipboard. A folder-trust dialog is recognized by its text
-  (the wording used by Claude Code, Codex, Antigravity, and Gemini CLI).
+  agent that never does, or is not ready within 2 minutes, gets no paste. For
+  local launches, paste the prompt from the clipboard. For SSH launches, choose
+  **Copy prompt** in the panel and then paste into the remote agent. A
+  folder-trust dialog is recognized by its text (the wording used by Claude
+  Code, Codex, Antigravity, and Gemini CLI).
 - **Windows**: PowerShell scripts are written as UTF-8 with a BOM and draft
   prompt files are read explicitly as UTF-8; a `;` in the tab title or script
   path is escaped as `\;` for Windows Terminal; double quotes in the prompt are
