@@ -239,6 +239,7 @@ const ctx = {
 }
 
 apply(ctx, {
+  sshServers: [{ alias: 'builder', agent: 'claude', cwd: '/work/remote' }],
   agents: [
     claude,
     codex,
@@ -335,6 +336,17 @@ await recordAsync('config GET exposes launcher settings, scenarios, and detectio
   assert.equal(payload.limits.prompt, 16_000)
 })
 
+await recordAsync('SSH launches resolve only saved destinations and use the remote folder and agent', async () => {
+  const body = { url: PR_URL, scenario: 'custom-review', sshAlias: 'builder' }
+  const result = await json(await callHandler('/triage-desk/launch', 'POST', body))
+  assert.equal(result.cwdMode, 'ssh')
+  assert.equal(result.cwd, '/work/remote')
+  assert.equal(result.agent.id, 'claude')
+  const unknown = await json(await callHandler('/triage-desk/launch', 'POST', { ...body, sshAlias: 'unknown' }))
+  assert.equal(unknown.error.code, 'bad-destination')
+  await cleanupLaunches()
+})
+
 await recordAsync('launch without a scenario uses the link scenario', async () => {
   captured.opens.length = 0
   const res = await callHandler('/triage-desk/launch', 'POST', {
@@ -382,7 +394,7 @@ await recordAsync('agents without a native draft flag fall back to the clipboard
   const payload = await json(res)
   assert.equal(res.statusCode, 200)
   assert.equal(payload.mode, 'clipboard')
-  assert.equal(captured.clipboard, PR_URL + '\n')
+  assert.equal(captured.clipboard, PR_URL)
   const argv = captured.opens.find((entry) => entry.length === 4)
   const script = await fs.readFile(argv[3], 'utf8')
   assert.ok(script.includes('\n/opt/homebrew/bin/codex --dangerously-bypass-approvals-and-sandbox\n'), 'the detected binary is launched by path')
@@ -476,6 +488,19 @@ await recordAsync('an oversized section prompt fails before draft delivery or te
   }
   assert.equal(captured.opens.length, 0)
   assert.equal(captured.clipboard, null)
+})
+
+await recordAsync('copy and launch render the same ordered and size-limited group', async () => {
+  const urls = Array.from({ length: 340 }, (_, i) => 'https://github.com/acme/widgets/pull/' + (340 - i))
+  const request = { scenario: 'review-all', section: 'review', urls }
+  const copy = await json(await callHandler('/triage-desk/prompt', 'POST', request))
+  const launch = await json(await callHandler('/triage-desk/launch', 'POST', { ...request, agent: 'codex' }))
+  assert.equal(copy.trimmed.total, urls.length)
+  assert.ok(copy.trimmed.shown < urls.length)
+  assert.deepEqual(launch.trimmed, copy.trimmed)
+  assert.equal(copy.prompt, captured.clipboard)
+  assert.ok(copy.prompt.indexOf(urls[0]) >= 0 && copy.prompt.indexOf(urls[0]) < copy.prompt.indexOf(urls[1]))
+  await cleanupLaunches()
 })
 
 await recordAsync('an unknown scenario is rejected with bad-scenario', async () => {
@@ -684,6 +709,9 @@ await recordAsync('config POST rejects invalid scenarios', async () => {
     })
   }
   const cases = [
+    ['unsafe ssh alias', { sshServers: [{ alias: '-V', agent: 'claude', cwd: '/work' }] }],
+    ['duplicate ssh alias', { sshServers: ['build', 'BUILD'].map((alias) => ({ alias, agent: 'codex', cwd: '/work' })) }],
+    ['relative remote cwd', { sshServers: [{ alias: 'build', agent: 'claude', cwd: 'work' }] }],
     ['scenarios is not an array', { scenarios: 'nope' }],
     ['empty scenario list', { scenarios: [] }],
     ['bad id', { scenarios: [...defaultScenarios(), { ...scenarioBase()[10], id: 'Bad Id' }] }],

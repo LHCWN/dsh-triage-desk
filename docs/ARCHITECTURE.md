@@ -35,7 +35,7 @@ import the launcher layer only through `launcher.js` and the data layer through
   - `config.js` — `EDITABLE_FIELDS`, `sanitizePatch`, `publicConfig` (adds
     `detectedAgents[id].draft` from `draftCommandForStatus`);
   - `processes.js` — `createProcesses`: `runProcess`, executable lookup,
-    clipboard, `openTerminal(scriptPath, title, signal, choice, { reuse }?)` (resolves the
+    clipboard, `openTerminal(scriptPath, title, signal, choice, reuse?)` (resolves the
     saved terminal choice, falling back to Automatic when it is not installed;
     focus-or-reuse an existing tab for individual items, else open a tab in the shared window with a
     window fallback; the result carries `terminal: { id, label, fallback }`),
@@ -153,6 +153,7 @@ import the launcher layer only through `launcher.js` and the data layer through
     read as the current default), section/reason labels, and prompt rendering
     (item tokens, `{number}` from `parseRepoUrl` when absent, section `{links}`
     block, safe trimming);
+  - `ssh.js` — saved destination validation and OpenSSH staging and interactive launcher scripts. A launch with `sshAlias` resolves the saved folder and agent before any local clone or agent lookup.
   - `settings.js` — `normalizeLauncherConfig` (also `terminal`, via
     `normalizeTerminalChoice`, and `promptDelivery`: `paste` | `clipboard`);
   - `terminals.js` — `TERMINAL_CATALOG` per platform (`id`, `label`, whether a
@@ -276,7 +277,7 @@ whole file.
   behind `config.supportsAgentDiscovery`;
 - shared launch-menu pieces: `useLaunchMenu` (outside click that ignores the
   trigger, Escape with focus return, optional first-item focus and upward
-  flip), `launchTargetPicker`, `launchScenarioItem`, `startDshDraft`, and
+  flip), `launchTargetPicker`, `ScenarioActions` (scenario selection, launch and copy via the same request builder), `startDshDraft`, and
   `effectiveReason(item)` for the re-review reason. The client does not parse
   agent commands: the host validates them on save and answers an invalid one
   with `error.code: 'invalid-agent'` and the agent id, which flags that row.
@@ -293,7 +294,7 @@ form/save payload → EN/ZH dictionaries → `README.md` + `README.zh.md` config
 table → `CHANGELOG.md` (and screenshots if visible controls changed).
 
 Launch scenarios are a nested array: `scenarios` (id, label, scope, sections,
-prompt, agent, enabled) plus `defaultScenario`. `agent` is either `default` or a
+prompt, agent, enabled) plus `defaultScenario` (empty selects by task). `agent` is either `default` or a
 configured agent id; the row and section menus pick the actual agent per launch
 (an explicit `agent` in the launch body wins, a pinned scenario agent is used
 otherwise). The client sends `POST /triage-desk/launch` with `scenario` and

@@ -10,9 +10,8 @@ A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH)
 plugin that answers one question every morning: **what needs me right now?** It
 turns GitHub activity into a single inbox panel: reviews waiting on you, your
 merge-ready PRs, threads that need an answer, failing CI, and new or assigned
-issues. One click opens a coding agent on any item with a prepared prompt that
-you review before sending. Everything runs locally through the GitHub CLI; the
-plugin never stores or forwards a token.
+issues. Copy a scenario prompt or open it as a draft in DSH, a local agent or
+a saved SSH destination. The inbox reads GitHub through the signed-in local CLI.
 
 <img src="docs/screenshots/inbox.png" width="900" alt="The Reviews tab with first reviews, repeat reviews, and feedback on my PRs">
 
@@ -26,7 +25,7 @@ plugin never stores or forwards a token.
 - **CI is failing**: red checks on your PRs, on default branches you maintain, and on branches whose latest commit you authored in the last week.
 - **New in your repositories**: unassigned issues from the last 30 days, kept out of the attention counter.
 - **Snooze**: per row, per section, or a selection, until new activity, tomorrow, or next week.
-- **Launch scenarios**: named, editable prompts that open a coding agent in the local clone or a new DSH chat. On upgrade, saved scenarios for **Needs your action** also apply to **Feedback on my PRs**. You can edit either binding in Settings.
+- **Launch scenarios**: editable prompts for individual rows or groups. On upgrade, saved scenarios for **Needs your action** also apply to **Feedback on my PRs**. You can edit either binding in Settings.
 - **Agent tool**: `triage_desk` gives a DSH agent the same snapshot and can open a terminal on request.
 - **Sources and languages**: personal repositories plus up to 10 organizations; the panel follows the DSH language (English or Chinese).
 - **Large organizations**: organizations as big as `llvm` load in a lighter mode instead of failing ([details](docs/REFERENCE.md#large-sources)).
@@ -88,15 +87,22 @@ After editing the host half, quit and reopen DSH, then refresh the page; see
 
 ## Launching agents
 
-The terminal button on a row (or a section header) opens the launch menu: pick a
-target (**DSH — this app** or an installed agent), then a scenario. A row
-scenario opens the agent in the repository's local clone; a section scenario
-launches one agent for the visible items in that group. The prompt is always
-prepared but **not sent**. A line under the agent picker says where it opens and
-how the prompt arrives, for example *Opens in Ghostty · prompt typed into the
-input box, unsent*.
+Open the terminal button on a row or section header. The scenario picker starts
+on **Review this PR** for a first review, **Re-review after changes** for a repeat
+review, or **Triage this issue** for a new or assigned issue. A saved, enabled
+default takes priority on rows where it applies, including **Just the link**.
+An upgraded profile keeps its saved default and scenario bindings. To enable task-based selection, choose **Choose by task** in Settings. If your saved **Triage this issue** scenario applies only to new issues, add **Needs your action** to use it for assigned issues. You can change the scenario before choosing either action.
 
-**Review 3 PRs** opens a draft for those three first reviews, even in **All**.
+- **Copy prompt** copies the rendered text for use in an existing session.
+  It includes your edited instructions and the same links, order and size limit
+  as a launch. If the clipboard is unavailable, copy the selected text in the
+  menu. The row's **Copy link** button still copies just its URL.
+- **Prepare draft** opens the selected scenario in DSH, a local agent or a
+  saved SSH destination. Group scenarios use the visible, unsnoozed rows in
+  the group whose menu you opened. You decide when to send the draft.
+
+When the picker shows **Review 3 PRs**, copying or preparing the prompt includes
+those three first reviews, even in **All**.
 Re-reviews have their own action, and **Feedback on my PRs** offers replies.
 The count follows your source filter and search, skips snoozed items and counts
 each PR once. Rows marked **Optional review** are excluded by default. To pick
@@ -112,7 +118,27 @@ tagged `[P1]`–`[P3]`, and never approve. The fix and reply scenarios wait for 
 OK before pushing or posting; triage only reports back. None of them add AI
 attribution.
 
-<img src="docs/screenshots/launch-menu.png" width="300" alt="The launch menu on a row: the agent picker set to DSH — this app, and the scenarios Just the link and Review this PR">
+**SSH destinations.** Under **Settings → Terminal and agents → SSH destinations**,
+add the alias you use with OpenSSH, an absolute folder on the server and the
+installed agent. Pick that destination in the launch menu. The terminal uses
+your SSH configuration and shows the alias, agent and resolved working folder.
+A failed connection offers a retry in the same terminal with the same draft.
+If you leave before the agent starts, the launcher tries to delete its private
+staging file over SSH. If the server is unreachable or requires another
+password prompt, the terminal prints the filename so you can remove it after
+reconnecting. A force-closed launcher can also leave a staging file named
+`.triage-desk-<uuid>.sh` in your remote home directory.
+
+The local machine needs OpenSSH. The server needs a POSIX shell, a writable home
+directory and the agent on its SSH command PATH. Claude Code uses its native
+`--prefill` flag, which puts the prompt in its command-line arguments. On a
+shared server, users who can inspect that process can read the draft. To keep
+it out of the process list, open Claude yourself and use **Copy prompt**.
+Other remote agents need Python 3 and bracketed paste support. If an agent
+doesn’t accept the draft within two minutes, use **Copy prompt** to paste it
+manually. Time spent at a recognized folder-trust dialog is excluded.
+Remote agents start with their own default permissions. You can use **Copy prompt**
+with any agent, including in an SSH session you already have open.
 
 **Terminals.** Settings → *Terminal and agents* → **Open agents in** offers
 *Automatic* or one of this platform's terminals; terminals that are not installed
@@ -155,7 +181,7 @@ Goose, and Crush. Pick another default in Settings, or add your own command. A
 command must contain `{prompt}` exactly once, unquoted, as its own argument or
 right after a `--flag=`.
 
-Agents start in **full access**, as Orca's default does: each built-in command
+Local agents start in **full access**, as Orca's default does: each built-in command
 carries the agent's own flag for skipping permission prompts, such as
 `codex --dangerously-bypass-approvals-and-sandbox` or
 `agy --dangerously-skip-permissions`. A step a scenario asks the agent to
@@ -178,13 +204,13 @@ available while you save. The most used fields:
 | `refreshSeconds` | `1200` | Auto-refresh interval, 15–3600 s |
 | `requireGreenChecks` | `true` | Turn off to allow otherwise eligible PRs with pending or failing checks in *Ready to merge*. PRs GitHub marks `BLOCKED` are excluded with either setting. |
 | `defaultAgent` | `dsh` | Target selected in the launch menu: `dsh` (a new DSH chat) or an agent id |
+| `defaultScenario` | empty | Choose by task, or save an applicable row scenario ID |
+| `sshServers` | `[]` | Saved SSH destinations with `alias`, `agent` and absolute remote `cwd` |
 | `terminal` | `auto` | Terminal for launches: `auto` or a terminal id |
 | `promptDelivery` | `paste` | `paste` (type into the agent) or `clipboard` |
 
 All fields, including agents, scenarios, and clone search, are in the
 [configuration reference](docs/REFERENCE.md#configuration).
-
-<img src="docs/screenshots/settings-launch.png" width="682" alt="Settings, Terminal and agents: the terminal, prompt delivery, the default agent DSH — this app, and the agent list">
 
 ## Development
 

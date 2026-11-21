@@ -97,8 +97,10 @@ def write_all(fd, data):
 
 
 def main():
-    prompt = read_prompt(sys.argv[1])
-    argv = sys.argv[2:]
+    remote = sys.argv[1] == "--remote"
+    args = sys.argv[2:] if remote else sys.argv[1:]
+    prompt = read_prompt(args[0])
+    argv = args[1:]
     stdin_tty = os.isatty(0)
     rows, cols = window_size(0 if stdin_tty else 1)
     pid, master = pty.fork()
@@ -165,12 +167,16 @@ def main():
                 else:
                     write_all(master, data)
                     if not pasted and (b"\r" in data or b"\n" in data):
+                        if remote and waiting_for_user:
+                            start = now
                         waiting_for_user = False
                         screen = ""
                         last_output = now
                         ready_since = now
             if not pasted:
-                if now - start > DEADLINE:
+                if now - start > DEADLINE and not (remote and waiting_for_user):
+                    if remote:
+                        write_all(2, b"\r\nTriage Desk: the agent did not accept the draft. Use Copy prompt in the panel and paste it here.\r\n")
                     pasted = True
                 elif paste_mode and not waiting_for_user and (
                     now - last_output >= QUIET or now - ready_since >= SETTLE
@@ -184,6 +190,13 @@ def main():
         if saved is not None:
             termios.tcsetattr(0, termios.TCSAFLUSH, saved)
     _, status = os.waitpid(pid, 0)
+    if remote:
+        # SSH retries draft delivery. After paste or the manual-copy fallback,
+        # the agent's eventual exit status belongs to the user's session.
+        if pasted:
+            return 0
+        sys.stderr.write("Triage Desk: the agent closed before accepting the draft. Use Copy prompt in the panel or retry.\n")
+        return 1
     if os.WIFEXITED(status):
         return os.WEXITSTATUS(status)
     if os.WIFSIGNALED(status):

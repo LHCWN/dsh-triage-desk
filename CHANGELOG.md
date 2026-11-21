@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- Row and group launchers can copy the exact scenario draft. The row launcher preselects review, re-review or issue triage when applicable and respects saved scenario defaults.
+- Save SSH aliases with a remote working directory and preferred agent, and open an unsent draft on that server. Connection failures offer a retry in the terminal.
+
 ### Changed
 
 - Group actions show the number of visible items they will send, including in
