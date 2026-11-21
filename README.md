@@ -14,7 +14,7 @@ merge-ready PRs, threads that need an answer, failing CI, and new or assigned
 issues. Copy a scenario prompt or open it as a draft in DSH, a local agent or
 a saved SSH destination. The inbox reads GitHub through the signed-in local CLI.
 
-<img src="docs/screenshots/inbox.png" width="900" alt="The Reviews tab with first reviews, repeat reviews, and feedback on my PRs">
+<img src="docs/screenshots/inbox.png" width="900" alt="Triage inbox with re-review requests, feedback on my PRs, merge-ready PRs, and an assigned issue">
 
 [简体中文](README.zh.md) · [Reference](docs/REFERENCE.md) · [Architecture](docs/ARCHITECTURE.md) · [Changelog](CHANGELOG.md)
 
@@ -31,10 +31,10 @@ a saved SSH destination. The inbox reads GitHub through the signed-in local CLI.
 - **Sources and languages**: personal repositories plus up to 10 organizations; the panel follows the DSH language (English or Chinese).
 - **Large organizations**: organizations as big as `llvm` load in a lighter mode instead of failing ([details](docs/REFERENCE.md#large-sources)).
 
+<img src="docs/screenshots/reviews.png" width="900" alt="Reviews tab showing a PR with new commits since my review and a Reply to feedback link on my own PR">
+
 The count next to *Triage* is what needs you; hover or focus it to see what it
 leaves out.
-
-<img src="docs/screenshots/count-hint.png" width="697" alt="The attention count's tooltip: 7 need your action, not counted 13 new issues and 2 optional reviews">
 
 Each feature is described in full in the [reference](docs/REFERENCE.md#inbox).
 
@@ -130,6 +130,8 @@ on that server. Under **Repository folders**, enter one absolute remote path per
 line. Save, then use **Find repositories** to see GitHub repository names and
 paths. This optional search uses non-interactive SSH. Local repository folders
 have their own search and keep their existing settings.
+
+<img src="docs/screenshots/settings-launch.png" width="691" alt="Terminal and agents settings with Ghostty selected, prompt delivery options, and the Add destination button for SSH">
 
 At launch, the terminal matches the included PRs’ `owner/repo` against Git
 remotes in those folders, including a fork’s `upstream` and literal GitHub host
