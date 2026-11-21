@@ -281,7 +281,7 @@ await check('an explicit re-request after my review lands in re-review', async (
 
 /* -------------------------------------------- merge readiness and replies */
 
-await check('blocked PRs are not merge-ready even when green checks are optional', async () => {
+await check('merge readiness follows the green-check setting and repository policy on each refresh', async () => {
   const ownPull = (number, mergeStateStatus, state = 'SUCCESS') => {
     const pr = pull({ number, headOid: 'head-' + number, headAt: '2026-01-01T09:00:00Z', author: ME })
     pr.reviewDecision = 'APPROVED'
@@ -289,14 +289,21 @@ await check('blocked PRs are not merge-ready even when green checks are optional
     pr.commits.nodes[0].commit.statusCheckRollup = { state }
     return pr
   }
-  const prs = [ownPull(91, 'BLOCKED'), ownPull(92, 'CLEAN'), ownPull(93, 'UNSTABLE', 'FAILURE')]
+  const unstable = ownPull(93, 'UNSTABLE', 'FAILURE')
+  const prs = [ownPull(91, 'BLOCKED'), ownPull(92, 'CLEAN'), unstable]
+  const { ctx } = fakeCtx({ prs: () => prs })
   for (const requireGreenChecks of [true, false]) {
-    const { ctx } = fakeCtx({ prs: () => prs })
     const snapshot = await buildSnapshot(ctx, settings({ requireGreenChecks }))
-    assert.deepEqual(ids(snapshot, 'merge').sort(), [92, 93], 'repository policy blocks merging independently of the green-check setting')
+    assert.deepEqual(ids(snapshot, 'ci'), [93])
+    assert.deepEqual(ids(snapshot, 'merge').sort(), requireGreenChecks ? [92] : [92, 93])
     assert.equal(find(snapshot, 'merge', 92).reason, 'ready-to-merge')
-    assert.equal(find(snapshot, 'merge', 93).reason, requireGreenChecks ? 'approved-checks-failing' : 'ready-to-merge')
+    if (!requireGreenChecks) assert.equal(find(snapshot, 'merge', 93).reason, 'ready-to-merge')
   }
+  unstable.commits.nodes[0].commit.statusCheckRollup.state = 'SUCCESS'
+  unstable.mergeStateStatus = 'CLEAN'
+  const refreshed = await buildSnapshot(ctx, settings({ requireGreenChecks: true }))
+  assert.deepEqual(ids(refreshed, 'ci'), [])
+  assert.deepEqual(ids(refreshed, 'merge').sort(), [92, 93])
 })
 
 await check('new inline reviewer replies need action until the author answers', async () => {
