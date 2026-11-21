@@ -121,6 +121,14 @@ async function checkRemoteChoices() {
   assert.equal((await fs.readFile(record + '.shell', 'utf8')).trimEnd(), actual[0])
   await fs.unlink(record + '.shell')
   await assert.rejects(fs.access(record), { code: 'ENOENT' })
+  // Bash can export SHELLOPTS to child processes when it inherited the variable.
+  await writeTool('check-shell-options', '#!/bin/bash\nprintf "%s" "$-" > "$RECORD.options"\n')
+  run(shell.stage)
+  const shellOptions = spawnSync('/bin/bash', ['-c', 'export SHELLOPTS; /bin/bash .triage-desk-*.sh'], {
+    cwd: remote, env: { ...env, SHELL: path.join(bin, 'check-shell-options') }, input: '1\nn\n', encoding: 'utf8',
+  })
+  assert.equal(shellOptions.status, 0, shellOptions.stderr)
+  assert.doesNotMatch(await fs.readFile(record + '.options', 'utf8'), /[eu]/)
   const scan = () => run(sshRepositoryScan({ ...server, folders: ['~/projects'] }).at(-1)).trimEnd().split('\n')
   assert.deepEqual(scan(), actual.map((dir) => 'acme/widgets\t' + dir))
   await fs.writeFile(sshConfig, 'HostName gitlab.example\n' + aliases)

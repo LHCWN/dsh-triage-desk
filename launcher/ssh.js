@@ -169,7 +169,8 @@ function sshWorkingFolder(server, repo) {
 }
 
 export function buildSshShellScripts(server, platform, repo) {
-  const remote = [...sshWorkingFolder(server, repo), '"${SHELL:-/bin/sh}" -i || :']
+  // An exported Bash SHELLOPTS must not carry staging's errexit/nounset into the user's shell.
+  const remote = [...sshWorkingFolder(server, repo), 'set +eu', '"${SHELL:-/bin/sh}" -i || :']
   return sshTransport(server, remote, platform, 'shell')
 }
 
