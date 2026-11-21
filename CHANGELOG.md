@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [0.1.5](https://github.com/LHCWN/dsh-triage-desk/releases/tag/v0.1.5) — 2026-11-22
 
 ### Added
 
@@ -27,7 +27,6 @@
   a saved host keeps its agent preferences and repository folders.
 - A remote default agent can be reset to Automatic when a scan finds no agents.
 - A failed GitHub connection check appears in the collapsed settings heading.
-
 - Pending team requests move to re-review after you review and the head changes.
   After new commits, an approval must cover the current head for the re-review
   to be optional.
