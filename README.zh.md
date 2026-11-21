@@ -8,7 +8,7 @@
 [![开放插件市场](https://img.shields.io/endpoint?url=https%3A%2F%2Fdshopen.org%2Fbadge%2Fdsh-triage-desk.json)](https://dshopen.org/zh/plugins/dsh-triage-desk/)
 [![已收录于 Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com/zh/p/LHCWN/dsh-triage-desk/)
 
-一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）插件，每天早上只回答一个问题：**现在有什么需要我处理？** 它把 GitHub 动态汇总成一个收件箱面板：等待你审核的 PR、可以合并的自己的 PR、需要答复的讨论、失败的 CI，以及新的或分配给你的议题。可复制场景提示，或在 DSH、本地智能体或SSH 主机中将其作为草稿打开。收件箱通过已登录的本地 GitHub CLI 读取数据。
+一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）插件，每天早上只回答一个问题：**现在有什么需要我处理？** 它把 GitHub 动态汇总成一个收件箱面板：等待你审核的 PR、可以合并的自己的 PR、需要答复的讨论、失败的 CI，以及新的或分配给你的议题。可复制场景提示，或在 DSH、本地智能体或 SSH 主机中将其作为草稿打开。收件箱通过已登录的本地 GitHub CLI 读取数据。
 
 <img src="docs/screenshots/inbox.png" width="900" alt="分诊收件箱显示所有来源，按等待我复审、我的 PR 收到的反馈和可以合并分组">
 
