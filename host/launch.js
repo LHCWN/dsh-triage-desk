@@ -221,11 +221,10 @@ export function createLaunch({
 
   const launchSsh = async (alias, rendered, signal, requestedAgent) => {
     if (typeof alias !== 'string' || !SSH_ALIAS.test(alias)) throw new LaunchError('bad-destination', 'choose a named SSH host')
-    let server = launcherSettings.sshServers.find((entry) => entry.alias.toLowerCase() === alias.toLowerCase())
+    let server = launcherSettings.sshServers.find((entry) => entry.alias === alias)
     if (!server) {
-      const known = (await configuredSshHosts()).find((host) => host.toLowerCase() === alias.toLowerCase())
-      if (!known) throw new LaunchError('bad-destination', 'choose a saved destination or a named OpenSSH host')
-      server = { alias: known, folders: [] }
+      if (!(await configuredSshHosts()).includes(alias)) throw new LaunchError('bad-destination', 'choose a saved destination or a named OpenSSH host')
+      server = { alias, folders: [] }
     }
     const preferred = requestedAgent || server.agent
     const agent = preferred ? SSH_AGENTS.find((entry) => entry.id === preferred)

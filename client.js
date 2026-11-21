@@ -265,6 +265,9 @@ window.__ModuleLoader__.load({
       'launch.prompt': 'Prompt',
       'settings.addSshHost': 'Add SSH host…',
       'settings.useHost': 'Use host',
+      'settings.renameHost': 'Rename saved host…',
+      'settings.applyRename': 'Rename',
+      'settings.aliasInUse': 'A saved host already uses this alias.',
       'settings.localOverride': 'Local agent override · {agent}',
       'settings.useMachineDefault': 'Use machine default',
       'settings.foldersOn': 'Repository folders on',
@@ -633,6 +636,9 @@ window.__ModuleLoader__.load({
       'launch.prompt': '提示词',
       'settings.addSshHost': '添加 SSH 主机…',
       'settings.useHost': '使用主机',
+      'settings.renameHost': '重命名已保存的主机…',
+      'settings.applyRename': '重命名',
+      'settings.aliasInUse': '已有主机使用此别名。',
       'settings.localOverride': '本机智能体例外 · {agent}',
       'settings.useMachineDefault': '使用机器默认设置',
       'settings.foldersOn': '仓库目录所在主机',
@@ -3133,16 +3139,13 @@ window.__ModuleLoader__.load({
     }
 
     function RunOnPicker({ t, servers, hosts, machine, onChange, disabled, onAdd, label = 'launch.machine' }) {
-      const names = new Map()
-      for (const alias of [...servers.map((server) => server.alias.trim()), ...hosts]) {
-        if (alias && !names.has(alias.toLowerCase())) names.set(alias.toLowerCase(), alias)
-      }
+      const names = new Set([...servers.map((server) => server.alias.trim()), ...hosts].filter(Boolean))
       return h('label', { className: 'adx-run-on' }, t(label),
         h('select', { className: 'adx-select', value: machine, disabled, onChange: (event) => {
           if (event.target.value === ':add') onAdd()
           else onChange(event.target.value)
         } }, h('option', { value: '' }, t('launch.local')),
-        [...names.values()].map((alias) => h('option', { key: alias, value: alias }, alias)),
+        [...names].map((alias) => h('option', { key: alias, value: alias }, alias)),
         onAdd && h('option', { value: ':add' }, t('settings.addSshHost'))))
     }
 
@@ -4398,7 +4401,7 @@ window.__ModuleLoader__.load({
       const [githubExpanded, setGithubExpanded] = useState(null)
       const [machine, setMachine] = useState('')
       const [folderMachine, setFolderMachine] = useState('')
-      const [newHost, setNewHost] = useState(null)
+      const [hostEdit, setHostEdit] = useState(null)
       const probe = useRemoteAgents(machine)
       const [findingAgents, setFindingAgents] = useState(false)
       const [invalidAgentKey, setInvalidAgentKey] = useState(null)
@@ -4912,20 +4915,17 @@ window.__ModuleLoader__.load({
         void store.loginGithub().catch(() => undefined)
       }
       const showGithub = githubExpanded ?? !state.auth?.authenticated
+      const githubError = state.authError && t('settings.githubAuthError', { message: state.authError })
       const renderAuth = () => {
         const auth = state.auth
         const rows = []
         if (state.authStatus === 'loading' && auth === null) {
           rows.push(h('p', { className: 'adx-form-note', key: 'loading' }, t('settings.connectionChecking')))
         }
-        if (state.authError !== null) {
-          rows.push(
-            h(
-              'p',
-              { className: 'adx-form-note', key: 'error' },
-              t('settings.githubAuthError', { message: state.authError }),
-            ),
-          )
+        if (state.authError) {
+          return h('div', { className: 'adx-auth' },
+            h('p', { className: 'adx-form-note', role: 'status' }, githubError),
+            outlineButton(t('launch.retry'), checkAuth))
         }
         if (auth !== null) {
           if (auth.available === false) {
@@ -4944,7 +4944,7 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 { className: 'adx-auth-actions', key: 'missing-actions' },
-                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t(state.authError ? 'launch.retry' : 'settings.connectionCheck')),
+                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t('settings.connectionCheck')),
               ),
             )
           } else if (auth.authenticated === true) {
@@ -4959,7 +4959,7 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 { className: 'adx-auth-actions', key: 'actions' },
-                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t(state.authError ? 'launch.retry' : 'settings.connectionCheck')),
+                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t('settings.connectionCheck')),
               ),
             )
           } else {
@@ -4978,7 +4978,7 @@ window.__ModuleLoader__.load({
                   },
                   state.loginStatus === 'launching' ? t('settings.githubOpening') : t('settings.githubLogin'),
                 ),
-                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t(state.authError ? 'launch.retry' : 'settings.connectionCheck')),
+                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t('settings.connectionCheck')),
               ),
             )
             if (state.loginStatus === 'launched') {
@@ -4995,7 +4995,6 @@ window.__ModuleLoader__.load({
             }
           }
         }
-        if (state.authError && !auth) rows.push(outlineButton(t('launch.retry'), checkAuth))
         return h('div', { className: 'adx-auth' }, rows)
       }
 
@@ -5285,26 +5284,39 @@ window.__ModuleLoader__.load({
       const forgetServer = (alias) => {
         update({ sshServers: form.sshServers.filter((row) => row.alias !== alias) })
         setMachine('')
+        setHostEdit(null)
         if (folderMachine === alias) setFolderMachine('')
       }
       function renderHostPicker() {
-        const valid = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test((newHost || '').trim())
+        const alias = hostEdit?.value.trim() || ''
+        const original = hostEdit?.original
+        const conflict = original && alias !== original && Boolean(serverFor(alias))
+        const canApply = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(alias) && !conflict && alias !== original
+        const selectMachine = (value) => {
+          setMachine(value)
+          setHostEdit(null)
+        }
+        const applyAlias = () => {
+          if (original) {
+            changeServer(original, { alias })
+            if (folderMachine === original) setFolderMachine(alias)
+          } else if (!serverFor(alias) && !hostList.includes(alias)) {
+            changeServer(alias, {})
+          }
+          selectMachine(alias)
+        }
         return h('div', { className: 'adx-agents' },
           h(RunOnPicker, { t, servers: form.sshServers, hosts: hostList, machine,
-            onChange: (alias) => { setMachine(alias); setNewHost(null) }, onAdd: () => setNewHost('') }),
-          newHost !== null && h('div', { className: 'adx-run-on-add' },
+            onChange: selectMachine, onAdd: () => setHostEdit({ value: '' }) }),
+          hostEdit && h('div', { className: 'adx-run-on-add' },
             h('label', { className: 'adx-run-on' }, t('settings.ssh.alias'),
-              h('input', { className: 'adx-input', autoFocus: true, spellCheck: false, value: newHost,
-                onChange: (event) => setNewHost(event.target.value) })),
-            h('button', { type: 'button', className: 'adx-btn adx-btn--outline', disabled: !valid, onClick: () => {
-              const entered = newHost.trim()
-              const aliases = [...form.sshServers.map((row) => row.alias), ...hostList]
-              const alias = aliases.find((name) => name.toLowerCase() === entered.toLowerCase()) || entered
-              if (!serverFor(alias) && !hostList.includes(alias)) changeServer(alias, {})
-              setMachine(alias)
-              setNewHost(null)
-            } }, t('settings.useHost')),
-            outlineButton(t('settings.cancel'), () => setNewHost(null))))
+              h('input', { className: 'adx-input', autoFocus: true, spellCheck: false, value: hostEdit.value,
+                'aria-invalid': Boolean(conflict), 'aria-describedby': conflict ? 'adx-ssh-alias-error' : undefined,
+                onChange: (event) => setHostEdit({ ...hostEdit, value: event.target.value }) })),
+            h('button', { type: 'button', className: 'adx-btn adx-btn--outline', disabled: !canApply,
+              onClick: applyAlias }, t(original ? 'settings.applyRename' : 'settings.useHost')),
+            outlineButton(t('settings.cancel'), () => setHostEdit(null)),
+            conflict && h('span', { id: 'adx-ssh-alias-error', role: 'status' }, t('settings.aliasInUse'))))
       }
 
       function renderRemoteDefault() {
@@ -5315,7 +5327,7 @@ window.__ModuleLoader__.load({
         const savedLabel = remoteCatalog.find(({ id }) => id === preference)?.label || preference
         return h('div', { className: 'adx-agents' },
           h('label', { className: 'adx-run-on' }, t('settings.defaultAgent'),
-            h('select', { className: 'adx-select', value: preference, disabled: !found.length,
+            h('select', { className: 'adx-select', value: preference, disabled: !preference && !found.length,
               onChange: (event) => changeServer(machine, { agent: event.target.value }) },
               h('option', { value: '' }, t('settings.autoAgent')),
               absent && h('option', { value: preference, disabled: true }, probe.result?.agents
@@ -5331,8 +5343,9 @@ window.__ModuleLoader__.load({
                 onChange: (event) => changeServer(machine, { alternatives: event.target.checked
                   ? [...server.alternatives, id] : server.alternatives.filter((other) => other !== id) }),
               }), label))),
-          server && outlineButton(t(hostList.some((alias) => alias.toLowerCase() === machine.toLowerCase())
-            ? 'settings.forgetHost' : 'settings.sshRemove'), () => forgetServer(machine)))
+          server && !hostEdit && h('div', { className: 'adx-form-actions' },
+            outlineButton(t('settings.renameHost'), () => setHostEdit({ original: machine, value: machine })),
+            outlineButton(t(hostList.includes(machine) ? 'settings.forgetHost' : 'settings.sshRemove'), () => forgetServer(machine))))
       }
 
       function renderRemoteFolders() {
@@ -5544,8 +5557,9 @@ window.__ModuleLoader__.load({
           h('summary', { className: 'adx-advanced-summary', onClick: (event) => {
             event.preventDefault()
             setGithubExpanded(!showGithub)
-          } }, t('settings.githubTitle'), !showGithub && state.auth?.authenticated && state.auth.login &&
-            h('span', { className: 'adx-account-name' }, '@' + state.auth.login)),
+          } }, t('settings.githubTitle'), !showGithub && (githubError
+            ? h('span', { className: 'adx-account-name', role: 'status' }, githubError)
+            : state.auth?.authenticated && state.auth.login && h('span', { className: 'adx-account-name' }, '@' + state.auth.login))),
           renderAuth(),
           h(
             Field,

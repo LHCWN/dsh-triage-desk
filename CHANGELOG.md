@@ -21,6 +21,11 @@
 
 ### Fixed
 
+- SSH host selection, saved settings, and launches preserve alias case. Renaming
+  a saved host keeps its agent preferences and repository folders.
+- A remote default agent can be reset to Automatic when a scan finds no agents.
+- A failed GitHub connection check appears in the collapsed settings heading.
+
 - Pending team requests move to re-review after you review and the head changes.
   After new commits, an approval must cover the current head for the re-review
   to be optional.

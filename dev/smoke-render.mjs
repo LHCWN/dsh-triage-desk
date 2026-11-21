@@ -613,7 +613,7 @@ function settingsHarness({
       if (url === '/triage-desk/ssh/check') {
         (host.probed ??= []).push(JSON.parse(options.body).alias)
         return Promise.resolve(host.sshError ? response(502, { error: { message: host.sshError } }) :
-          response(200, { ok: true, agents: [{ id: 'claude', label: 'Claude Code' }] }))
+          response(200, { ok: true, agents: host.sshAgents ?? [{ id: 'claude', label: 'Claude Code' }] }))
       }
       if (url === '/triage-desk/clones?refresh=1&sshAlias=old') {
         return Promise.resolve(response(200, { ok: true, clones: [{ repo: 'acme/widgets', path: '/original/fork' }] }))
@@ -644,7 +644,7 @@ function settingsHarness({
       if (url === '/triage-desk/config') host.configReads += 1
       if (url === '/triage-desk/config' && host.unavailable) return Promise.reject(new Error('restarting'))
       if (url === '/triage-desk/config') return Promise.resolve(response(200, { config, saveError: host.saveError }))
-      if (url === '/triage-desk/auth') return Promise.resolve(response(200, { auth: state.auth }))
+      if (url === '/triage-desk/auth') return Promise.resolve(host.authError ? response(503, { error: { message: host.authError } }) : response(200, { auth: state.auth }))
       if (url.split('?')[0] === '/triage-desk/snapshot') {
         host.snapshotReads += 1
         // Like the host, the default snapshot reports the saved refresh setting
@@ -1415,7 +1415,7 @@ function labeledControl(harness, label, type = 'select') {
 
 const runOnConfig = { supportsRunOn: true, supportsTaskDefault: true, defaultScenario: '', supportsEditablePrompt: true, supportsSshRepositoryFolders: true,
   sshServers: [{ alias: 'builder', agent: 'codex', folders: [], alternatives: [] }],
-  sshHosts: ['BUILDER', 'staging'], sshAgents: [{ id: 'claude', label: 'Claude Code' }, { id: 'codex', label: 'Codex' }] }
+  sshHosts: ['builder', 'BUILDER', 'staging'], sshAgents: [{ id: 'claude', label: 'Claude Code' }, { id: 'codex', label: 'Codex' }] }
 
 {
   const harness = settingsHarness({ snapshotPayload: snapshot, configExtra: runOnConfig })
@@ -1424,7 +1424,7 @@ const runOnConfig = { supportsRunOn: true, supportsTaskDefault: true, defaultSce
   await harness.flush()
   const machine = labeledControl(harness, 'launch.machine')
   assert.deepEqual(flattenTree(machine.props.children).filter((node) => node.type === 'option').map((node) => node.props.value),
-    ['', 'builder', 'staging'])
+    ['', 'builder', 'BUILDER', 'staging'])
   assert.equal(harness.host.probed, undefined)
   harness.host.sshError = 'Connection refused'
   harness.change(machine, 'builder')
@@ -1468,6 +1468,17 @@ const runOnConfig = { supportsRunOn: true, supportsTaskDefault: true, defaultSce
     assert.ok(fields.includes(key), key + ' stays in GitHub')
   }
   assert.ok(text.indexOf('settings.bots') < text.indexOf('settings.agentsSection'))
+  harness.host.authError = 'Host timeout'
+  await harness.store.loadAuth(true)
+  await harness.flush()
+  const authSummary = () => harness.nodes().find((node) => node.type === 'summary' && node.props.children.includes('settings.githubTitle'))
+  harness.click(authSummary())
+  assert.ok(flattenTree(authSummary().props.children).includes('settings.githubAuthError:Host timeout'))
+  assert.ok(!flattenTree(authSummary().props.children).includes('@tester'))
+  harness.host.authError = ''
+  await harness.store.loadAuth(true)
+  await harness.flush()
+  assert.ok(flattenTree(authSummary().props.children).includes('@tester'))
   const pick = () => labeledControl(harness, 'launch.machine')
   harness.change(labeledControl(harness, 'settings.foldersOn'), 'staging')
   harness.change(labeledControl(harness, 'settings.ssh.folders', 'textarea'), '~/projects')
@@ -1480,6 +1491,13 @@ const runOnConfig = { supportsRunOn: true, supportsTaskDefault: true, defaultSce
   harness.change(pick(), 'builder')
   await harness.flush()
   assert.equal(labeledControl(harness, 'settings.defaultAgent').props.value, 'codex', 'retain a missing preferred agent')
+  harness.host.sshAgents = []
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('settings.scanAgain')))
+  await harness.flush()
+  const missingDefault = labeledControl(harness, 'settings.defaultAgent')
+  assert.equal(missingDefault.props.disabled, false, 'the saved preference can be cleared after an empty scan')
+  harness.change(missingDefault, '')
+  delete harness.host.sshAgents
   harness.change(pick(), 'staging')
   await harness.flush()
   assert.ok(harness.text().includes('settings.scenarios'))
@@ -1489,8 +1507,35 @@ const runOnConfig = { supportsRunOn: true, supportsTaskDefault: true, defaultSce
   assert.ok(harness.text().includes('settings.manageAgents'))
   harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('settings.save')))
   assert.deepEqual(harness.pending[0].body.sshServers.map(({ alias, agent }) => [alias, agent]),
-    [['builder', 'codex'], ['staging', 'claude']])
+    [['builder', ''], ['staging', 'claude']])
   assert.equal(harness.pending[0].body.defaultAgent, state.config.defaultAgent)
+  harness.dispose()
+}
+
+{
+  const savedHost = { alias: 'Prod', agent: 'codex', alternatives: ['claude'], folders: ['~/projects', '/work'] }
+  const otherHost = { alias: 'unrelated', agent: '', alternatives: [], folders: ['/srv'] }
+  const harness = settingsHarness({ configExtra: { ...runOnConfig,
+    sshServers: [savedHost, otherHost], sshHosts: ['prod', 'Prod', 'unrelated'] } })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
+  await harness.flush()
+  const button = (label) => harness.nodes().find((node) => node.type === 'button' && node.props.children.includes(label))
+  const alias = () => labeledControl(harness, 'settings.ssh.alias', 'input')
+  harness.change(labeledControl(harness, 'settings.foldersOn'), 'Prod')
+  harness.change(labeledControl(harness, 'launch.machine'), 'Prod')
+  harness.click(button('settings.renameHost'))
+  harness.change(alias(), 'unrelated')
+  assert.equal(button('settings.applyRename').props.disabled, true, 'another saved host cannot be overwritten')
+  harness.change(alias(), 'prod')
+  harness.click(button('settings.applyRename'))
+  await harness.flush()
+  assert.equal(labeledControl(harness, 'launch.machine').props.value, 'prod')
+  assert.equal(labeledControl(harness, 'settings.foldersOn').props.value, 'prod')
+  assert.equal(labeledControl(harness, 'settings.ssh.folders', 'textarea').props.value, '~/projects\n/work')
+  assert.deepEqual(harness.host.probed, ['Prod', 'prod'])
+  harness.click(button('settings.save'))
+  assert.deepEqual(harness.pending[0].body.sshServers, [{ ...savedHost, alias: 'prod' }, otherHost])
   harness.dispose()
 }
 
