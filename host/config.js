@@ -9,7 +9,6 @@ import {
   AGENT_COMMAND_RULE,
   AGENT_ID_PATTERN,
   DEFAULT_CLONE_DIRS,
-  DEFAULT_SCENARIO_ID,
   MAX_AGENTS,
   normalizeSshServers,
   SSH_AGENTS,
@@ -117,6 +116,8 @@ export function publicConfig(settings, runtime, launcher, detected, environment 
     defaultAgent: launcher.defaultAgent,
     sshServers: launcher.sshServers,
     sshAgents: SSH_AGENTS,
+    sshHosts: environment.sshHosts || [],
+    supportsEditablePrompt: true,
     // `defaultAgent` (the saved choice, shown in Settings) may be DSH_TARGET.
     // `defaultTarget`: what the panel opens for "default" (the saved agent
     // while it can start, else DSH); `effectiveDefaultAgent`: what a launch
@@ -205,9 +206,6 @@ function sanitizeScenarios(input, agents) {
       agent: entry.agent.trim(),
       enabled: entry.enabled,
     })
-  }
-  if (!seen.has(DEFAULT_SCENARIO_ID)) {
-    throw new BadRequest(`the "${DEFAULT_SCENARIO_ID}" scenario is required`)
   }
   return scenarios
 }

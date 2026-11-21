@@ -31,6 +31,10 @@ import {
   normalizeLauncherConfig,
   readSshHostAliases,
   sshRepositoryScan,
+  sshAgentProbe,
+  configuredSshHosts,
+  SSH_AGENTS,
+  SSH_ALIAS,
   REPO_PATTERN,
   scenarioTitle,
 } from './launcher.js'
@@ -39,7 +43,7 @@ import { createClones } from './host/clones.js'
 import { publicConfig, sanitizePatch } from './host/config.js'
 import { BadRequest, LaunchError, errorMessage, launchErrorStatus } from './host/errors.js'
 import { createGh } from './host/gh.js'
-import { CONFIG_BODY_LIMIT, readJsonBody, readFindCommands, sendJson, jsonResponse } from './host/http.js'
+import { CONFIG_BODY_LIMIT, readJsonBody, readLaunchBody, readFindCommands, sendJson, jsonResponse } from './host/http.js'
 import { createLaunch } from './host/launch.js'
 import { createProcesses } from './host/processes.js'
 import { createSnapshotStore } from './host/snapshot.js'
@@ -305,7 +309,7 @@ export function apply(ctx, config = {}) {
     if (req.method === 'GET') {
       // Agents, terminals and paste support are independent probes of this
       // machine; each failure only leaves its part of the response empty.
-      const [detected, terminals, promptPaste] = await Promise.all([
+      const [detected, terminals, promptPaste, sshHosts] = await Promise.all([
         detectAgents().catch((error) => {
           safeLog('warn', 'agent detection failed: %s', errorMessage(error))
           return {}
@@ -318,6 +322,7 @@ export function apply(ctx, config = {}) {
           safeLog('warn', 'paste support check failed: %s', errorMessage(error))
           return null
         }),
+        configuredSshHosts().catch(() => []),
       ])
       const snapshot = lastSnapshot()
       const runtime = {
@@ -326,7 +331,7 @@ export function apply(ctx, config = {}) {
       }
       sendJson(res, 200, {
         ok: true,
-        config: publicConfig(settings, runtime, launcherSettings, detected, { terminals, promptPaste, platform }),
+        config: publicConfig(settings, runtime, launcherSettings, detected, { terminals, promptPaste, platform, sshHosts }),
         saveError: lastSaveError,
         limits: {
           refreshSeconds: REFRESH_SECONDS,
@@ -376,7 +381,7 @@ export function apply(ctx, config = {}) {
   route(LAUNCH_PATH, ['POST'], 'triage-desk: POST /triage-desk/launch', async (req, res, { launchForItem }) => {
     let body
     try {
-      body = await readJsonBody(req)
+      body = await readLaunchBody(req, MAX_RENDERED_PROMPT)
     } catch (error) {
       sendJson(res, 400, { ok: false, error: { code: 'bad-request', message: error.message } })
       return
@@ -442,6 +447,24 @@ export function apply(ctx, config = {}) {
       }
       safeLog('warn', 'agent discovery failed: %s', errorMessage(error))
       sendJson(res, 500, { ok: false, error: { code: 'scan-failed', message: 'agent discovery failed' } })
+    }
+  })
+
+  route('/triage-desk/ssh/check', ['POST'], 'triage-desk: check SSH host', async (req, res, { runProcess }) => {
+    let body
+    try { body = await readJsonBody(req) } catch (error) {
+      return sendJson(res, 400, { ok: false, error: { message: error.message } })
+    }
+    if (typeof body?.alias !== 'string' || !SSH_ALIAS.test(body.alias)) {
+      return sendJson(res, 400, { ok: false, error: { message: 'Enter a literal SSH host alias' } })
+    }
+    try {
+      const result = await runProcess(sshAgentProbe(body.alias), { timeoutMs: 15000 })
+      if (result.code !== 0 || result.timedOut) throw new Error(result.stderr?.trim() || 'SSH connection failed')
+      const lines = new Set(result.stdout.split(/\r?\n/))
+      sendJson(res, 200, { ok: true, agents: SSH_AGENTS.filter(({ id }) => lines.has('__td_agent__' + id)) })
+    } catch (error) {
+      sendJson(res, 502, { ok: false, error: { message: errorMessage(error).slice(0, 500) } })
     }
   })
 

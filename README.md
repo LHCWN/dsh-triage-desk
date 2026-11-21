@@ -89,22 +89,16 @@ After editing the host half, quit and reopen DSH, then refresh the page; see
 
 ## Launching agents
 
-Open the terminal button on a row or section header. The scenario picker starts
-on **Review this PR** for a first review, **Re-review after changes** for a repeat
-review, or **Triage this issue** for a new or assigned issue. A saved, enabled
-default takes priority on rows where it applies, including **Just the link**.
-An upgraded profile keeps its saved default and scenario bindings. To enable task-based selection, choose **Choose by task** in Settings. If your saved **Triage this issue** scenario applies only to new issues, add **Needs your action** to use it for assigned issues. You can change the scenario before choosing either action.
+Open the terminal button on a row or section. The **Prompt** field contains the
+configured template filled in for this task. First reviews, re-reviews and issues
+use their respective templates. Change reusable instructions in **Settings →
+Agents**. You can edit the draft for this launch without changing its template.
+Choose the local computer or an SSH host, then an agent. Switching machines keeps
+your edits. **Open** delivers the draft without sending it. **Copy prompt** copies
+your edited text and the row's **Copy link** copies the URL. An inbox refresh keeps
+your open draft and its original items. Reopen the editor to use the updated list.
 
-- **Copy prompt** copies the rendered text for use in an existing session.
-  It includes your edited instructions and the same links, order and size limit
-  as a launch. If the clipboard is unavailable, copy the selected text in the
-  menu. The row's **Copy link** button still copies just its URL.
-- **Prepare draft** opens the selected scenario in DSH, a local agent or a
-  saved SSH destination. Group scenarios use the visible, unsnoozed rows in
-  the group whose menu you opened. You decide when to send the draft.
-
-When the picker shows **Review 3 PRs**, copying or preparing the prompt includes
-those three first reviews, even in **All**.
+Opening the first-review group includes its visible first reviews, even in **All**.
 Re-reviews have their own action. Their group prompt gives the reason for each
 PR and directs the agent to read author replies even when the diff is empty.
 **Feedback on my PRs** offers replies.
@@ -125,28 +119,18 @@ tagged `[P1]`–`[P3]`, and never approve. The fix and reply scenarios wait for 
 OK before pushing or posting; triage only reports back. None of them add AI
 attribution.
 
-**SSH destinations.** Under **Settings → Terminal and agents → SSH destinations**,
-add your OpenSSH alias, preferred agent, and any alternative agents you want to use
-on that server. Under **Repository folders**, enter one absolute remote path per
-line. Save, then use **Find repositories** to see GitHub repository names and
-paths. This optional search uses non-interactive SSH. Local repository folders
-have their own search and keep their existing settings.
+**SSH destinations.** Under **Settings → Launch environments**, choose a host from
+your OpenSSH config or type its alias. **Check connection** tests the selected
+host and lists installed agents before saving. Set a preferred agent and enter
+one repository folder per line, such as `~/projects` or `/srv/git`. Home paths
+resolve on the server. Save the folders and use **Find repositories** to inspect
+the GitHub repositories found there.
 
-<img src="docs/screenshots/settings-launch.png" width="691" alt="Terminal and agents settings with Ghostty selected, prompt delivery options, and the Add destination button for SSH">
-
-At launch, the terminal matches the included PRs’ `owner/repo` against Git
-remotes in those folders, including a fork’s `upstream` and literal GitHub host
-aliases in the server’s SSH config. If several working copies
-match, choose a path and optionally remember it for this repository and alias.
-Each launch checks the remembered path against the current matches. With no match,
-or for a review spanning repositories, the terminal explains the fallback and
-shows the first accessible configured folder, or your remote home. The launcher
-never clones a repository.
-
-If the preferred agent is missing, the terminal names the server and agent.
-Enter an available alternative’s name to open the same draft in the same folder,
-or press Enter for a remote shell. When none is available, the shell opens
-directly. The panel keeps the scenario selected.
+At launch, Git remotes identify the working copy, including forks with an
+`upstream` remote. When several copies match, choose one and optionally remember
+it. When none match, the terminal asks for a folder and shows the path Enter
+will accept. An unavailable agent prompts for recovery in the same session.
+Opening an ordinary shell requires your choice.
 
 A failed connection offers a retry in the same terminal with the same draft.
 If you leave before the agent starts, the launcher tries to delete its private
@@ -156,7 +140,7 @@ reconnecting. A force-closed launcher can also leave a staging file named
 `.triage-desk-<uuid>.sh` in your remote home directory.
 
 The local machine needs OpenSSH. The server needs a POSIX shell, a writable home
-directory and Git for repository discovery. Agent lookup uses the SSH command PATH. Claude Code uses its native
+directory and Git for repository discovery. The probe and launcher read the PATH from your interactive shell. Claude Code uses its native
 `--prefill` flag, which puts the prompt in its command-line arguments. On a
 shared server, users who can inspect that process can read the draft. To keep
 it out of the process list, open Claude yourself and use **Copy prompt**.
@@ -166,7 +150,7 @@ and then paste into the remote agent. Time spent at a recognized folder-trust di
 Remote agents start with their own default permissions. You can use **Copy prompt**
 with any agent, including in an SSH session you already have open.
 
-**Terminals.** Settings → *Terminal and agents* → **Open agents in** offers
+**Terminals.** Settings → *Launch environments* → **Open agents in** offers
 *Automatic* or one of this platform's terminals; terminals that are not installed
 are shown disabled.
 
@@ -177,7 +161,7 @@ are shown disabled.
 | Windows | Windows Terminal, PowerShell window | Windows Terminal when installed |
 
 iTerm2, Ghostty (macOS), GNOME Terminal, Konsole, Xfce Terminal, and Windows
-Terminal open a tab; the others open a window per launch. A saved terminal that
+Terminal open a fresh tab for each draft; the others open a window per launch. A saved terminal that
 is not installed falls back to Automatic. The toast reports this for both local
 and SSH launches.
 
@@ -233,7 +217,7 @@ available while you save. The most used fields:
 | `requireGreenChecks` | `true` | Turn off to allow otherwise eligible PRs with pending or failing checks in *Ready to merge*. PRs GitHub marks `BLOCKED` are excluded with either setting. |
 | `defaultAgent` | `dsh` | Target selected in the launch menu: `dsh` (a new DSH chat) or an agent id |
 | `defaultScenario` | empty | Choose by task, or save an applicable row scenario ID |
-| `sshServers` | `[]` | SSH alias, preferred `agent`, optional `alternatives` and ordered absolute `folders`. An existing `cwd` is read as one folder. |
+| `sshServers` | `[]` | SSH alias, preferred `agent`, optional `alternatives` and ordered remote `folders` (absolute or `~/…`). An existing `cwd` is read as one folder. |
 | `terminal` | `auto` | Terminal for launches: `auto` or a terminal id |
 | `promptDelivery` | `paste` | `paste` (type into the agent) or `clipboard` |
 

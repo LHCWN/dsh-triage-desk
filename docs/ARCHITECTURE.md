@@ -157,6 +157,8 @@ import the launcher layer only through `launcher.js` and the data layer through
     Settings (`GET /triage-desk/clones?sshAlias=…`), including literal GitHub
     aliases from the server's SSH config. `ssh-select-folder.sh` resolves
     the working copy or fallback and stores remembered choices in the remote home.
+    `ssh-environment.sh` obtains the interactive shell PATH for both the launch and
+    the on-demand `POST /triage-desk/ssh/check` host probe.
     `ssh-select-agent.sh` probes the preferred executable in that directory, offers
     configured alternatives on a miss, and can leave the user in a remote shell.
     The host knows the actual working directory only for local launches.

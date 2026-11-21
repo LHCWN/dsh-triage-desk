@@ -54,13 +54,6 @@ export const SCENARIO_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/
  */
 export const BUILTIN_SCENARIOS = [
   {
-    id: 'link',
-    scope: 'item',
-    sections: SCENARIO_SECTION_IDS.slice(),
-    prompt: '{url}',
-    agent: 'default',
-  },
-  {
     id: 'review-pr',
     scope: 'item',
     sections: ['review'],
@@ -264,7 +257,7 @@ const AGENT_ID_PLACEHOLDER = 'default'
 
 /**
  * Lenient normalization for hand-edited config: never throws, drops entries it
- * cannot repair, and always keeps the protected `link` scenario first.
+ * cannot repair, and migrates the former link-only default.
  */
 export function normalizeScenarios(input, { upgradeFeedback = false } = {}) {
   try {
@@ -278,7 +271,8 @@ export function normalizeScenarios(input, { upgradeFeedback = false } = {}) {
       seen.add(id)
       const builtin = BUILTIN_SCENARIO_MAP.get(id)
       const label = typeof raw.label === 'string' ? raw.label.trim().slice(0, MAX_SCENARIO_LABEL) : ''
-      if (builtin === undefined && label === '') continue
+      const legacyLink = id === DEFAULT_SCENARIO_ID
+      if (!legacyLink && builtin === undefined && label === '') continue
       const scope = raw.scope === 'section' ? 'section' : 'item'
       const sections = []
       if (Array.isArray(raw.sections)) {
@@ -295,6 +289,7 @@ export function normalizeScenarios(input, { upgradeFeedback = false } = {}) {
       // available on those PRs until the user edits their section bindings.
       if (upgradeFeedback && sections.includes('respond') && !sections.includes('feedback')) sections.push('feedback')
       let prompt = typeof raw.prompt === 'string' ? normalizePromptText(raw.prompt) : ''
+      if (legacyLink && prompt === '') prompt = '{url}'
       if (prompt === '' || prompt.length > MAX_SCENARIO_TEMPLATE) {
         if (builtin === undefined) continue
         prompt = builtin.prompt
@@ -309,24 +304,14 @@ export function normalizeScenarios(input, { upgradeFeedback = false } = {}) {
         agent = AGENT_ID_PLACEHOLDER
       }
       const enabled = typeof raw.enabled === 'boolean' ? raw.enabled : true
+      // An empty saved prompt meant “use the built-in {url}”. Keep it as a
+      // custom template when any other normalized setting differs from stock.
+      if (legacyLink && !label && prompt === '{url}' && scope === 'item' && agent === AGENT_ID_PLACEHOLDER &&
+        enabled && sections.length === SCENARIO_SECTION_IDS.length) continue
       scenarios.push({ id, label, scope, sections, prompt, agent, enabled })
       if (scenarios.length >= MAX_SCENARIOS) break
     }
-    for (const entry of scenarios) {
-      if (entry.id === DEFAULT_SCENARIO_ID) entry.scope = 'item'
-    }
-    let link = scenarios.find((entry) => entry.id === DEFAULT_SCENARIO_ID)
-    if (link === undefined) {
-      link = defaultScenarios().find((entry) => entry.id === DEFAULT_SCENARIO_ID)
-      scenarios.unshift(link)
-      if (scenarios.length > MAX_SCENARIOS) scenarios.length = MAX_SCENARIOS
-    } else {
-      scenarios.splice(scenarios.indexOf(link), 1)
-      scenarios.unshift(link)
-    }
-    link.enabled = true
-    if (!link.prompt.includes('{url}')) link.prompt = BUILTIN_SCENARIO_MAP.get(DEFAULT_SCENARIO_ID).prompt
-    return scenarios
+    return scenarios.length ? scenarios : defaultScenarios()
   } catch {
     return defaultScenarios()
   }
@@ -357,7 +342,7 @@ export function validateScenario(scenario, agents) {
   if (label.length > MAX_SCENARIO_LABEL) {
     return { ok: false, error: `scenario "${id}": label must be up to ${MAX_SCENARIO_LABEL} characters` }
   }
-  if (!builtin && label === '') return { ok: false, error: `scenario "${id}": a custom scenario needs a label` }
+  if (!builtin && id !== DEFAULT_SCENARIO_ID && label === '') return { ok: false, error: `scenario "${id}": a custom scenario needs a label` }
   if (input.scope !== 'item' && input.scope !== 'section') {
     return { ok: false, error: `scenario "${id}": scope must be "item" or "section"` }
   }
@@ -387,11 +372,6 @@ export function validateScenario(scenario, agents) {
     return { ok: false, error: `scenario "${id}": agent must be "default" or a configured agent id` }
   }
   if (typeof input.enabled !== 'boolean') return { ok: false, error: `scenario "${id}": enabled must be a boolean` }
-  if (id === DEFAULT_SCENARIO_ID) {
-    if (input.scope !== 'item') return { ok: false, error: `scenario "${DEFAULT_SCENARIO_ID}" must stay a row scenario` }
-    if (input.enabled !== true) return { ok: false, error: `scenario "${DEFAULT_SCENARIO_ID}" must stay enabled` }
-    if (!prompt.includes('{url}')) return { ok: false, error: `scenario "${DEFAULT_SCENARIO_ID}" must contain {url}` }
-  }
   return { ok: true }
 }
 

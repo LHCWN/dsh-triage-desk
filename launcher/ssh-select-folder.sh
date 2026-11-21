@@ -2,7 +2,7 @@
 fallback=
 chosen=
 for root do
-  fallback=$(cd -P "$root" 2>/dev/null && pwd -P) && break
+  fallback=$(enter_folder "$root" 2>/dev/null && pwd -P) && break
 done
 
 if [ -z "$repo" ]; then
@@ -59,10 +59,16 @@ else
   fi
 fi
 if [ -z "$chosen" ]; then
-  if [ -n "$fallback" ] && cd -P "$fallback"; then
-    printf 'Using first accessible repository folder: %s\n' "$(pwd -P)"
+  fallback=${fallback:-$HOME}
+  if [ -n "$repo" ]; then
+    while :; do
+      printf 'Enter a folder, or press Enter to continue in %s (Ctrl-D to cancel): ' "$fallback"
+      IFS= read -r folder || exit 0
+      if enter_folder "${folder:-$fallback}"; then break; fi
+      printf 'Folder is inaccessible: %s\n' "${folder:-$fallback}"
+    done
   else
-    cd -P "$HOME"
-    printf 'No configured repository folder is accessible. Using home: %s\n' "$(pwd -P)"
+    enter_folder "$fallback"
   fi
+  printf 'Working folder: %s\n' "$(pwd -P)"
 fi

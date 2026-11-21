@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs'
+import { promises as fs, readFileSync } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { AGENT_PRESETS } from './agents.js'
 import { agentExecutable, shellQuote } from './agent-command.js'
@@ -12,6 +14,58 @@ const scanScript = readFileSync(new URL('./ssh-repositories.sh', import.meta.url
 const selectFolder = readFileSync(new URL('./ssh-select-folder.sh', import.meta.url), 'utf8')
 const selectAgent = readFileSync(new URL('./ssh-select-agent.sh', import.meta.url), 'utf8')
 
+const environment = 'agent_names=' + shellQuote(SSH_AGENTS.map(({ id }) => id).join(' ')) + '\n' +
+  readFileSync(new URL('./ssh-environment.sh', import.meta.url), 'utf8')
+export const SSH_ALIAS = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/
+
+// OpenSSH resolves the connection settings when the user selects a named host.
+export async function configuredSshHosts(home = os.homedir()) {
+  const directory = path.join(home, '.ssh')
+  const aliases = new Set()
+  const visited = new Set()
+  async function read(file) {
+    if (visited.has(file) || visited.size >= 64) return
+    visited.add(file)
+    let contents
+    try {
+      const stat = await fs.stat(file)
+      if (!stat.isFile() || stat.size > 1024 * 1024) return
+      contents = await fs.readFile(file, 'utf8')
+    } catch { return }
+    for (const line of contents.split(/\r?\n/)) {
+      const directive = /^\s*(Host|Include)(?:\s*=\s*|\s+)([^#]+)/i.exec(line)
+      if (!directive) continue
+      const words = directive[2].match(/"[^"]*"|'[^']*'|[^\s]+/g) || []
+      for (const word of words) {
+        const value = word.replace(/^["']|["']$/g, '')
+        if (directive[1].toLowerCase() === 'host') {
+          if (SSH_ALIAS.test(value)) aliases.add(value)
+        } else {
+          const pattern = value.startsWith('~/') ? path.join(home, value.slice(2)) : path.resolve(directory, value)
+          if (!pattern.includes('*') && !pattern.includes('?')) await read(pattern)
+          else if (fs.glob) {
+            try {
+              for await (const match of fs.glob(pattern)) {
+                if (visited.size >= 64) break
+                await read(match)
+              }
+            } catch { /* an unavailable Include contributes no hosts */ }
+          }
+        }
+      }
+    }
+  }
+  await read(path.join(directory, 'config'))
+  return [...aliases].sort()
+}
+
+export function sshAgentProbe(alias) {
+  if (!SSH_ALIAS.test(alias)) throw new Error('Invalid SSH host alias')
+  const probe = environment + '\nfor agent in ' + SSH_AGENTS.map(({ id }) => id).join(' ') +
+    '; do if agent_available "$agent"; then printf "__td_agent__%s\\n" "$agent"; fi; done'
+  return ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', '--', alias, 'sh -c ' + shellQuote(probe)]
+}
+
 function repositoryFolders(server) {
   return server.folders ?? (server.cwd === undefined ? [] : [server.cwd])
 }
@@ -23,15 +77,15 @@ export function sshRepositoryScan(server) {
 }
 
 function sshServerError(server, previous) {
-  if (!server || typeof server.alias !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(server.alias)) {
+  if (!server || typeof server.alias !== 'string' || !SSH_ALIAS.test(server.alias)) {
     return 'SSH destinations need a literal host alias'
   }
   if (previous.some((entry) => entry.alias.toLowerCase() === server.alias.toLowerCase())) return 'duplicate SSH alias'
   if (!SSH_AGENTS.some((agent) => agent.id === server.agent)) return 'unknown remote agent'
   const folders = repositoryFolders(server)
   if (!Array.isArray(folders) || folders.length > 8 || folders.some((folder) =>
-    typeof folder !== 'string' || !folder.startsWith('/') || /[\x00-\x1f\x7f]/.test(folder) || folder.length > 1024)) {
-    return 'SSH repository folders must be a list of up to eight absolute paths'
+    typeof folder !== 'string' || !(folder.startsWith('/') || folder === '~' || folder.startsWith('~/')) || /[\x00-\x1f\x7f]/.test(folder) || folder.length > 1024)) {
+    return 'SSH repository folders must be a list of up to eight absolute paths or paths starting with ~/'
   }
   if (server.alternatives !== undefined && (!Array.isArray(server.alternatives) ||
     server.alternatives.some((id) => !SSH_AGENTS.some((agent) => agent.id === id)))) return 'unknown remote alternative'
@@ -85,18 +139,24 @@ export function buildSshScripts(server, prompt, platform, repo = '') {
     'native_agents=' + shellQuote(native.map((entry) => agentExecutable(entry.command, 'linux')).join(' ')),
     'paste_allowed=' + (pasteAllowed ? 'yes' : 'no'),
     'set -- ' + alternatives.map(executable).join(' '),
-    selectAgent,
+    environment, selectAgent,
     "trap ':' INT",
     'case "$agent" in',
   ]
   for (const entry of native) {
-    remote.push(executable(entry) + ') "$agent" ' + shellQuote(entry.draftFlag) + ' ' + shellQuote(prompt)
-      + ' || printf "Agent exited with status %s\\n" "$?" >&2 ;;')
+    remote.push(executable(entry) + ')',
+      'export TD_DRAFT=' + shellQuote(prompt),
+      'if agent_executable "$agent"; then',
+      '  "$agent" ' + shellQuote(entry.draftFlag) + ' "$TD_DRAFT"',
+      'else',
+      '  "$user_shell" "$shortcut_mode" ' + shellQuote(agentExecutable(entry.command, 'linux') + ' ' + entry.draftFlag + ' "$TD_DRAFT"'),
+      'fi || printf "Agent exited with status %s\\n" "$?" >&2 ;;')
   }
   if (pasteAllowed && candidates.some((entry) => !entry.draftFlag)) {
     remote.push('*)', 'umask 077', 'prompt_file=$(mktemp)', 'trap \'rm -f "$prompt_file"\' EXIT',
       'printf %s ' + shellQuote(prompt) + ' > "$prompt_file"',
-      'python3 -I -c ' + shellQuote(PASTE_WRAPPER_PY) + ' --remote "$prompt_file" "$agent" ;;')
+      'if agent_executable "$agent"; then set -- "$agent"; else set -- "$user_shell" "$shortcut_mode" "$agent"; fi',
+      'python3 -I -c ' + shellQuote(PASTE_WRAPPER_PY) + ' --remote "$prompt_file" "$@" ;;')
   }
   remote.push('esac')
   const mode = preset.draftFlag ? 'draft' : 'paste'

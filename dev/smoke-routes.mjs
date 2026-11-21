@@ -124,6 +124,10 @@ function fakeHandle(exitCode, stdout, stderr) {
 
 function fakeSpawn(spec) {
   const argv = spec.argv
+  if (argv[0] === 'ssh' && argv.includes('ConnectTimeout=8')) {
+    assert.equal(argv.at(-2), 'unsaved-host')
+    return fakeHandle(0, 'login banner\n__td_agent__claude\n__td_agent__codex\n', '')
+  }
   if (argv[0] === 'ssh') {
     assert.deepEqual(argv.slice(0, -1), ['ssh', '-T', '-o', 'BatchMode=yes', '--', 'builder'])
     assert.ok(argv.at(-1).includes('/work/remote'))
@@ -313,7 +317,7 @@ await recordAsync('config GET exposes launcher settings, scenarios, and detectio
   const payload = await json(res)
   assert.equal(payload.config.promptTemplate, undefined)
   assert.equal(payload.config.defaultAgent, 'claude')
-  assert.equal(payload.config.defaultScenario, 'link')
+  assert.equal(payload.config.defaultScenario, '')
   assert.equal(payload.config.agents.length, 3)
   assert.equal(payload.config.agents[0].draftFlag, '--prefill')
   assert.equal(payload.config.detectedAgents.claude.available, true)
@@ -325,13 +329,7 @@ await recordAsync('config GET exposes launcher settings, scenarios, and detectio
   assert.ok(Array.isArray(payload.config.cloneDirsDefault))
   assert.equal(payload.config.editable, true)
   assert.equal(payload.config.scenarios.length, defaultScenarios().length + customScenarios.length)
-  const link = payload.config.scenarios[0]
-  assert.equal(link.id, 'link')
-  assert.equal(link.label, '')
-  assert.equal(link.scope, 'item')
-  assert.equal(link.prompt, '{url}')
-  assert.equal(link.enabled, true)
-  assert.deepEqual(link.sections, SCENARIO_SECTION_IDS)
+  assert.ok(payload.config.scenarios.every(({ id }) => id !== 'link'))
   const custom = payload.config.scenarios.find((scenario) => scenario.id === 'custom-review')
   assert.equal(custom.label, 'Custom review')
   assert.equal(custom.agent, 'default')
@@ -339,7 +337,7 @@ await recordAsync('config GET exposes launcher settings, scenarios, and detectio
   assert.equal(payload.config.supportsAgentDiscovery, true)
   assert.ok(Array.isArray(payload.config.scenarioDefaults))
   assert.equal(payload.config.scenarioDefaults.length, defaultScenarios().length)
-  assert.equal(payload.config.scenarioDefaults[0].id, 'link')
+  assert.equal(payload.config.scenarioDefaults[0].id, 'review-pr')
   assert.equal(payload.config.scenarioDefaults[0].label, '')
   assert.deepEqual(payload.limits.refreshSeconds, { min: 15, max: 3600, default: 1200 })
   assert.equal(payload.limits.scenarios, MAX_SCENARIOS)
@@ -367,7 +365,7 @@ await recordAsync('SSH launches resolve only saved destinations and use the remo
   await cleanupLaunches()
 })
 
-await recordAsync('launch without a scenario uses the link scenario', async () => {
+await recordAsync('launch without a scenario uses its task template', async () => {
   captured.opens.length = 0
   const res = await callHandler('/triage-desk/launch', 'POST', {
     url: PR_URL,
@@ -384,7 +382,7 @@ await recordAsync('launch without a scenario uses the link scenario', async () =
   assert.equal(payload.cwd, cloneDir)
   assert.ok(captured.opens.length >= 1)
   assert.equal(payload.mode, 'draft')
-  assert.deepEqual(payload.scenario, { id: 'link', label: 'Just the link' })
+  assert.equal(payload.scenario.id, 'review-pr')
   assert.equal(payload.count, 1)
   assert.equal(payload.trimmed, null)
   assert.equal(payload.cwdMode, 'clone')
@@ -398,7 +396,7 @@ await recordAsync('launch without a scenario uses the link scenario', async () =
   const launcherFile = argv[3]
   const script = await fs.readFile(launcherFile, 'utf8')
   assert.ok(script.includes('cd -- ' + "'" + cloneDir + "'"))
-  assert.ok(script.includes("claude --dangerously-skip-permissions --prefill " + "'" + PR_URL + "'"))
+  assert.ok(script.includes("claude --dangerously-skip-permissions --prefill 'Review pull request " + PR_URL))
   assert.ok(!script.includes('ZDOTDIR'))
   await cleanupLaunches()
 })
@@ -414,7 +412,7 @@ await recordAsync('agents without a native draft flag fall back to the clipboard
   const payload = await json(res)
   assert.equal(res.statusCode, 200)
   assert.equal(payload.mode, 'clipboard')
-  assert.equal(captured.clipboard, PR_URL)
+  assert.ok(captured.clipboard.startsWith('Review pull request ' + PR_URL))
   const argv = captured.opens.find((entry) => entry.length === 4)
   const script = await fs.readFile(argv[3], 'utf8')
   assert.ok(script.includes('\n/opt/homebrew/bin/codex --dangerously-bypass-approvals-and-sandbox\n'), 'the detected binary is launched by path')
@@ -577,6 +575,24 @@ await recordAsync('a trimmed group chooses a working directory from the reposito
   }
 })
 
+await recordAsync('an unsaved SSH host can be checked independently of repository folders', async () => {
+  const result = await callHandler('/triage-desk/ssh/check', 'POST', { alias: 'unsaved-host' })
+  assert.equal(result.statusCode, 200)
+  assert.deepEqual((await json(result)).agents.map(({ id }) => id), ['claude', 'codex'])
+  assert.equal((await callHandler('/triage-desk/ssh/check', 'POST', { alias: '-V' })).statusCode, 400)
+})
+
+await recordAsync('a cold issue uses its issue template and edited drafts reach the launcher verbatim', async () => {
+  const url = 'https://github.com/acme/widgets/issues/321'
+  const preview = await callHandler('/triage-desk/prompt', 'POST', { url })
+  assert.equal((await json(preview)).scenario.id, 'triage-issue')
+  const draft = 'Check this migration.\n\n' + url
+  const response = await callHandler('/triage-desk/launch', 'POST', { url, draft, agent: 'codex' })
+  assert.equal(response.statusCode, 200)
+  assert.equal(captured.clipboard, draft)
+  await cleanupLaunches()
+})
+
 await recordAsync('an unknown scenario is rejected with bad-scenario', async () => {
   const res = await callHandler('/triage-desk/launch', 'POST', { url: PR_URL, scenario: 'no-such-scenario' })
   assert.equal(res.statusCode, 400)
@@ -702,8 +718,11 @@ await recordAsync('section launch payload errors are classified', async () => {
 })
 
 await recordAsync('unknown URL, unknown agent, and a missing binary are rejected', async () => {
-  const badUrl = await json(await callHandler('/triage-desk/launch', 'POST', { url: 'https://example.com/x', agent: 'claude' }))
-  assert.equal(badUrl.error.code, 'bad-url')
+  for (const url of ['not a URL', 'https://example.com/x', { invalid: true }]) {
+    const response = await callHandler('/triage-desk/launch', 'POST', { url, agent: 'claude' })
+    assert.equal(response.statusCode, 400)
+    assert.equal((await json(response)).error.code, 'bad-url')
+  }
   const unknown = await json(await callHandler('/triage-desk/launch', 'POST', { url: PR_URL, agent: 'nope' }))
   assert.equal(unknown.error.code, 'unknown-agent')
   const missing = await json(await callHandler('/triage-desk/launch', 'POST', { url: PR_URL, agent: 'missing' }))
@@ -766,10 +785,6 @@ const scenarioBase = () => [
 ]
 
 await recordAsync('config POST rejects invalid scenarios', async () => {
-  const linkDisabled = defaultScenarios().map((scenario) => (scenario.id === 'link' ? { ...scenario, enabled: false } : scenario))
-  const linkNoUrl = defaultScenarios().map((scenario) =>
-    scenario.id === 'link' ? { ...scenario, prompt: 'no link token' } : scenario,
-  )
   const tooMany = scenarioBase()
   for (let index = 0; index < MAX_SCENARIOS; index += 1) {
     tooMany.push({
@@ -790,16 +805,13 @@ await recordAsync('config POST rejects invalid scenarios', async () => {
     ['relative remote cwd', { sshServers: [{ alias: 'build', agent: 'claude', cwd: 'work' }] }],
     ['scenarios is not an array', { scenarios: 'nope' }],
     ['empty scenario list', { scenarios: [] }],
-    ['bad id', { scenarios: [...defaultScenarios(), { ...scenarioBase()[10], id: 'Bad Id' }] }],
-    ['custom without label', { scenarios: [...defaultScenarios(), { ...scenarioBase()[10], label: '   ' }] }],
-    ['empty sections', { scenarios: [...defaultScenarios(), { ...scenarioBase()[10], sections: [] }] }],
-    ['oversized prompt', { scenarios: [...defaultScenarios(), { ...scenarioBase()[10], prompt: 'x'.repeat(MAX_SCENARIO_TEMPLATE + 1) }] }],
-    ['link disabled', { scenarios: linkDisabled }],
-    ['link without url', { scenarios: linkNoUrl }],
-    ['unknown agent', { scenarios: [...defaultScenarios(), { ...scenarioBase()[10], agent: 'nobody' }] }],
-    ['duplicate ids', { scenarios: [...defaultScenarios(), scenarioBase()[10], scenarioBase()[10]] }],
+    ['bad id', { scenarios: [...defaultScenarios(), { ...scenarioBase().at(-1), id: 'Bad Id' }] }],
+    ['custom without label', { scenarios: [...defaultScenarios(), { ...scenarioBase().at(-1), label: '   ' }] }],
+    ['empty sections', { scenarios: [...defaultScenarios(), { ...scenarioBase().at(-1), sections: [] }] }],
+    ['oversized prompt', { scenarios: [...defaultScenarios(), { ...scenarioBase().at(-1), prompt: 'x'.repeat(MAX_SCENARIO_TEMPLATE + 1) }] }],
+    ['unknown agent', { scenarios: [...defaultScenarios(), { ...scenarioBase().at(-1), agent: 'nobody' }] }],
+    ['duplicate ids', { scenarios: [...defaultScenarios(), scenarioBase().at(-1), scenarioBase().at(-1)] }],
     ['too many scenarios', { scenarios: tooMany }],
-    ['missing link scenario', { scenarios: defaultScenarios().filter((scenario) => scenario.id !== 'link') }],
     ['unknown default scenario', { defaultScenario: 'nope' }],
     ['section default scenario', { defaultScenario: 'review-all' }],
     [
@@ -1210,7 +1222,7 @@ await recordAsync('config POST accepts scenarios and a default scenario', async 
   assert.equal(payload.ok, true)
   assert.equal(payload.saved.defaultScenario, 'review-pr')
   assert.equal(payload.saved.scenarios.length, defaultScenarios().length + 1)
-  assert.equal(payload.saved.scenarios[0].id, 'link')
+  assert.equal(payload.saved.scenarios[0].id, 'review-pr')
   const custom = payload.saved.scenarios.find((scenario) => scenario.id === 'custom-test')
   assert.equal(custom.prompt, 'Do {links}\nnow')
   assert.deepEqual(custom.sections, ['issues', 'review'])
@@ -1249,7 +1261,7 @@ await recordAsync('config POST accepts a body larger than the launch limit', asy
       enabled: true,
     })
   }
-  const body = { scenarios, defaultScenario: 'link' }
+  const body = { scenarios, defaultScenario: 'review-pr' }
   assert.ok(Buffer.byteLength(JSON.stringify(body)) > 64 * 1024, 'body must exceed the launch limit')
   const res = await callHandler('/triage-desk/config', 'POST', body)
   assert.equal(res.statusCode, 200)
@@ -1410,7 +1422,7 @@ await recordAsync('tool launch action uses the same launcher', async () => {
   assert.ok(result.text.includes('not been sent'))
   assert.equal(result.launched.mode, 'draft')
   assert.equal(result.launched.cwd, cloneDir)
-  assert.equal(result.launched.scenario.id, 'link')
+  assert.equal(result.launched.scenario.id, 'review-pr')
   assert.equal(result.launched.count, 1)
   assert.ok(captured.opens.length >= 1)
   await cleanupLaunches()

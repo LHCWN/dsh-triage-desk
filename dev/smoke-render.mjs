@@ -482,8 +482,8 @@ function settingsHarness({
           return { top: (layout.triggerBottom ?? 100) - 20, bottom: layout.triggerBottom ?? 100, height: 20 }
         },
         querySelector(selector) {
-          assert.equal(selector, '[role="menuitem"]')
-          const match = flatten(this.node?.props?.children).find((child) => child?.props?.role === 'menuitem')
+          assert.ok(selector === '[role="menuitem"]' || selector === 'select')
+          const match = flatten(this.node?.props?.children).find((child) => selector === 'select' ? child?.type === 'select' : child?.props?.role === 'menuitem')
           return match ? elementFor(nodeKeys.get(match)) : null
         },
       })
@@ -610,6 +610,7 @@ function settingsHarness({
       if (url === '/triage-desk/pick-directory' || url === '/triage-desk/pick-clone') {
         return new Promise((resolve, reject) => pendingPickers.push({ resolve, reject, url }))
       }
+      if (url === '/triage-desk/ssh/check') return Promise.resolve(response(200, { agents: [{ id: 'claude', label: 'Claude Code' }] }))
       if (url === '/triage-desk/clones?refresh=1&sshAlias=old') {
         return Promise.resolve(response(200, { ok: true, clones: [{ repo: 'acme/widgets', path: '/original/fork' }] }))
       }
@@ -631,7 +632,7 @@ function settingsHarness({
               terminal,
               delivery: { mode: 'draft', pasteBlocked: null, platform: 'darwin' },
             }
-          : { ok: true, prompt, trimmed }))
+          : { ok: true, prompt, trimmed, scenario: { id: body.scenario || 'review-pr' } }))
       }
       if (url === '/triage-desk/config' && options.method === 'POST') {
         return new Promise((resolve, reject) => pending.push({ resolve, reject, body: JSON.parse(options.body) }))
@@ -640,7 +641,7 @@ function settingsHarness({
       if (url === '/triage-desk/config' && host.unavailable) return Promise.reject(new Error('restarting'))
       if (url === '/triage-desk/config') return Promise.resolve(response(200, { config, saveError: host.saveError }))
       if (url === '/triage-desk/auth') return Promise.resolve(response(200, { auth: state.auth }))
-      if (url === '/triage-desk/snapshot') {
+      if (url.split('?')[0] === '/triage-desk/snapshot') {
         host.snapshotReads += 1
         // Like the host, the default snapshot reports the saved refresh setting
         // as of when the read started.
@@ -1328,6 +1329,81 @@ for (const labels of [{ sections: { review: 'awaiting my review', rereview: 're-
   harness.dispose()
 }
 
+{
+  const harness = settingsHarness({ snapshotPayload: snapshot, prompt: 'Review this pull request', configExtra: {
+    supportsEditablePrompt: true, sshServers: [{ alias: 'build', agent: 'claude' }], sshAgents: [{ id: 'claude', label: 'Claude Code' }],
+  } })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'launch.title'))
+  await harness.flush()
+  const field = (name, tag) => flattenTree(harness.nodes().find((node) => node.type === 'label' &&
+    node.props.children.includes(name)).props.children).find((node) => node.type === tag)
+  assert.equal(field('launch.prompt', 'textarea').props.value, 'Review this pull request')
+  harness.change(field('launch.prompt', 'textarea'), 'Review only the schema migration')
+  const original = snapshot.sections[0].items[0]
+  harness.host.snapshot = { ...snapshot, sections: snapshot.sections.slice(1).map((section) => section.id === 'rereview'
+    ? { ...section, items: [...section.items, { ...original, section: section.id }] } : section) }
+  await harness.store.load(true)
+  await harness.flush()
+  assert.equal(field('launch.prompt', 'textarea').props.value, 'Review only the schema migration')
+  harness.change(field('launch.machine', 'select'), 'build')
+  await harness.flush()
+  assert.equal(field('launch.prompt', 'textarea').props.value, 'Review only the schema migration')
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('launch.open')))
+  await harness.flush()
+  const request = harness.launches.at(-1)
+  assert.equal(request.url, '/triage-desk/launch')
+  assert.equal(request.body.sshAlias, 'build')
+  assert.equal(request.body.agent, 'claude')
+  assert.equal(request.body.draft, 'Review only the schema migration')
+  assert.equal(request.body.url, original.url)
+  assert.equal(request.body.section, 'review')
+  harness.dispose()
+}
+
+{
+  // A section can still open a generic editable draft after its templates are removed.
+  const harness = settingsHarness({ snapshotPayload: snapshot, scenarios: [], configExtra: { supportsEditablePrompt: true } })
+  await harness.flush()
+  harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'launch.sectionTitle'))
+  await harness.flush()
+  assert.equal(harness.launches[0].body.urls.length, 1)
+  assert.ok(harness.nodes().some((node) => node.type === 'textarea' && !node.props.disabled))
+  assert.ok(harness.text().includes('(1)'))
+  harness.dispose()
+}
+
+{
+  const harness = settingsHarness({ snapshotPayload: snapshot, configExtra: { supportsEditablePrompt: true } })
+  const openGroup = () => harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'launch.sectionTitle'))
+  await harness.flush()
+  openGroup()
+  await harness.flush()
+  const prompt = () => harness.nodes().find((node) => node.type === 'textarea')
+  const original = harness.launches[0].body.urls
+  harness.change(prompt(), 'Review the original group')
+  const added = { ...snapshot.sections[1].items[0], section: 'review', reason: 'review-requested' }
+  harness.host.snapshot = { ...snapshot, sections: snapshot.sections.map((section) => section.id === 'review'
+    ? { ...section, items: [...section.items, added] } : section) }
+  await harness.store.load(true)
+  await harness.flush()
+  assert.equal(prompt().props.value, 'Review the original group')
+  assert.ok(harness.text().includes('(1)'), 'the open draft still targets one item')
+  assert.equal(harness.launches.length, 1)
+  const agent = harness.nodes().find((node) => node.type === 'label' && node.props.children.includes('launch.agent'))
+  harness.change(flattenTree(agent.props.children).find((node) => node.type === 'select'), state.config.agents[0].id)
+  harness.click(harness.nodes().find((node) => node.type === 'button' && node.props.children.includes('launch.open')))
+  await harness.flush()
+  const launched = harness.launches.at(-1)
+  assert.equal(launched.url, '/triage-desk/launch')
+  assert.deepEqual(launched.body.urls, original)
+  assert.equal(launched.body.draft, 'Review the original group')
+  openGroup()
+  await harness.flush()
+  assert.deepEqual(harness.launches.at(-1).body.urls, [...original, added.url])
+  harness.dispose()
+}
+
 function scenarioPicker(harness) {
   return harness.nodes().find((node) => node.type === 'select' && node.props.className === 'adx-select'
     && flattenTree(node.props.children).some((child) => child.type === 'option'))
@@ -1347,7 +1423,7 @@ function menuAction(harness, label) {
     })).filter((scenario) => scenario.sections.length > 0)
     const harness = settingsHarness({ scenarios, configExtra: {
       labels: advertisedSections && { sections: advertisedSections },
-      scenarioDefaults: scenarios,
+      scenarioDefaults: scenarios, defaultScenario: '',
     } })
     await harness.flush()
     harness.click(harness.nodes().find((node) => node.props?.['aria-label'] === 'page.settings'))
@@ -1386,7 +1462,7 @@ function menuAction(harness, label) {
   assert.ok(harness.text().includes('settings.byTask'))
   assert.equal(harness.nodes().find((node) => node.props?.id === 'adx-default-scenario').props.value, '')
   assert.equal(fields('settings.ssh.folders', 'textarea')[0].props.value, '/original')
-  harness.click(action('settings.scan'))
+  harness.click(harness.nodes().filter((node) => node.type === 'button' && node.props.children.includes('settings.scan')).at(-1))
   await harness.flush()
   assert.ok(harness.text().includes('acme/widgets'))
   assert.ok(harness.text().includes('/original/fork'))
@@ -1420,7 +1496,7 @@ function menuAction(harness, label) {
     const triggers = () => flattenTree(harness.nodes().find((node) => node.props?.['data-section'] === 'respond').props.children)
       .filter((node) => node.props?.['aria-label'] === 'launch.title')
     harness.click(triggers()[0])
-    assert.equal(scenarioPicker(harness).props.value, 'link')
+    assert.equal(scenarioPicker(harness).props.value, 'reply-thread')
     assert.ok(!scenarioPicker(harness).props.children.flat().some((node) => node.props.value === 'triage-issue'))
     harness.click(triggers()[1])
     assert.equal(scenarioPicker(harness).props.value, 'triage-issue')

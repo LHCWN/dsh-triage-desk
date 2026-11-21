@@ -4,9 +4,9 @@
 
 ### Added
 
-- Row and group launchers can copy the exact scenario draft. The row launcher preselects review, re-review or issue triage when applicable and respects saved scenario defaults.
-- Save SSH aliases with repository folders and a preferred agent. Remote reviews match working copies by Git remotes, can remember a choice between copies, and show the fallback directory when none matches.
-- Open an unsent draft in the preferred remote agent or choose a configured alternative if it is missing. Declining opens a remote shell. Connection failures offer a retry in the terminal.
+- Preview and edit the task prompt before opening a local or remote agent. Select the machine and agent separately. Copy the exact draft or the row URL.
+- Agents and templates appear first in Settings. Launch environments groups terminal and repository settings with searchable SSH hosts, connection checks and remote agent detection.
+- SSH folders accept `~/projects`. When a checkout is missing, choose a folder before opening the agent. Remote detection uses the interactive shell PATH.
 
 ### Changed
 

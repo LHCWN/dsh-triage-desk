@@ -202,7 +202,7 @@ window.__ModuleLoader__.load({
       'settings.title': 'Settings',
       'settings.subtitle': 'Organization, refresh cadence, section rules, and terminal agents.',
       'settings.githubTitle': 'GitHub',
-      'settings.githubChecking': 'Checking the connection…',
+      'settings.connectionChecking': 'Checking the connection…',
       'settings.githubConnected': 'Connected as @{login}',
       'settings.githubNotLoggedIn': 'Not signed in to GitHub',
       'settings.githubGhMissing': 'GitHub CLI (gh) is not installed',
@@ -212,7 +212,7 @@ window.__ModuleLoader__.load({
       'settings.githubWaiting': 'Finish signing in in the browser or terminal, then press "Check connection".',
       'settings.githubLoginFailed': 'Could not start sign-in: {message}',
       'settings.githubAuthError': 'Could not check authorization: {message}',
-      'settings.githubCheck': 'Check connection',
+      'settings.connectionCheck': 'Check connection',
       'settings.orgs': 'Organizations',
       'settings.orgsPlaceholder': 'my-org, another-org',
       'settings.orgsHint': 'Comma-separated, up to 10; empty auto-detects up to 10 organizations for the account.',
@@ -257,8 +257,21 @@ window.__ModuleLoader__.load({
       'source.personal': 'personal',
       'filter.allSources': 'All sources',
       'settings.loading': 'Reading settings…',
-      'launch.title': 'Open in terminal',
+      'launch.title': 'Open task with an agent',
       'launch.openWith': 'Open with agent',
+      'launch.open': 'Open',
+      'launch.chooseAgent': 'Choose an agent',
+      'launch.tooLong': 'Shorten the draft to 16,000 characters.',
+      'launch.prompt': 'Prompt',
+      'launch.machine': 'Open on',
+      'launch.local': 'This computer',
+      'settings.environments': 'Launch environments',
+      'settings.agentsSection': 'Agents',
+      'settings.manageAgents': 'Configure local agents',
+      'settings.ssh.connected': 'Connected. Available agents: {agents}',
+      'settings.ssh.none': 'None found',
+      'settings.ssh.folderError': 'Line {n}: enter an absolute path or ~/projects.',
+      'settings.ssh.folderLimit': 'Enter up to eight folders.',
       'launch.prepare': 'Prepare draft',
       'launch.copyPrompt': 'Copy prompt',
       'launch.promptCopied': 'Prompt copied',
@@ -268,7 +281,7 @@ window.__ModuleLoader__.load({
       'settings.sshServers': 'SSH destinations',
       'settings.ssh.alias': 'SSH alias',
       'settings.ssh.cwd': 'Remote folder (absolute path)',
-      'settings.ssh.folders': 'Repository folders (one absolute path per line)',
+      'settings.ssh.folders': 'Repository folders (one path per line)',
       'settings.ssh.alternatives': 'Alternative agents',
       'settings.ssh.saveFolders': 'Save the destination and its folders to find repositories.',
       'settings.ssh.scanFailed': 'Could not search this server. Check that SSH can connect without a password prompt.',
@@ -337,7 +350,7 @@ window.__ModuleLoader__.load({
       'settings.terminalAuto': 'Automatic — {app}',
       'settings.terminalAutoNone': 'Automatic',
       'settings.terminalMissing': '{app} (not installed)',
-      'settings.terminalTabs': 'Each launch opens a tab in the current {app} window; launching the same agent on the same item again switches to its tab.',
+      'settings.terminalTabs': 'Each draft opens in a new tab in the current {app} window.',
       'settings.terminalWindows': 'Each launch opens a new {app} window.',
       'settings.promptDelivery': 'Prompt delivery',
       'settings.promptDeliveryHint': 'For agents without a native draft. Claude Code opens with the prompt as its own draft (on Windows only as an .exe that is not a package-manager shim; an npm .cmd install or a Scoop or bun shim gets the prompt this way).',
@@ -356,7 +369,7 @@ window.__ModuleLoader__.load({
       'launch.dshDraft': 'New DSH session opened: the prompt is in the input box and has not been sent — review it and press Enter',
       'launch.dshFailed': 'Could not open a DSH session',
       'launch.dshHostOutdated': 'The plugin host is still an older version: turn the plugin off and on, then refresh the page',
-      'launch.sectionScenarios': 'Section scenarios',
+      'launch.sectionScenarios': 'Open group with agent',
       'meta.optionalReview': 'Optional review',
       'launch.optionalHint': 'Use Select to choose specific PRs, including optional reviews.',
       'launch.replyFeedbackOne': 'Reply to feedback on {n} PR',
@@ -365,7 +378,7 @@ window.__ModuleLoader__.load({
       'launch.review': 'Review {n} PRs',
       'launch.rereviewOne': 'Re-review {n} PR',
       'launch.rereview': 'Re-review {n} PRs',
-      'launch.sectionTitle': 'Open a scenario for this section',
+      'launch.sectionTitle': 'Open a draft for this group',
       'launch.trimmed': ' · prompt trimmed: {shown} of {total}',
       'launch.countSuffix': ' · {n} items',
       'scenario.link.name': 'Just the link',
@@ -378,8 +391,8 @@ window.__ModuleLoader__.load({
       'scenario.fix-mine.name': 'Fix my PRs',
       'scenario.triage-new.name': 'Triage new issues',
       'scenario.reply-mentions.name': 'Answer mentions',
-      'settings.scenarios': 'Launch scenarios',
-      'settings.scenariosHint': 'Named prompt templates for launching an agent from a row or a whole section. Tokens are filled from the row data. Click a scenario to edit it.',
+      'settings.scenarios': 'Prompt templates',
+      'settings.scenariosHint': 'Set the instructions for each task. The first enabled template for the task applies unless you set a default below.',
       'settings.scenarioAdd': 'Add scenario',
       'settings.scenarioRemove': 'Remove scenario',
       'settings.scenarioUp': 'Move up',
@@ -547,7 +560,7 @@ window.__ModuleLoader__.load({
       'settings.title': '设置',
       'settings.subtitle': '组织、刷新频率、分类规则与终端智能体。',
       'settings.githubTitle': 'GitHub',
-      'settings.githubChecking': '正在检查连接…',
+      'settings.connectionChecking': '正在检查连接…',
       'settings.githubConnected': '已连接为 @{login}',
       'settings.githubNotLoggedIn': '尚未登录 GitHub',
       'settings.githubGhMissing': '未安装 GitHub CLI（gh）',
@@ -557,7 +570,7 @@ window.__ModuleLoader__.load({
       'settings.githubWaiting': '请在浏览器或终端中完成登录，然后点击“检查连接”。',
       'settings.githubLoginFailed': '无法开始登录：{message}',
       'settings.githubAuthError': '无法检查授权：{message}',
-      'settings.githubCheck': '检查连接',
+      'settings.connectionCheck': '检查连接',
       'settings.orgs': '组织',
       'settings.orgsPlaceholder': 'my-org, another-org',
       'settings.orgsHint': '以逗号分隔，最多 10 个；留空会自动检测账号所属的最多 10 个组织。',
@@ -602,8 +615,21 @@ window.__ModuleLoader__.load({
       'source.personal': '个人',
       'filter.allSources': '所有来源',
       'settings.loading': '正在读取设置…',
-      'launch.title': '在终端中打开',
+      'launch.title': '用智能体打开任务',
       'launch.openWith': '用智能体打开',
+      'launch.open': '打开',
+      'launch.chooseAgent': '选择智能体',
+      'launch.tooLong': '请将草稿缩短至 16,000 个字符。',
+      'launch.prompt': '提示词',
+      'launch.machine': '打开位置',
+      'launch.local': '本机',
+      'settings.environments': '启动环境',
+      'settings.agentsSection': '智能体',
+      'settings.manageAgents': '配置本机智能体',
+      'settings.ssh.connected': '已连接。可用智能体：{agents}',
+      'settings.ssh.none': '未找到',
+      'settings.ssh.folderError': '第 {n} 行：请输入绝对路径或 ~/projects。',
+      'settings.ssh.folderLimit': '最多可输入八个文件夹。',
       'launch.prepare': '准备草稿',
       'launch.copyPrompt': '复制提示',
       'launch.promptCopied': '已复制提示',
@@ -613,7 +639,7 @@ window.__ModuleLoader__.load({
       'settings.sshServers': 'SSH 目标',
       'settings.ssh.alias': 'SSH 别名',
       'settings.ssh.cwd': '远程目录（绝对路径）',
-      'settings.ssh.folders': '仓库文件夹（每行一个绝对路径）',
+      'settings.ssh.folders': '仓库文件夹（每行一个路径）',
       'settings.ssh.alternatives': '备选智能体',
       'settings.ssh.saveFolders': '请先保存 SSH 目标及其文件夹，再查找仓库。',
       'settings.ssh.scanFailed': '无法搜索此服务器。请检查 SSH 能否在无需输入密码的情况下连接。',
@@ -682,7 +708,7 @@ window.__ModuleLoader__.load({
       'settings.terminalAuto': '自动——{app}',
       'settings.terminalAutoNone': '自动',
       'settings.terminalMissing': '{app}（未安装）',
-      'settings.terminalTabs': '每次启动都会在当前 {app} 窗口中打开一个标签页；在同一条目上再次启动同一智能体会切换到它的标签页。',
+      'settings.terminalTabs': '每份草稿都在当前 {app} 窗口的新标签页中打开。',
       'settings.terminalWindows': '每次启动都会打开一个新的 {app} 窗口。',
       'settings.promptDelivery': '提示传递方式',
       'settings.promptDeliveryHint': '适用于没有原生草稿功能的智能体。Claude Code 以自己的草稿方式打开提示（在 Windows 上仅限不是包管理器包装程序的 .exe；通过 npm 安装的 .cmd 或 Scoop、bun 的包装程序也按此方式接收提示）。',
@@ -701,7 +727,7 @@ window.__ModuleLoader__.load({
       'launch.dshDraft': '已打开新的 DSH 会话：提示已填入输入框，尚未发送——检查后按 Enter',
       'launch.dshFailed': '无法打开 DSH 会话',
       'launch.dshHostOutdated': '插件主机仍是旧版本：请关闭再启用插件，然后刷新页面',
-      'launch.sectionScenarios': '分类场景',
+      'launch.sectionScenarios': '用智能体打开此组',
       'meta.optionalReview': '可选审核',
       'launch.optionalHint': '使用“选择”可指定 PR，包括可选审核。',
       'launch.replyFeedbackOne': '回复 {n} 个 PR 的反馈',
@@ -710,7 +736,7 @@ window.__ModuleLoader__.load({
       'launch.review': '审核 {n} 个 PR',
       'launch.rereviewOne': '复审 {n} 个 PR',
       'launch.rereview': '复审 {n} 个 PR',
-      'launch.sectionTitle': '为此分类打开场景',
+      'launch.sectionTitle': '打开此组的草稿',
       'launch.trimmed': ' · 提示已截断：{shown}/{total}',
       'launch.countSuffix': ' · {n} 项',
       'scenario.link.name': '仅链接',
@@ -723,8 +749,8 @@ window.__ModuleLoader__.load({
       'scenario.fix-mine.name': '修复我的 PR',
       'scenario.triage-new.name': '梳理新任务',
       'scenario.reply-mentions.name': '回复提及',
-      'settings.scenarios': '启动场景',
-      'settings.scenariosHint': '用于从单行或整个分类启动智能体的命名提示模板。占位符会由行数据填充。点击场景即可编辑。',
+      'settings.scenarios': '提示模板',
+      'settings.scenariosHint': '在这里设置各项任务的提示词。默认使用适用于该任务的第一个已启用模板，也可在下方指定默认模板。',
       'settings.scenarioAdd': '添加场景',
       'settings.scenarioRemove': '删除场景',
       'settings.scenarioUp': '上移',
@@ -1145,6 +1171,17 @@ window.__ModuleLoader__.load({
         .adx-row-pills { display: none; }
         .adx-scenario-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
       }
+      .adx-auth { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+      .adx-auth-head, .adx-auth > .adx-form-note { flex-basis: 100%; }
+      .adx-auth > .adx-form-note { order: 1; }
+      .adx-auth-line { flex: 1 1 16em; margin: 0; }
+      .adx-auth-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+      .adx-draft, .adx-draft label, .adx-ssh-fields, .adx-ssh-fields .adx-launch-agent { display: grid; gap: 6px; }
+      .adx-draft textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+      .adx-launch-menu:has(.adx-draft) { width: min(400px, 85vw); max-height: 70vh; overflow-y: auto; }
+      .adx-ssh-fields fieldset { min-width: 0; }
+      .adx-ssh-fields fieldset label { display: inline-flex; margin-right: 12px; }
+      .adx-ssh-fields [role=status]:empty { display: none; }
       .adx-form { display: flex; flex-direction: column; gap: 18px; max-width: 620px; padding-top: 6px; }
       .adx-form-head { display: flex; align-items: center; gap: 8px; }
       .adx-form-head h2 { margin: 0; font-size: 16px; line-height: 24px; font-weight: 500; }
@@ -2816,14 +2853,15 @@ window.__ModuleLoader__.load({
       const [launchError, setLaunchError] = useState(null)
       const [manualPrompt, setManualPrompt] = useState(null)
 
-      const launch = (scenarioId, agentId, sshAlias) => {
+      const launch = (scenarioId, agentId, sshAlias, draft) => {
         if (busy) return
-        setLastLaunch({ scenarioId: scenarioId, agentId: agentId || null, sshAlias })
+        setLastLaunch({ scenarioId: scenarioId, agentId: agentId || null, sshAlias, draft })
         setBusy(true)
         setLaunchError(null)
         const body = buildRequest(scenarioId)
         if (sshAlias) body.sshAlias = sshAlias
-        else if (agentId) body.agent = agentId
+        if (agentId) body.agent = agentId
+        if (draft !== undefined) body.draft = draft
         postJson(LAUNCH_URL, body)
           .then((payload) => {
             store.showToast(launchToastText(t, payload), 'ok')
@@ -2833,12 +2871,13 @@ window.__ModuleLoader__.load({
           .finally(() => setBusy(false))
       }
 
-      const launchDsh = (scenarioId) => {
+      const launchDsh = (scenarioId, draft) => {
         if (busy) return
-        setLastLaunch({ scenarioId: scenarioId, agentId: null, target: DSH_TARGET })
+        setLastLaunch({ scenarioId: scenarioId, agentId: null, target: DSH_TARGET, draft })
         setBusy(true)
         setLaunchError(null)
-        postJson(PROMPT_URL, buildRequest(scenarioId))
+        const prepared = draft ? Promise.resolve(draft) : postJson(PROMPT_URL, buildRequest(scenarioId))
+        prepared
           .then((payload) => {
             store.showToast(startDshDraft(t, payload), 'ok')
             close()
@@ -2850,14 +2889,14 @@ window.__ModuleLoader__.load({
           .finally(() => setBusy(false))
       }
 
-      const copyPrompt = async (scenarioId) => {
+      const copyPrompt = async (scenarioId, draft) => {
         if (busy) return
         setBusy(true)
         setLaunchError(null)
         setManualPrompt(null)
-        setLastLaunch({ scenarioId, target: 'copy' })
+        setLastLaunch({ scenarioId, target: 'copy', draft })
         try {
-          const payload = await postJson(PROMPT_URL, buildRequest(scenarioId))
+          const payload = draft || await postJson(PROMPT_URL, buildRequest(scenarioId))
           try {
             await copyText(payload.prompt)
           } catch {
@@ -2873,19 +2912,19 @@ window.__ModuleLoader__.load({
       }
 
       const retry = () => {
-        if (lastLaunch && lastLaunch.target === 'copy') return copyPrompt(lastLaunch.scenarioId)
-        if (lastLaunch !== null && lastLaunch.target === DSH_TARGET && lastLaunch.scenarioId) {
-          launchDsh(lastLaunch.scenarioId)
+        if (lastLaunch && lastLaunch.target === 'copy') return copyPrompt(lastLaunch.scenarioId, lastLaunch.draft)
+        if (lastLaunch !== null && lastLaunch.target === DSH_TARGET) {
+          launchDsh(lastLaunch.scenarioId, lastLaunch.draft)
           return
         }
         launch(
-          lastLaunch !== null && lastLaunch.scenarioId ? lastLaunch.scenarioId : fallbackScenario,
+          lastLaunch ? lastLaunch.scenarioId : fallbackScenario,
           lastLaunch !== null && lastLaunch.agentId ? lastLaunch.agentId : null,
-          lastLaunch?.sshAlias,
+          lastLaunch?.sshAlias, lastLaunch?.draft,
         )
       }
 
-      return { busy, launchError, setLaunchError, launch, launchDsh, copyPrompt, manualPrompt, setManualPrompt, retry }
+      return { buildRequest, busy, launchError, setLaunchError, launch, launchDsh, copyPrompt, manualPrompt, setManualPrompt, retry }
     }
 
     /**
@@ -2914,7 +2953,7 @@ window.__ModuleLoader__.load({
         document.addEventListener('keydown', onKeyDown)
         const menu = menuRef.current
         if (focusFirst === true && menu !== null) {
-          const firstItem = menu.querySelector('[role="menuitem"]')
+          const firstItem = menu.querySelector('[role="menuitem"]') || menu.querySelector('select')
           if (firstItem !== null && typeof firstItem.focus === 'function') firstItem.focus()
         }
         if (typeof onFlip === 'function' && menu !== null && triggerRef.current !== null) {
@@ -3062,6 +3101,89 @@ window.__ModuleLoader__.load({
           },
           options,
         ),
+      )
+    }
+
+    function DraftEditor({ t, config, actions, targets, count, group }) {
+      const textArea = useRef(null)
+      useEffect(() => {
+        if (actions.manualPrompt !== null) {
+          textArea.current?.focus()
+          textArea.current?.select()
+        }
+      }, [actions.manualPrompt])
+      const [machine, setMachine] = useState('')
+      const [choice, setChoice] = useState('')
+      const [probe, setProbe] = useState(null)
+      const [draft, setDraft] = useState(null)
+      const [error, setError] = useState('')
+      const [attempt, setAttempt] = useState(0)
+      const empty = count === 0
+      const request = actions.buildRequest()
+      const identity = JSON.stringify([request.section, request.url || request.urls])
+      useEffect(() => {
+        let current = true
+        setDraft(null)
+        setError('')
+        if (!empty) postJson(PROMPT_URL, request).then((payload) => {
+          if (current) setDraft({ ...payload, identity })
+        }).catch((failure) => { if (current) setError(failure.message) })
+        return () => { current = false }
+      }, [identity, empty, attempt])
+      useEffect(() => {
+        if (!machine) return undefined
+        let current = true
+        postJson('/triage-desk/ssh/check', { alias: machine }).then(({ agents }) => {
+          if (current) setProbe({ machine, agents })
+        }).catch((failure) => { if (current) setProbe({ machine, error: failure.message }) })
+        return () => { current = false }
+      }, [machine])
+
+      const server = targets.servers.find(({ alias }) => alias === machine)
+      const checked = probe?.machine === machine ? probe : null
+      const configured = new Set([server?.agent, ...(server?.alternatives || [])])
+      const remoteAgents = checked?.agents || configList(config, 'sshAgents').filter(({ id }) => configured.has(id))
+      const template = configList(config, 'scenarios').find(({ id }) => id === draft?.scenario.id)
+      const pinned = template && scenarioPinnedAgent(template, targets.agents)
+      const preferred = server ? server.agent : pinned?.id || targets.selected
+      const options = server ? remoteAgents.map(({ id, label }) => h('option', { key: id, value: id }, label)) :
+        [...(targets.dsh ? [h('option', { key: DSH_TARGET, value: DSH_TARGET }, t('launch.dshTarget'))] : []),
+          ...agentOptions(t, targets.ordered, targets.detected)]
+      const offered = server ? remoteAgents.map(({ id }) => id) :
+        [...(targets.dsh ? [DSH_TARGET] : []), ...targets.ordered.map(({ id }) => id)]
+      const selected = [choice, preferred].find((id) => offered.includes(id)) || (server ? '' : offered[0]) || ''
+      const busy = actions.busy
+      const tooLong = draft && Array.from(draft.prompt).length > 16000
+      const ready = draft?.identity === identity && draft.prompt.trim() && !tooLong && count !== 0
+      const open = () => {
+        const id = draft.scenario.id || undefined
+        if (!server && selected === DSH_TARGET) actions.launchDsh(id, draft)
+        else actions.launch(id, selected, server?.alias, draft.prompt)
+      }
+      return h('div', { className: 'adx-draft' },
+        targets.servers.length > 0 && h('label', null, t('launch.machine'),
+          h('select', { className: 'adx-select', value: machine, disabled: busy, onChange: (event) => {
+            setMachine(event.target.value)
+            setChoice('')
+            setProbe(null)
+          } }, h('option', { value: '' }, t('launch.local')), targets.servers.map(({ alias }) =>
+            h('option', { key: alias, value: alias }, 'SSH · ' + alias)))),
+        h('label', null, t('launch.agent'), h('select', { className: 'adx-select', value: selected, disabled: busy,
+          onChange: (event) => setChoice(event.target.value) },
+          !selected && h('option', { value: '', disabled: true }, t('launch.chooseAgent')), options)),
+        checked?.error && h('span', { className: 'adx-form-note', role: 'status' }, checked.error),
+        server && checked?.agents?.length === 0 && h('span', { role: 'status' }, t('launch.noAgents')),
+        group && draft && h('span', { className: 'adx-form-note' }, batchActionLabel(t, template || draft.scenario, group, count)),
+        h('label', null, t('launch.prompt'), h('textarea', { className: 'adx-textarea', rows: 6, ref: textArea,
+          value: draft?.identity === identity ? draft.prompt : '', disabled: busy || draft?.identity !== identity,
+          onChange: (event) => setDraft({ ...draft, prompt: event.target.value }) })),
+        tooLong && h('div', { role: 'alert' }, t('launch.tooLong')),
+        error && h('div', { role: 'alert' }, error, outlineButton(t('launch.retry'), () => setAttempt(attempt + 1))),
+        !server && launchVia(t, config, { ...targets, selected }),
+        h('div', { className: 'adx-form-actions' },
+          h('button', { type: 'button', className: 'adx-btn adx-btn--primary', disabled: !ready || !selected || busy, onClick: open }, t('launch.open')),
+          h('button', { type: 'button', className: 'adx-btn adx-btn--outline', disabled: !ready || busy,
+            onClick: () => actions.copyPrompt(draft.scenario.id, draft) }, t('launch.copyPrompt'))),
       )
     }
 
@@ -3372,7 +3494,7 @@ window.__ModuleLoader__.load({
             'div',
             {
               className: 'adx-launch-menu',
-              role: 'menu',
+              role: config?.supportsEditablePrompt ? 'dialog' : 'menu',
               'aria-label': t('launch.openWith'),
               ref: menuRef,
               'data-flip': flipMenu ? 'true' : 'false',
@@ -3395,7 +3517,7 @@ window.__ModuleLoader__.load({
                   ),
                 )
               : null,
-            targets.agents.length === 0 && !targets.dsh && !targets.servers.length
+            config?.supportsEditablePrompt ? null : targets.agents.length === 0 && !targets.dsh && !targets.servers.length
               ? h(
                   'div',
                   { className: 'adx-launch-empty' },
@@ -3407,6 +3529,7 @@ window.__ModuleLoader__.load({
                   launchTargetPicker(t, targets, busy, setMenuAgent),
                   launchVia(t, config, targets),
                 ],
+            config?.supportsEditablePrompt ? h(DraftEditor, { t, config, actions, targets }) :
             h(ScenarioActions, { t, config, targets, actions, scenarios: itemScenarios, preferred: taskScenario(section, item) }),
           )
 
@@ -3487,7 +3610,7 @@ window.__ModuleLoader__.load({
                 'data-active': menuOpen ? 'true' : 'false',
                 title: t('launch.title'),
                 'aria-label': t('launch.title'),
-                'aria-haspopup': 'menu',
+                'aria-haspopup': config?.supportsEditablePrompt ? 'dialog' : 'menu',
                 'aria-expanded': menuOpen ? 'true' : 'false',
                 disabled: hasUrl === false,
                 onClick: (event) => {
@@ -3671,7 +3794,7 @@ window.__ModuleLoader__.load({
             'div',
             {
               className: 'adx-launch-menu',
-              role: 'menu',
+              role: config?.supportsEditablePrompt ? 'dialog' : 'menu',
               'aria-label': t('launch.sectionScenarios'),
               ref: menuRef,
             },
@@ -3696,7 +3819,7 @@ window.__ModuleLoader__.load({
                   ),
                 )
               : null,
-            targets.agents.length === 0 && !targets.dsh && !targets.servers.length
+            config?.supportsEditablePrompt ? null : targets.agents.length === 0 && !targets.dsh && !targets.servers.length
               ? h(
                   'div',
                   { className: 'adx-launch-empty' },
@@ -3710,6 +3833,7 @@ window.__ModuleLoader__.load({
             !selectMode && !snoozedView && items.some((item) => optionalReview(id, item))
               ? h('p', { className: 'adx-launch-hint' }, t('launch.optionalHint'))
               : null,
+            config?.supportsEditablePrompt ? h(DraftEditor, { t, config, actions, targets, count: batchUrls.length, group: id }) :
             h(ScenarioActions, { t, config, targets, actions, scenarios: menuScenarios, group: id, count: batchUrls.length }),
           )
       return h(
@@ -3748,9 +3872,9 @@ window.__ModuleLoader__.load({
                   'data-active': menuOpen ? 'true' : 'false',
                   title: t('launch.sectionTitle'),
                   'aria-label': t('launch.sectionTitle'),
-                  'aria-haspopup': 'menu',
+                  'aria-haspopup': config?.supportsEditablePrompt ? 'dialog' : 'menu',
                   'aria-expanded': menuOpen ? 'true' : 'false',
-                  disabled: menuScenarios.length === 0,
+                  disabled: !config?.supportsEditablePrompt && menuScenarios.length === 0,
                   ref: triggerRef,
                   onClick: (event) => {
                     event.preventDefault()
@@ -4146,6 +4270,32 @@ window.__ModuleLoader__.load({
       return [...new Set(text.split('\n').map((line) => line.trim()).filter(Boolean))]
     }
 
+    function folderError(t, value) {
+      const lines = value.split('\n')
+      if (folderLines(value).length > 8) return t('settings.ssh.folderLimit')
+      const index = lines.findIndex((line) => {
+        const folder = line.trim()
+        return folder && (!(folder.startsWith('/') || folder === '~' || folder.startsWith('~/')) ||
+          /[\x00-\x1f\x7f]/.test(folder) || folder.length > 1024)
+      })
+      return index < 0 ? '' : t('settings.ssh.folderError', { n: index + 1 })
+    }
+
+    function SshCheck({ t, alias }) {
+      const [result, setResult] = useState(null)
+      const check = async () => {
+        setResult({ loading: true })
+        try {
+          const { agents } = await postJson('/triage-desk/ssh/check', { alias })
+          setResult({ text: t('settings.ssh.connected', { agents: agents.map(({ label }) => label).join(', ') || t('settings.ssh.none') }) })
+        } catch (error) { setResult({ text: error.message }) }
+      }
+      return h('div', { className: 'adx-scan' },
+        h('button', { className: 'adx-btn adx-btn--outline', type: 'button', onClick: check,
+          disabled: !alias || result?.loading }, t(result?.loading ? 'settings.connectionChecking' : 'settings.connectionCheck')),
+        result?.text && h('span', { role: 'status' }, result.text))
+    }
+
     function RepositoryScan({ t, alias, disabled }) {
       const [result, setResult] = useState(null)
       const scan = () => {
@@ -4330,7 +4480,7 @@ window.__ModuleLoader__.load({
 
       const removeScenario = (index) => {
         const scenario = form.scenarios[index]
-        if (scenario === undefined || scenario.id === 'link') return
+        if (scenario === undefined || (!config.supportsEditablePrompt && scenario.id === 'link')) return
         const scenarios = form.scenarios.filter((_entry, scenarioIndex) => scenarioIndex !== index)
         const updates = { scenarios }
         if (form.defaultScenario === scenario.id) {
@@ -4489,7 +4639,14 @@ window.__ModuleLoader__.load({
       )
 
       const save = () => {
-        if (form === null) return
+        if (!form) return
+        if (config.supportsEditablePrompt) {
+          const invalid = form.sshServers.find((row) => folderError(t, row.folders))
+          if (invalid) {
+            setNotice({ tone: 'error', text: invalid.alias + ' · ' + folderError(t, invalid.folders) })
+            return
+          }
+        }
         setNotice(null)
         setInvalidAgentKey(null)
         const agentIds = new Set()
@@ -4543,14 +4700,14 @@ window.__ModuleLoader__.load({
           if (
             !SCENARIO_ID_PATTERN.test(id) ||
             scenarioIds.has(id) ||
-            (label === '' && !builtinIds.has(id)) ||
+            (label === '' && id !== 'link' && !builtinIds.has(id)) ||
             label.length > MAX_SCENARIO_LABEL ||
             (scenario.scope !== 'item' && scenario.scope !== 'section') ||
             sections.length === 0 ||
             sections.some((sectionId) => !scenarioSections.includes(sectionId)) ||
             prompt === '' ||
             prompt.length > scenarioTemplateLimit() ||
-            (id === 'link' && (scenario.enabled === false || prompt.indexOf('{url}') === -1))
+            (!config.supportsEditablePrompt && id === 'link' && (scenario.enabled === false || prompt.indexOf('{url}') === -1))
           ) {
             scenariosValid = false
             break
@@ -4702,7 +4859,7 @@ window.__ModuleLoader__.load({
           ),
         )
         if (state.authStatus === 'loading' && auth === null) {
-          rows.push(h('p', { className: 'adx-form-note', key: 'loading' }, t('settings.githubChecking')))
+          rows.push(h('p', { className: 'adx-form-note', key: 'loading' }, t('settings.connectionChecking')))
         }
         if (state.authError !== null) {
           rows.push(
@@ -4730,7 +4887,7 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 { className: 'adx-auth-actions', key: 'missing-actions' },
-                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t('settings.githubCheck')),
+                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t(state.authError ? 'launch.retry' : 'settings.connectionCheck')),
               ),
             )
           } else if (auth.authenticated === true) {
@@ -4745,7 +4902,7 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 { className: 'adx-auth-actions', key: 'actions' },
-                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t('settings.githubCheck')),
+                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t(state.authError ? 'launch.retry' : 'settings.connectionCheck')),
               ),
             )
           } else {
@@ -4764,7 +4921,7 @@ window.__ModuleLoader__.load({
                   },
                   state.loginStatus === 'launching' ? t('settings.githubOpening') : t('settings.githubLogin'),
                 ),
-                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t('settings.githubCheck')),
+                h('button', { type: 'button', className: 'adx-btn adx-btn--outline', onClick: checkAuth }, t(state.authError ? 'launch.retry' : 'settings.connectionCheck')),
               ),
             )
             if (state.loginStatus === 'launched') {
@@ -4781,14 +4938,15 @@ window.__ModuleLoader__.load({
             }
           }
         }
+        if (state.authError && !auth) rows.push(outlineButton(t('launch.retry'), checkAuth))
         return h('div', { className: 'adx-auth' }, rows)
       }
 
       const renderScenarios = () => {
         const builtinIds = builtinScenarioIds()
-        const linkFirst = form.scenarios.length > 0 && form.scenarios[0] !== undefined && form.scenarios[0].id === 'link'
+        const linkFirst = !config.supportsEditablePrompt && form.scenarios.length > 0 && form.scenarios[0] !== undefined && form.scenarios[0].id === 'link'
         const rows = form.scenarios.map((scenario, index) => {
-          const isLink = scenario.id === 'link'
+          const isLink = !config.supportsEditablePrompt && scenario.id === 'link'
           const isBuiltin = builtinIds.has(scenario.id)
           const isOpen = openScenario === scenario._key
           const scopeLabel = t(scenario.scope === 'section' ? 'settings.scenarioScopeSection' : 'settings.scenarioScopeItem')
@@ -4809,7 +4967,7 @@ window.__ModuleLoader__.load({
                     h('input', {
                       className: 'adx-input',
                       value: scenario.label,
-                      placeholder: isBuiltin ? t('scenario.' + scenario.id + '.name') : t('settings.agentName'),
+                      placeholder: isBuiltin || scenario.id === 'link' ? t('scenario.' + scenario.id + '.name') : t('settings.agentName'),
                       spellCheck: false,
                       autoComplete: 'off',
                       onChange: (event) => updateScenario(index, { label: event.target.value }),
@@ -5011,7 +5169,6 @@ window.__ModuleLoader__.load({
         return h(
           'div',
           { className: 'adx-scenarios' },
-          h('p', { className: 'adx-form-section-title' }, t('settings.scenarios')),
           h('p', { className: 'adx-form-note' }, t('settings.scenariosHint')),
           rows,
           h(
@@ -5064,13 +5221,17 @@ window.__ModuleLoader__.load({
           sshFolders(server).join('\n') === folderLines(row.folders).join('\n'))
         return h('div', { className: 'adx-agents' },
           h('p', { className: 'adx-form-section-title' }, t('settings.sshServers')),
-          rows.map((row, index) => h('div', { key: row._key, className: 'adx-scenario' },
+          h('datalist', { id: 'adx-ssh-hosts' }, (config.sshHosts || []).map((alias) => h('option', { key: alias, value: alias }))),
+          rows.map((row, index) => h('div', { key: row._key, className: 'adx-scenario adx-ssh-fields' },
             ...(foldersEnabled ? ['alias'] : ['alias', 'cwd']).map((key) => h('label', { key, className: 'adx-launch-agent' },
               t('settings.ssh.' + key),
-              h('input', { className: 'adx-input', value: row[key], onChange: (event) => edit(index, { [key]: event.target.value }) }))),
+              h('input', { className: 'adx-input', spellCheck: false, list: key === 'alias' ? 'adx-ssh-hosts' : undefined, value: row[key], onChange: (event) => edit(index, { [key]: event.target.value }) }))),
+            config.supportsEditablePrompt && h(SshCheck, { t, alias: row.alias.trim(), key: row.alias }),
             foldersEnabled && h('label', { className: 'adx-launch-agent' }, t('settings.ssh.folders'),
-              h('textarea', { className: 'adx-textarea', value: row.folders, rows: 2,
+              h('textarea', { className: 'adx-textarea', value: row.folders, rows: 2, placeholder: '~/projects', spellCheck: false,
+                'aria-invalid': Boolean(folderError(t, row.folders)), 'aria-describedby': 'adx-folder-error-' + index,
                 onChange: (event) => edit(index, { folders: event.target.value }) })),
+            foldersEnabled && h('span', { id: 'adx-folder-error-' + index, role: 'status' }, folderError(t, row.folders)),
             foldersEnabled && h(RepositoryScan, { t, alias: row.alias.trim(), key: JSON.stringify([row.alias, row.folders]),
               disabled: !savedFolders(row) }),
             h('label', { className: 'adx-launch-agent' }, t('launch.agent'),
@@ -5241,6 +5402,99 @@ window.__ModuleLoader__.load({
               onAction: () => void store.loadConfig(),
             })
           : null,
+        h('details', { className: 'adx-advanced', open: true },
+          h('summary', { className: 'adx-advanced-summary' }, t('settings.agentsSection')),
+          renderDefaultAgent(),
+          h('details', { className: 'adx-advanced' },
+            h('summary', { className: 'adx-advanced-summary' }, t('settings.manageAgents')),
+            h(
+              'div',
+              { className: 'adx-agents' },
+              unusableAgents.length > 0
+                ? h(Notice, {
+                    className: 'adx-agents-unusable',
+                    tone: 'warning',
+                    title: t('settings.agentsUnusable', { n: unusableAgents.length }),
+                    detail: t('settings.agentsUnusableHint'),
+                  })
+                : null,
+              form.agents.map((agent, index) => {
+                const flagged = agentRowUnusable(agent) || agent._key === invalidAgentKey
+                const key = agent._key || 'agent-row-' + index
+                return [
+                  h(
+                    'div',
+                    { className: 'adx-agent-row', key, 'data-invalid': flagged ? 'true' : 'false' },
+                    h('input', {
+                      className: 'adx-input',
+                      value: agent.label,
+                      placeholder: t('settings.agentName'),
+                      'aria-label': t('settings.agentName'),
+                      spellCheck: false,
+                      onChange: (event) => updateAgent(index, { label: event.target.value }),
+                    }),
+                    h('input', {
+                      className: 'adx-input adx-agent-command',
+                      value: agent.command,
+                      placeholder: 'claude {prompt}',
+                      'aria-label': t('settings.agentCommand'),
+                      'aria-invalid': flagged ? 'true' : 'false',
+                      spellCheck: false,
+                      autoComplete: 'off',
+                      onChange: (event) => updateAgent(index, { command: event.target.value }),
+                    }),
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        className: 'adx-icon-btn',
+                        title: t('settings.agentRemove'),
+                        'aria-label': t('settings.agentRemove'),
+                        disabled: form.agents.length <= 1,
+                        onClick: () => removeAgent(index),
+                      },
+                      icon('close', 14),
+                    ),
+                  ),
+                  flagged
+                    ? h(
+                        'p',
+                        { key: key + ':invalid', className: 'adx-agent-invalid-note', role: 'note' },
+                        agentRowUnusable(agent) ? t('settings.agentUnusableRow') : t('settings.agentInvalidRow'),
+                      )
+                    : null,
+                ]
+              }),
+              h(
+                'div',
+                { className: 'adx-form-actions' },
+                h(
+                  'button',
+                  { type: 'button', className: 'adx-btn adx-btn--outline adx-agent-add', onClick: addAgent },
+                  t('settings.agentAdd'),
+                ),
+                configValue(config, 'supportsAgentDiscovery') === true
+                  ? h(
+                      'button',
+                      {
+                        type: 'button',
+                        className: 'adx-btn adx-btn--outline',
+                        disabled: findingAgents,
+                        onClick: findAgents,
+                      },
+                      findingAgents ? t('settings.agentFinding') : t('settings.agentFind'),
+                    )
+                  : null,
+                h('span', { className: 'adx-spacer' }),
+              ),
+              h('p', { className: 'adx-form-note' }, t('settings.agentsHint')),
+            ),
+          ),
+          h('details', { className: 'adx-advanced' },
+            h('summary', { className: 'adx-advanced-summary' }, t('settings.scenarios')),
+            renderScenarios(),
+          ),
+        ),
         renderAuth(),
         h(
           Field,
@@ -5338,104 +5592,11 @@ window.__ModuleLoader__.load({
           }),
         ),
         h('p', { className: 'adx-form-note' }, t('settings.applyHint')),
-        h(
-          'details',
-          { className: 'adx-advanced' },
-          h('summary', { className: 'adx-advanced-summary' }, t('settings.terminal')),
-          h('p', { className: 'adx-form-note' }, t('settings.terminalHint')),
+        h('details', { className: 'adx-advanced' },
+          h('summary', { className: 'adx-advanced-summary' }, t('settings.environments')),
+          h('h3', null, t('launch.local')),
           renderTerminalChoice(),
           renderPromptDelivery(),
-          renderSshServers(),
-        renderDefaultAgent(),
-        h(
-          'div',
-          { className: 'adx-agents' },
-          unusableAgents.length > 0
-            ? h(Notice, {
-                className: 'adx-agents-unusable',
-                tone: 'warning',
-                title: t('settings.agentsUnusable', { n: unusableAgents.length }),
-                detail: t('settings.agentsUnusableHint'),
-              })
-            : null,
-          form.agents.map((agent, index) => {
-            const flagged = agentRowUnusable(agent) || agent._key === invalidAgentKey
-            const key = agent._key || 'agent-row-' + index
-            return [
-              h(
-                'div',
-                { className: 'adx-agent-row', key, 'data-invalid': flagged ? 'true' : 'false' },
-                h('input', {
-                  className: 'adx-input',
-                  value: agent.label,
-                  placeholder: t('settings.agentName'),
-                  'aria-label': t('settings.agentName'),
-                  spellCheck: false,
-                  onChange: (event) => updateAgent(index, { label: event.target.value }),
-                }),
-                h('input', {
-                  className: 'adx-input adx-agent-command',
-                  value: agent.command,
-                  placeholder: 'claude {prompt}',
-                  'aria-label': t('settings.agentCommand'),
-                  'aria-invalid': flagged ? 'true' : 'false',
-                  spellCheck: false,
-                  autoComplete: 'off',
-                  onChange: (event) => updateAgent(index, { command: event.target.value }),
-                }),
-                h(
-                  'button',
-                  {
-                    type: 'button',
-                    className: 'adx-icon-btn',
-                    title: t('settings.agentRemove'),
-                    'aria-label': t('settings.agentRemove'),
-                    disabled: form.agents.length <= 1,
-                    onClick: () => removeAgent(index),
-                  },
-                  icon('close', 14),
-                ),
-              ),
-              flagged
-                ? h(
-                    'p',
-                    { key: key + ':invalid', className: 'adx-agent-invalid-note', role: 'note' },
-                    agentRowUnusable(agent) ? t('settings.agentUnusableRow') : t('settings.agentInvalidRow'),
-                  )
-                : null,
-            ]
-          }),
-          h(
-            'div',
-            { className: 'adx-form-actions' },
-            h(
-              'button',
-              { type: 'button', className: 'adx-btn adx-btn--outline adx-agent-add', onClick: addAgent },
-              t('settings.agentAdd'),
-            ),
-            configValue(config, 'supportsAgentDiscovery') === true
-              ? h(
-                  'button',
-                  {
-                    type: 'button',
-                    className: 'adx-btn adx-btn--outline',
-                    disabled: findingAgents,
-                    onClick: findAgents,
-                  },
-                  findingAgents ? t('settings.agentFinding') : t('settings.agentFind'),
-                )
-              : null,
-            h('span', { className: 'adx-spacer' }),
-          ),
-          h('p', { className: 'adx-form-note' }, t('settings.agentsHint')),
-        ),
-        renderScenarios(),
-        ),
-        h(
-          'details',
-          { className: 'adx-advanced' },
-          h('summary', { className: 'adx-advanced-summary' }, t('settings.advanced')),
-          h('p', { className: 'adx-form-note' }, t('settings.advancedHint')),
         h(
           Field,
           {
@@ -5489,8 +5650,8 @@ window.__ModuleLoader__.load({
             ),
           ),
         ),
+          renderSshServers(),
         ),
-        h('p', { className: 'adx-form-note' }, t('settings.terminalNote')),
         h(
           'div',
           { className: 'adx-form-actions' },
@@ -5666,7 +5827,7 @@ window.__ModuleLoader__.load({
       // Every count is the number of rows the list shows: the source filter,
       // the search and snoozing apply to the section chips as well. Snoozed
       // items only appear in the Snoozed view (`filter: 'snoozed'`).
-      const listing = useMemo(() => {
+      const latestListing = useMemo(() => {
         const snoozedIds = new Set()
         const anySnoozed = new Set()
         const normal = []
@@ -5691,6 +5852,18 @@ window.__ModuleLoader__.load({
         }
         return { normal, snoozedList, snoozedCount: snoozedIds.size, snoozedTotal: anySnoozed.size }
       }, [sections, activeSource, query, snoozed, now])
+      // The draft is mounted inside its row or group. Keep that listing until
+      // the popover closes, even if polling moves its last item to another group.
+      const [draftInbox, setDraftInbox] = useState(null)
+      const menuId = state.openMenu
+      useLayoutEffect(() => {
+        if (draftInbox && draftInbox.menuId === menuId) return
+        const editing = menuId && state.config?.supportsEditablePrompt && latestListing.normal.some(
+          ({ id }) => menuId === 'section:' + id || menuId.startsWith(id + ':'),
+        )
+        setDraftInbox(editing ? { menuId, listing: latestListing } : null)
+      }, [menuId, state.config, latestListing, draftInbox])
+      const listing = draftInbox && draftInbox.menuId === menuId ? draftInbox.listing : latestListing
       const snoozedView = activeFilter === 'snoozed'
       const snoozedCount = listing.snoozedCount
       const sectionCounts = {}

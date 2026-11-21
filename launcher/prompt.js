@@ -153,7 +153,7 @@ function codePointLength(text) {
 function truncatePrompt(text) {
   const points = Array.from(text)
   if (points.length <= MAX_RENDERED_PROMPT) return text
-  return points.slice(0, MAX_RENDERED_PROMPT).join('') + '…'
+  return points.slice(0, MAX_RENDERED_PROMPT - 1).join('') + '…'
 }
 
 function scenarioSectionLabel(context, items) {

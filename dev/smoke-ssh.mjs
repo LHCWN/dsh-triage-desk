@@ -5,7 +5,7 @@ import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { buildSshScripts, sshRepositoryScan } from '../launcher.js'
+import { buildSshScripts, sshRepositoryScan, sshAgentProbe, configuredSshHosts } from '../launcher.js'
 import { pythonWithPty, removeOnExit } from './fixtures/platform.mjs'
 import { assertUnsentPaste } from './fixtures/paste.mjs'
 
@@ -115,11 +115,47 @@ async function checkRemoteChoices() {
     return run('sh .triage-desk-*.sh', input)
   }
   const actual = await Promise.all(copies.map((folder) => fs.realpath(folder)))
-  const scan = () => run(sshRepositoryScan(server).at(-1)).trimEnd().split('\n')
+  const scan = () => run(sshRepositoryScan({ ...server, folders: ['~/projects'] }).at(-1)).trimEnd().split('\n')
   assert.deepEqual(scan(), actual.map((dir) => 'acme/widgets\t' + dir))
   await fs.writeFile(sshConfig, 'HostName gitlab.example\n' + aliases)
   assert.deepEqual(scan(), ['acme/widgets\t' + actual[2]], 'global HostName shadows aliases')
   await fs.writeFile(sshConfig, aliases)
+  // An agent installed only on the interactive bash PATH must be found by
+  // both the settings check and the SSH launcher, using the same draft.
+  const privateBin = path.join(remote, '.local', 'bin')
+  await fs.mkdir(privateBin, { recursive: true })
+  await fs.copyFile(path.join(bin, 'claude'), path.join(privateBin, 'pi'))
+  await fs.writeFile(path.join(remote, '.bashrc'), 'export PATH="$HOME/.local/bin:$PATH"\n')
+  if (process.platform === 'darwin') {
+    const loginBin = path.join(remote, 'login-bin')
+    await fs.mkdir(loginBin)
+    await fs.copyFile(path.join(bin, 'claude'), path.join(loginBin, 'gemini'))
+    await fs.writeFile(path.join(remote, '.zprofile'), 'export PATH="$HOME/login-bin:$PATH"\n')
+    const probe = spawnSync('/bin/sh', ['-c', sshAgentProbe('build-one').at(-1)], {
+      env: { ...env, SHELL: '/bin/zsh', ZDOTDIR: remote }, encoding: 'utf8',
+    })
+    assert.match(probe.stdout, /__td_agent__gemini/)
+  }
+  const originalShell = env.SHELL
+  env.SHELL = '/bin/bash'
+  assert.match(run(sshAgentProbe('build-one').at(-1)), /__td_agent__pi/)
+  await fs.rename(path.join(bin, 'claude'), path.join(privateBin, 'claude'))
+  try {
+    assert.match(run(sshAgentProbe('build-one').at(-1)), /__td_agent__claude/)
+    launch({}, '1\nn\n')
+    assert.equal(await fs.readFile(record, 'utf8'), '--prefill\0' + prompt + '\0')
+    await fs.rename(path.join(privateBin, 'claude'), path.join(privateBin, 'actual-claude'))
+    await fs.appendFile(path.join(remote, '.bashrc'), 'alias claude=actual-claude\n')
+    assert.match(run(sshAgentProbe('build-one').at(-1)), /__td_agent__claude/)
+    await fs.unlink(record)
+    launch({}, '1\nn\n')
+    assert.equal(await fs.readFile(record, 'utf8'), '--prefill\0' + prompt + '\0')
+  } finally {
+    await fs.rename(path.join(privateBin, 'actual-claude'), path.join(bin, 'claude'))
+    env.SHELL = originalShell
+  }
+  const hosts = await configuredSshHosts(remote)
+  assert.ok(hosts.includes('github-work') && !hosts.includes('wildcard-*'))
   const menu = launch({}, '2\ny\n')
   for (const dir of actual) assert.ok(menu.includes(dir))
   const opened = async () => (await fs.readFile(record + '.cwd', 'utf8')).trimEnd()
@@ -139,16 +175,16 @@ async function checkRemoteChoices() {
   git(['-C', copies[2], 'remote', 'remove', 'origin'])
   launch({}, '')
   assert.equal(await opened(), actual[0])
-  assert.match(launch({}, '', 'missing/widgets'), /first accessible repository folder/)
+  assert.match(launch({}, '\n', 'missing/widgets'), /press Enter to continue/)
   assert.equal(await opened(), await fs.realpath(folders[1]))
-  assert.match(launch({ folders: [folders[0]] }, ''), /Using home/)
+  assert.match(launch({ folders: [folders[0]] }, '\n'), /press Enter to continue/)
   assert.equal(await opened(), await fs.realpath(remote))
   assert.match(launch({}, '', ''), /spans repositories/)
   assert.equal(await opened(), await fs.realpath(folders[1]))
 
   for (const alternatives of [[], ['codex', 'claude']]) {
-    const output = launch({ agent: 'agy', alternatives }, '\n')
-    assert.match(output, /agy is missing on build-one/)
+    const output = launch({ agent: 'agy', alternatives }, alternatives.length ? '\ny\n' : 'y\n')
+    assert.match(output, /Could not find agy in the launch environment on build-one/)
     assert.match(output, alternatives.length ? /Available agents: claude/ : /No configured alternative/)
     assert.match(output, /Opening a remote shell/)
     assert.equal((await fs.readFile(record + '.shell', 'utf8')).trimEnd(), actual[0])
@@ -163,7 +199,7 @@ async function checkRemoteChoices() {
   const noPaste = launch({ agent: 'agy', alternatives: ['codex', 'claude'] }, 'claude\n')
   assert.match(noPaste, /Available agents: claude\n/)
   assert.equal(await fs.readFile(record, 'utf8'), '--prefill\0' + prompt + '\0')
-  const noPython = launch({ agent: 'codex' }, '')
+  const noPython = launch({ agent: 'codex' }, 'y\n')
   assert.match(noPython, /needs Python 3 with pty support/)
   assert.match(noPython, /Opening a remote shell/)
 
