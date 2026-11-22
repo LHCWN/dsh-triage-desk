@@ -13,6 +13,9 @@ import {
   MAX_RENDERED_PROMPT,
   bareAgentCommand,
   buildSshScripts,
+  buildSshShellScripts,
+  buildShellLauncherScript,
+  buildWindowsShellLauncherScript,
   SSH_AGENTS,
   SSH_ALIAS,
   configuredSshHosts,
@@ -219,41 +222,70 @@ export function createLaunch({
     return { scenario, scope: 'item', repo: parsed.slug, item, prompt: built.prompt, trimmed: null, count: 1 }
   }
 
-  const launchSsh = async (alias, rendered, signal, requestedAgent) => {
+  const resolveSshServer = async (alias) => {
     if (typeof alias !== 'string' || !SSH_ALIAS.test(alias)) throw new LaunchError('bad-destination', 'choose a named SSH host')
     let server = launcherSettings.sshServers.find((entry) => entry.alias === alias)
     if (!server) {
       if (!(await configuredSshHosts()).includes(alias)) throw new LaunchError('bad-destination', 'choose a saved destination or a named OpenSSH host')
       server = { alias, folders: [] }
     }
-    const preferred = requestedAgent || server.agent
-    const agent = preferred ? SSH_AGENTS.find((entry) => entry.id === preferred)
-      : (await probeRemoteAgents(server.alias, runProcess))[0]
-    if (!agent) throw new LaunchError('unknown-agent', 'choose a supported SSH agent')
-    const title = `SSH ${server.alias} · ${agent.label} · ${scenarioTitle(rendered.scenario)}`
+    return server
+  }
+
+  // Both shell and agent launches use the same SSH transport and terminal selection.
+  const openScript = async ({ title, script, stage, signal }) => {
     void cleanupStaleTempDirs()
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'triage-desk-ssh-'))
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'triage-desk-'))
     try {
-      const { stage, local, mode } = buildSshScripts({ ...server, agent: agent.id }, rendered.prompt, platform, rendered.repo)
       const file = path.join(dir, platform === 'win32' ? 'launch.ps1' : 'launch.command')
-      await fs.writeFile(path.join(dir, 'stage.sh'), stage, { mode: 0o600 })
-      await writeLauncherScript(file, local)
+      if (stage !== undefined) await fs.writeFile(path.join(dir, 'stage.sh'), stage, { mode: 0o600 })
+      await writeLauncherScript(file, script)
       if (signal?.aborted) throw new LaunchError('aborted', 'the launch was cancelled')
       const opened = await openTerminal(file, title, signal, launcherSettings.terminal, false)
-      return {
-        ok: true, sshAlias: alias, cwd: null, cwdMode: 'ssh', agent,
-        scenario: { id: rendered.scenario.id, label: scenarioTitle(rendered.scenario) },
-        count: rendered.count, trimmed: rendered.trimmed, terminal: opened?.terminal || null,
-        mode,
-      }
+      return opened?.terminal || null
     } catch (error) {
       await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined)
       throw error instanceof LaunchError ? error : new LaunchError('open-failed', error.message)
     }
   }
 
+  const launchSsh = async (alias, rendered, signal, requestedAgent) => {
+    const server = await resolveSshServer(alias)
+    const preferred = requestedAgent || server.agent
+    const agent = preferred ? SSH_AGENTS.find((entry) => entry.id === preferred)
+      : (await probeRemoteAgents(server.alias, runProcess))[0]
+    if (!agent) throw new LaunchError('unknown-agent', 'choose a supported SSH agent')
+    const title = `SSH ${server.alias} · ${agent.label} · ${scenarioTitle(rendered.scenario)}`
+    const { stage, local, mode } = buildSshScripts({ ...server, agent: agent.id }, rendered.prompt, platform, rendered.repo)
+    const terminal = await openScript({ title, script: local, stage, signal })
+    return {
+      ok: true, sshAlias: alias, cwd: null, cwdMode: 'ssh', agent,
+      scenario: { id: rendered.scenario.id, label: scenarioTitle(rendered.scenario) },
+      count: rendered.count, trimmed: rendered.trimmed, terminal, mode,
+    }
+  }
+
+  const launchShell = async (body, signal) => {
+    const urls = Array.isArray(body.urls) ? body.urls : [body.url]
+    const slugs = urls.map((url) => parseRepoUrl(url)?.slug)
+    if (!slugs.length || slugs.includes(undefined)) throw new LaunchError('bad-url', 'choose a GitHub task')
+    const repo = slugs.every((slug) => slug.toLowerCase() === slugs[0].toLowerCase()) ? slugs[0] : ''
+    const title = 'Triage Desk: ' + (repo || 'Terminal')
+    if (body.sshAlias !== undefined) {
+      const server = await resolveSshServer(body.sshAlias)
+      const { local, stage } = buildSshShellScripts(server, platform, repo)
+      const terminal = await openScript({ title: title + ' · ' + server.alias, script: local, stage, signal })
+      return { ok: true, mode: 'shell', sshAlias: server.alias, cwdMode: 'ssh', terminal, repo }
+    }
+    const { cwd, cloneMissing } = repo ? await resolveClone(repo) : { cwd: await workspaceDirectory(), cloneMissing: false }
+    const script = platform === 'win32' ? buildWindowsShellLauncherScript({ cwd }) : buildShellLauncherScript({ cwd, platform })
+    const terminal = await openScript({ title, script, signal })
+    return { ok: true, mode: 'shell', cwd, cwdMode: repo && !cloneMissing ? 'clone' : 'workspace', cloneMissing, terminal, repo }
+  }
+
   const launchForItem = async (input, signal) => {
     const body = input !== null && typeof input === 'object' ? input : {}
+    if (body.target === 'terminal') return launchShell(body, signal)
     const rendered = renderScenarioPrompt(body)
     if (body.draft !== undefined) {
       if (typeof body.draft !== 'string' || !body.draft.trim() || body.draft.includes('\0') ||

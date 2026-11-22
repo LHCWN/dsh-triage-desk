@@ -34,6 +34,7 @@ import {
   PASTE_WRAPPER_CS,
   bareAgentCommand,
   buildWindowsClipboardLauncherScript,
+  buildWindowsShellLauncherScript,
   buildWindowsDraftLauncherScript,
   buildWindowsPasteLauncherScript,
   draftCommandForStatus,
@@ -211,6 +212,14 @@ await check('draft launcher keeps quoted-only spaces, bare trailing backslashes 
     assert.ok(run.recorded, 'the agent ran: ' + run.result.stdout + run.result.stderr)
     assert.deepEqual(run.recorded.argv, ['--dir', 'C:\\My Repos\\', '--say', '"hi"', '--prefill', prompt], JSON.stringify(prompt))
   }
+})
+
+await check('plain terminal leaves PowerShell in the working copy', async () => {
+  const run = await runLauncher(() => buildWindowsShellLauncherScript({ cwd: clone }) +
+    '[System.IO.File]::WriteAllText($env:TD_RECORD, (ConvertTo-Json -InputObject (Get-Location).Path))')
+  assert.equal(run.result.status, 0, run.result.stderr)
+  assert.equal(realpathSync.native(run.recorded), realpathSync.native(clone))
+  assert.equal(run.dirLeft, false)
 })
 
 await check('clipboard launcher keeps static arguments of a .cmd shim', async () => {

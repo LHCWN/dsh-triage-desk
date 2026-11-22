@@ -125,16 +125,8 @@ export function buildSshScripts(server, prompt, platform, repo = '') {
   const candidates = [preset, ...alternatives]
   const native = candidates.filter((entry) => entry.draftFlag)
   const pasteAllowed = prompt === sanitizePastePrompt(prompt)
-  const choiceKey = createHash('sha256').update(JSON.stringify([server.alias, repo.toLowerCase()])).digest('hex')
-  const file = '.triage-desk-' + randomUUID() + '.sh'
   const remote = [
-    'set -eu',
-    'rm -f "$0"',
-    'repo=' + shellQuote(repo.toLowerCase()),
-    'server=' + shellQuote(server.alias),
-    'choice_file="$HOME/.triage-desk/working-copies/' + choiceKey + '"',
-    'set -- ' + repositoryFolders(server).map(shellQuote).join(' '),
-    scanScript, selectFolder,
+    ...sshWorkingFolder(server, repo),
     'agent=' + executable(preset),
     'native_agents=' + shellQuote(native.map((entry) => agentExecutable(entry.command, 'linux')).join(' ')),
     'paste_allowed=' + (pasteAllowed ? 'yes' : 'no'),
@@ -160,6 +152,30 @@ export function buildSshScripts(server, prompt, platform, repo = '') {
   }
   remote.push('esac')
   const mode = preset.draftFlag ? 'draft' : 'paste'
+  return sshTransport(server, remote, platform, mode)
+}
+
+function sshWorkingFolder(server, repo) {
+  const choiceKey = createHash('sha256').update(JSON.stringify([server.alias, repo.toLowerCase()])).digest('hex')
+  return [
+    'set -eu',
+    'rm -f "$0"',
+    'repo=' + shellQuote(repo.toLowerCase()),
+    'server=' + shellQuote(server.alias),
+    'choice_file="$HOME/.triage-desk/working-copies/' + choiceKey + '"',
+    'set -- ' + repositoryFolders(server).map(shellQuote).join(' '),
+    scanScript, selectFolder,
+  ]
+}
+
+export function buildSshShellScripts(server, platform, repo) {
+  // An exported Bash SHELLOPTS must not carry staging's errexit/nounset into the user's shell.
+  const remote = [...sshWorkingFolder(server, repo), 'set +eu', '"${SHELL:-/bin/sh}" -i || :']
+  return sshTransport(server, remote, platform, 'shell')
+}
+
+function sshTransport(server, remote, platform, mode) {
+  const file = '.triage-desk-' + randomUUID() + '.sh'
   // The staging shell reads the prompt as quoted data. An interrupted
   // transfer cannot execute the incomplete payload. The random name belongs
   // to this launch and the interactive shell unlinks it as soon as it starts.
@@ -170,7 +186,7 @@ export function buildSshScripts(server, prompt, platform, repo = '') {
   // from the retry dialog. Restrict deletion to this launch's random name.
   const cleanup = 'ssh -nT -o BatchMode=yes -o ConnectTimeout=5 -- ' + server.alias + ' rm -f ' + file
   const retained = 'Cleanup could not be confirmed. Check ' + server.alias + ':~/' + file
-  const retry = 'SSH launch failed. Retry the same draft? [y/N]'
+  const retry = mode === 'shell' ? 'SSH connection failed. Retry? [y/N]' : 'SSH launch failed. Retry the same draft? [y/N]'
   const local = platform === 'win32'
     ? [
         "$ErrorActionPreference = 'Stop'",

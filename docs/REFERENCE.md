@@ -146,6 +146,15 @@ your action* also apply to *Feedback on my PRs* after upgrading and restarting
 the host. Settings offers the bindings supported by the running host. You can
 edit the two bindings independently.
 
+**Terminal** in the launch picker opens an interactive shell for a row or group.
+Local launches use the matching working copy, falling back to the workspace.
+On SSH, the terminal uses the host’s configured folders and the usual working-copy
+chooser. For groups spanning repositories it uses the workspace locally or the
+first accessible repository folder (otherwise home) remotely. Terminal launches
+skip prompt delivery and agent discovery on the launch path. To open a plain
+local shell through `triage_desk`, use `action: "launch"`, the row’s `url`, and
+`target: "terminal"`.
+
 **What the built-in prompts ask for.** They use `gh` and work with any agent.
 The review scenarios (*Review this PR*, *Re-review after changes*, *Review
 everything awaiting me*) flag only problems the PR introduces that are worth

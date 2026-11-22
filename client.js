@@ -256,8 +256,11 @@ window.__ModuleLoader__.load({
       'source.personal': 'personal',
       'filter.allSources': 'All sources',
       'settings.loading': 'Reading settings…',
-      'launch.title': 'Open task with an agent',
-      'launch.openWith': 'Open with agent',
+      'launch.title': 'Open task',
+      'launch.terminalTarget': 'Terminal',
+      'launch.shellOpened': 'Opened {terminal} in {cwd}',
+      'launch.shellConnecting': 'Opening a terminal on {alias}',
+      'launch.openWith': 'Open with',
       'launch.open': 'Open',
       'launch.chooseAgent': 'Choose an agent',
       'launch.tooLong': 'Shorten the draft to 16,000 characters.',
@@ -383,7 +386,7 @@ window.__ModuleLoader__.load({
       'launch.dshDraft': 'New DSH session opened: the prompt is in the input box and has not been sent — review it and press Enter',
       'launch.dshFailed': 'Could not open a DSH session',
       'launch.dshHostOutdated': 'The plugin host is still an older version: turn the plugin off and on, then refresh the page',
-      'launch.sectionScenarios': 'Open group with agent',
+      'launch.sectionScenarios': 'Open group',
       'meta.optionalReview': 'Optional review',
       'launch.optionalHint': 'Use Select to choose specific PRs, including optional reviews.',
       'launch.replyFeedbackOne': 'Reply to feedback on {n} PR',
@@ -628,8 +631,11 @@ window.__ModuleLoader__.load({
       'source.personal': '个人',
       'filter.allSources': '所有来源',
       'settings.loading': '正在读取设置…',
-      'launch.title': '用智能体打开任务',
-      'launch.openWith': '用智能体打开',
+      'launch.title': '打开任务',
+      'launch.terminalTarget': '终端',
+      'launch.shellOpened': '已在 {cwd} 打开 {terminal}',
+      'launch.shellConnecting': '正在连接 {alias} 的终端',
+      'launch.openWith': '打开方式',
       'launch.open': '打开',
       'launch.chooseAgent': '选择智能体',
       'launch.tooLong': '请将草稿缩短至 16,000 个字符。',
@@ -755,7 +761,7 @@ window.__ModuleLoader__.load({
       'launch.dshDraft': '已打开新的 DSH 会话：提示已填入输入框，尚未发送——检查后按 Enter',
       'launch.dshFailed': '无法打开 DSH 会话',
       'launch.dshHostOutdated': '插件主机仍是旧版本：请关闭再启用插件，然后刷新页面',
-      'launch.sectionScenarios': '用智能体打开此组',
+      'launch.sectionScenarios': '打开此组',
       'meta.optionalReview': '可选审核',
       'launch.optionalHint': '使用“选择”可指定 PR，包括可选审核。',
       'launch.replyFeedbackOne': '回复 {n} 个 PR 的反馈',
@@ -2067,6 +2073,7 @@ window.__ModuleLoader__.load({
     }
 
     /** The launch target "a new DSH chat" (the host's DSH_TARGET). */
+    const TERMINAL_TARGET = ':terminal'
     const DSH_TARGET = 'dsh'
 
     /** True when the panel can open a DSH chat with a prompt. */
@@ -2883,7 +2890,8 @@ window.__ModuleLoader__.load({
         setLaunchError(null)
         const body = buildRequest(scenarioId)
         if (sshAlias) body.sshAlias = sshAlias
-        if (agentId) body.agent = agentId
+        if (agentId === TERMINAL_TARGET) body.target = 'terminal'
+        else if (agentId) body.agent = agentId
         if (draft !== undefined) body.draft = draft
         postJson(LAUNCH_URL, body)
           .then((payload) => {
@@ -3041,6 +3049,11 @@ window.__ModuleLoader__.load({
 
     function launchToastText(t, payload) {
       const terminalFallback = payload.terminal?.fallback ? t('launch.terminalFallback') : ''
+      if (payload.mode === 'shell') {
+        const text = payload.sshAlias ? t('launch.shellConnecting', { alias: payload.sshAlias })
+          : t('launch.shellOpened', { terminal: payload.terminal?.label || t('launch.terminalTarget'), cwd: payload.cwd })
+        return text + terminalFallback + (payload.cloneMissing ? t('launch.workspaceFallback') : '')
+      }
       if (payload.sshAlias) {
         return t('launch.sshConnecting', { alias: payload.sshAlias, agent: payload.agent.label }) +
           terminalFallback + trimmedSuffix(t, payload)
@@ -3174,7 +3187,8 @@ window.__ModuleLoader__.load({
       }, [actions.manualPrompt])
       const [machine, setMachine] = useState('')
       const [choice, setChoice] = useState('')
-      const probe = useRemoteAgents(machine)
+      const shell = config.supportsTerminalTarget && choice === TERMINAL_TARGET
+      const probe = useRemoteAgents(shell ? '' : machine)
       const [draft, setDraft] = useState(null)
       const [error, setError] = useState('')
       const [attempt, setAttempt] = useState(0)
@@ -3201,14 +3215,16 @@ window.__ModuleLoader__.load({
       const options = machine ? remoteAgents.map(({ id, label }) => h('option', { key: id, value: id }, label)) :
         [...(targets.dsh ? [h('option', { key: DSH_TARGET, value: DSH_TARGET }, t('launch.dshTarget'))] : []),
           ...agentOptions(t, targets.ordered, targets.detected)]
+      if (config.supportsTerminalTarget) options.push(h('option', { key: TERMINAL_TARGET, value: TERMINAL_TARGET }, t('launch.terminalTarget')))
       const offered = machine ? remoteAgents.map(({ id }) => id) :
         [...(targets.dsh ? [DSH_TARGET] : []), ...targets.ordered.map(({ id }) => id)]
       const automatic = !machine || (!preferred && probe.result?.agents)
-      const selected = [choice, preferred].find((id) => offered.includes(id)) || (automatic ? offered[0] : '') || ''
+      const selected = shell ? TERMINAL_TARGET : [choice, preferred].find((id) => offered.includes(id)) || (automatic ? offered[0] : '') || ''
       const busy = actions.busy
       const tooLong = draft && Array.from(draft.prompt).length > 16000
       const ready = draft?.identity === identity && draft.prompt.trim() && !tooLong && count !== 0
       const open = () => {
+        if (shell) return actions.launch(undefined, TERMINAL_TARGET, machine || undefined)
         const id = draft.scenario.id || undefined
         if (!machine && selected === DSH_TARGET) actions.launchDsh(id, draft)
         else actions.launch(id, selected, machine || undefined, draft.prompt)
@@ -3217,22 +3233,22 @@ window.__ModuleLoader__.load({
         (config.supportsRunOn || targets.servers.length > 0) && h(RunOnPicker, { t, servers: targets.servers,
           hosts: config.supportsRunOn ? configList(config, 'sshHosts') : [], machine, disabled: busy, onChange: (alias) => {
             setMachine(alias)
-            setChoice('')
+            if (!shell) setChoice('')
           } }),
         h('label', null, t('launch.agent'), h('select', { className: 'adx-select', value: selected, disabled: busy,
           onChange: (event) => setChoice(event.target.value) },
           !selected && h('option', { value: '', disabled: true }, t('launch.chooseAgent')), options)),
-        machine && h(RemoteScan, { t, probe }),
-        group && draft && h('span', { className: 'adx-form-note' }, batchActionLabel(t, template || draft.scenario, group, count)),
-        h('label', null, t('launch.prompt'), h('textarea', { className: 'adx-textarea', rows: 6, ref: textArea,
+        !shell && machine && h(RemoteScan, { t, probe }),
+        !shell && group && draft && h('span', { className: 'adx-form-note' }, batchActionLabel(t, template || draft.scenario, group, count)),
+        !shell && h('label', null, t('launch.prompt'), h('textarea', { className: 'adx-textarea', rows: 6, ref: textArea,
           value: draft?.identity === identity ? draft.prompt : '', disabled: busy || draft?.identity !== identity,
           onChange: (event) => setDraft({ ...draft, prompt: event.target.value }) })),
-        tooLong && h('div', { role: 'alert' }, t('launch.tooLong')),
-        error && h('div', { role: 'alert' }, error, outlineButton(t('launch.retry'), () => setAttempt(attempt + 1))),
-        !machine && launchVia(t, config, { ...targets, selected }),
+        !shell && tooLong && h('div', { role: 'alert' }, t('launch.tooLong')),
+        !shell && error && h('div', { role: 'alert' }, error, outlineButton(t('launch.retry'), () => setAttempt(attempt + 1))),
+        !shell && !machine && launchVia(t, config, { ...targets, selected }),
         h('div', { className: 'adx-form-actions' },
-          h('button', { type: 'button', className: 'adx-btn adx-btn--primary', disabled: !ready || !selected || busy, onClick: open }, t('launch.open')),
-          h('button', { type: 'button', className: 'adx-btn adx-btn--outline', disabled: !ready || busy,
+          h('button', { type: 'button', className: 'adx-btn adx-btn--primary', disabled: (shell ? empty : !ready) || !selected || busy, onClick: open }, t('launch.open')),
+          !shell && h('button', { type: 'button', className: 'adx-btn adx-btn--outline', disabled: !ready || busy,
             onClick: () => actions.copyPrompt(draft.scenario.id, draft) }, t('launch.copyPrompt'))),
       )
     }

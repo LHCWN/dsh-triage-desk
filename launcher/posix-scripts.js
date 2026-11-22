@@ -105,6 +105,12 @@ export function buildLoginLauncherScript({ cwd, ghCommand, platform = 'darwin' }
   return lines.join('\n')
 }
 
+export function buildShellLauncherScript({ cwd, platform }) {
+  assertAbsoluteCwd(cwd)
+  return [posixLauncherShell(platform).shebang, ...POSIX_SELF_CLEANUP_LINES,
+    'cd -- ' + shellQuote(cwd) + ' || exit 1', 'exec "${SHELL:-/bin/sh}" -i', ''].join('\n')
+}
+
 /**
  * Builds the `.command` script for clipboard mode: starts the agent without a
  * prompt, tells the user the prompt is on the clipboard, and keeps a shell once

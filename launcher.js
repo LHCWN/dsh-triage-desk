@@ -96,6 +96,7 @@ export {
   buildDraftLauncherScript,
   buildLoginLauncherScript,
   buildPasteLauncherScript,
+  buildShellLauncherScript,
 } from './launcher/posix-scripts.js'
 
 export {
@@ -113,6 +114,7 @@ export {
   buildWindowsDraftLauncherScript,
   buildWindowsLoginLauncherScript,
   buildWindowsPasteLauncherScript,
+  buildWindowsShellLauncherScript,
   windowsQuote,
 } from './launcher/windows-scripts.js'
 
@@ -131,4 +133,4 @@ export {
   terminalCatalog,
 } from './launcher/terminals.js'
 
-export { buildSshScripts, sshRepositoryScan, sshAgentProbe, configuredSshHosts, SSH_ALIAS, normalizeSshServers, SSH_AGENTS } from './launcher/ssh.js'
+export { buildSshShellScripts, buildSshScripts, sshRepositoryScan, sshAgentProbe, configuredSshHosts, SSH_ALIAS, normalizeSshServers, SSH_AGENTS } from './launcher/ssh.js'

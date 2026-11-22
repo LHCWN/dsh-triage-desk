@@ -119,6 +119,7 @@ export function publicConfig(settings, runtime, launcher, detected, environment 
     sshHosts: environment.sshHosts || [],
     supportsEditablePrompt: true,
     supportsRunOn: true,
+    supportsTerminalTarget: true,
     // `defaultAgent` (the saved choice, shown in Settings) may be DSH_TARGET.
     // `defaultTarget`: what the panel opens for "default" (the saved agent
     // while it can start, else DSH); `effectiveDefaultAgent`: what a launch

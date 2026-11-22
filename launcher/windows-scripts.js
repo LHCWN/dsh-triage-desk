@@ -156,6 +156,11 @@ const WINDOWS_SELF_CLEANUP_LINES = [
   'try { [System.IO.Directory]::Delete((Split-Path -Parent $PSCommandPath)) } catch { }',
 ]
 
+// The terminal plan runs PowerShell with -NoExit, leaving this prompt in cwd.
+export function buildWindowsShellLauncherScript({ cwd }) {
+  return [windowsScriptCwd(cwd), ...WINDOWS_SELF_CLEANUP_LINES, ''].join('\n')
+}
+
 /** An exit-status report that keeps the PowerShell window open on failure. */
 function windowsExitStatusLines(prefix) {
   return [

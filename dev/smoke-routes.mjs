@@ -356,6 +356,23 @@ await recordAsync('repository discovery uses only the selected saved destination
   assert.equal((await json(await scan('unknown'))).error.code, 'bad-destination')
 })
 
+await recordAsync('plain terminals open the task folder without handing off a prompt', async () => {
+  captured.clipboard = 'keep my clipboard'
+  for (const [context, cwdMode] of [
+    [{ url: PR_URL }, 'clone'],
+    [{ section: 'review', urls: [PR_URL, OTHER_REPO_URL] }, 'workspace'],
+    [{ url: PR_URL, sshAlias: 'builder' }, 'ssh'],
+  ]) {
+    const result = await json(await callHandler('/triage-desk/launch', 'POST', { target: 'terminal', ...context }))
+    assert.equal(result.mode, 'shell')
+    assert.equal(result.cwdMode, cwdMode)
+    const files = await fs.readdir(path.dirname(captured.launchFiles.at(-1)))
+    assert.ok(!files.includes('prompt.txt'))
+    assert.equal(captured.clipboard, 'keep my clipboard')
+    await cleanupLaunches()
+  }
+})
+
 await recordAsync('a named OpenSSH host launches with the selected remote agent before saving settings', async () => {
   await fs.mkdir(path.join(fixture, '.ssh'), { recursive: true })
   await fs.writeFile(path.join(fixture, '.ssh', 'config'), 'Host STAGING-CI\n  HostName upper.invalid\nHost staging-ci\n  HostName lower.invalid\nHost BUILDER\n  HostName other.invalid\n')
@@ -1439,6 +1456,14 @@ await recordAsync('the darwin terminal plan opens a Terminal window', async () =
     variant: 'window',
     app: 'terminal',
   })
+})
+
+await recordAsync('tool can explicitly open a plain local terminal', async () => {
+  const result = await captured.tool.execute({ action: 'launch', url: PR_URL, target: 'terminal' })
+  assert.equal(result.launched.mode, 'shell')
+  assert.equal(result.launched.repo, 'acme/widgets')
+  assert.match(result.text, /Opened /)
+  await cleanupLaunches()
 })
 
 await recordAsync('tool launch action uses the same launcher', async () => {
